@@ -13,7 +13,7 @@ function App() {
           <img src={reactLogo} className="logo react" alt="React logo" />
         </a>
       </div>
-      <h1>Vite + React</h1>
+      <h1>Vite + React + Heved</h1>
       <div className="card">
         <p>Choo Choo! This is an example of a Vite + React app running on Railway.</p>
       </div>
