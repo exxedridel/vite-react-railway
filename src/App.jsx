@@ -1,6 +1,6 @@
 import { Route, Routes } from "react-router-dom";
-import TasksPage from "./pages/TasksPage";
-import TaskForm from "./pages/TaskForm";
+import EmployeesPage from "./pages/EmployeesPage";
+import EmployeeForm from "./pages/EmployeeForm";
 import NotFound from "./pages/NotFound";
 import Navbar from "./components/Navbar";
 
@@ -9,8 +9,8 @@ function App() {
     <>
       <Navbar />
       <Routes>
-        <Route path="/" element={<TasksPage />} />
-        <Route path="/new" element={<TaskForm />} />
+        <Route path="/" element={<EmployeesPage />} />
+        <Route path="/new" element={<EmployeeForm />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </>
