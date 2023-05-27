@@ -1,4 +1,7 @@
-html {
-    background-color: rgb(24, 24, 24);
-    color: whitesmoke;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+    background-color: rgb(25, 25, 27);
 }
