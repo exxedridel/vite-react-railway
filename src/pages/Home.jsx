@@ -19,7 +19,7 @@ function Home() {
         >
           <h1 className="text-2xl text-white">You don't have tasks</h1>
           <Link
-            to="/new"
+            to="/new-task"
             className="bg-blue-700 text-white px-4 py-2 rounded-sm inline-block"
           >
             Create task
