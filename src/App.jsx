@@ -1,5 +1,5 @@
 import { Route, Routes } from "react-router-dom";
-import EmployeesPage from "./pages/EmployeesPage";
+import Home from "./pages/Home";
 import EmployeeForm from "./pages/EmployeeForm";
 import NotFound from "./pages/NotFound";
 import Navbar from "./components/Navbar";
@@ -9,7 +9,7 @@ function App() {
     <>
       <Navbar />
       <Routes>
-        <Route path="/" element={<EmployeesPage />} />
+        <Route path="/" element={<Home />} />
         <Route path="/new" element={<EmployeeForm />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
