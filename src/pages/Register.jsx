@@ -171,7 +171,7 @@ const Register = () => {
 
           <button
             disabled={!validName || !validPwd || !validMatch ? true : false}
-            className="bg-indigo-500 w-full rounded-md"
+            className={`${!validName || !validPwd || !validMatch ? 'inactive-btn' : 'active-btn'}`}
           >
             Sign Up
           </button>

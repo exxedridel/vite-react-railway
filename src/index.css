@@ -11,7 +11,8 @@
     box-sizing: border-box;
 }
 
-html {
+/* This was the html tag but changed and applies a .App class to /register page to not combine styles */
+.App {
     font-family: 'Nunito', sans-serif;
     font-size: 22px;
     color: #fff;
@@ -19,7 +20,7 @@ html {
 
 body {
     min-height: 100vh;
-    background-color: dodgerblue;
+    background-color: rgb(27, 27, 27);
 }
 
 .App {
@@ -116,4 +117,14 @@ button {
 
 .line {
     display: inline-block;
+}
+
+.inactive-btn {
+    background-color: rgba(76, 0, 130, 0.301);
+    color: rgba(255, 255, 255, 0.301);
+}
+
+.active-btn {
+    background-color: indigo;
+    color: white;
 }
