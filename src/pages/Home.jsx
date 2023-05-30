@@ -1,13 +1,22 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import TaskCard from "../components/TaskCard";
 import { useTasks } from "../context/TasksContext";
+// import EmployeeCard from "../components/EmployeeCard";
+// import { getEmployeesRequest } from "../api/employees.api";
 
 function Home() {
   const { tasks, loadTasks } = useTasks();
+  const [employees, setEmployees] = useState([]);
 
   useEffect(() => {
     loadTasks();
+
+    // async function loadEmployees() {
+    //   const response = await getEmployeesRequest();
+    //   setEmployees(response.data);
+    // }
+    // loadEmployees();
   }, []);
 
   function renderMain() {
@@ -41,6 +50,10 @@ function Home() {
         Awesome Tasks
       </h1>
       {renderMain()}
+      {/* <br />
+      {employees.map((employee) => (
+        <EmployeeCard key={employee.id} employee={employee}/>
+      ))} */}
     </div>
   );
 }

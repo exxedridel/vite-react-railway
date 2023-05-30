@@ -11,7 +11,7 @@
     box-sizing: border-box;
 }
 
-/* This was the html tag but changed and applies a .App class to /register page to not combine styles */
+/* This was the html tag but changed and applied a .App class to /register component to don't combine styles */
 .App {
     font-family: 'Nunito', sans-serif;
     font-size: 22px;
