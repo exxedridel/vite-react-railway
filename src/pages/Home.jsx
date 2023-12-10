@@ -47,13 +47,13 @@ function Home() {
   return (
     <div>
       <h1 className="text-4xl text-white font-bold uppercase text-center py-10">
-        Awesome Tasks
+        Panel Calidacion 
       </h1>
       {renderMain()}
-      {/* <br />
+      <br />
       {employees.map((employee) => (
         <EmployeeCard key={employee.id} employee={employee}/>
-      ))} */}
+      ))}
     </div>
   );
 }
