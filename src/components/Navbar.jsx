@@ -6,7 +6,7 @@ function Navbar() {
     <div className="bg-neutral-800 flex justify-center px-3 py-4">
       <div className="container flex justify-between ">
         <Link to="/" className="text-lg text-white font-bold flex items-center">
-          <h1>React MySQL</h1>
+          <img src="/credit-control.webp" alt="cc-logo" width={40}/>
         </Link>
 
         <ul className="flex gap-x-2">
