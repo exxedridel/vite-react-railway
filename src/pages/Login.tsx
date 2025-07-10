@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useAppContext } from "../context/AppContext";
 import { Eye, EyeOff, AlertCircle } from "lucide-react";
-import AppLoader from "@/components/AppLoader/AppLoader";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -19,8 +18,8 @@ import {
 } from "@/components/ui/form";
 
 const FormSchema = z.object({
-  username: z.string().min(1, {
-    message: "Campo requerido",
+  email: z.string().email({
+    message: "Ingresa correo válido",
   }),
   password: z.string().min(1, {
     message: "Campo requerido",
@@ -28,7 +27,7 @@ const FormSchema = z.object({
 });
 
 const Login = () => {
-  const { login, navigate, loading, isIdle } = useAppContext();
+  const { login, navigate, isIdle } = useAppContext();
   const [showPassword, setShowPassword] = useState(false);
   const [shouldRender, setShouldRender] = useState(false);
 
@@ -53,21 +52,22 @@ const Login = () => {
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
     defaultValues: {
-      username: "",
+      email: "",
       password: "",
     },
   });
 
   async function onSubmit(data: z.infer<typeof FormSchema>) {
     try {
-      await login(data);
-      setShowPassword(false);
-      form.reset({
-        ...form.getValues(),
-        password: "",
+      await login(data).then(() => {
+        setShowPassword(false);
+        form.reset({
+          ...form.getValues(),
+          password: "",
+        });
       });
-    } catch (error) {
-      console.log(error);
+    } catch (err) {
+      console.log(err);
     }
   }
 
@@ -75,7 +75,10 @@ const Login = () => {
     <>
       <div className="min-h-[500px] h-screen flex flex-col gap-4 items-center justify-center p-3 bg-gradient-to-t from-[--brand] to-[--brand-light]">
         {isIdle && (
-          <Alert variant="destructive" className="w-full sm:w-[360px] bg-white shadow-lg">
+          <Alert
+            variant="destructive"
+            className="w-full sm:w-[360px] bg-white shadow-lg"
+          >
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>Vuelve a inciar sesión</AlertTitle>
             <AlertDescription>
@@ -103,7 +106,7 @@ const Login = () => {
             </div>
             <FormField
               control={form.control}
-              name="username"
+              name="email"
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Correo</FormLabel>

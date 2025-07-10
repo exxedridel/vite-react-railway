@@ -1,10 +1,10 @@
 import axios from "axios";
 
 const baseUrl = import.meta.env.VITE_BASE_MIDDLEWARE;
-const path = "api/v1/auth";
+const path = "/api/";
 
-export const loginRequest = async (credentials) =>
+export const loginReq = async (credentials) =>
   await axios.post(baseUrl + path + "login", credentials);
 
-export const logoutRequest = async (config) =>
+export const logoutReq = async (config) =>
   await axios.post(baseUrl + path + "logout", null, config);

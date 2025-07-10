@@ -4,7 +4,7 @@ import { useAppContext } from "@/context/AppContext";
 const IdleTimer = ({ children }) => {
   const { logout, navigate, isIdle, setIsIdle } = useAppContext();
 
-  const idleTimeout = 5 * 60 * 1000;
+  const idleTimeout = 15 * 60 * 1000;
   let timer;
   let resetEvents = [];
 
@@ -18,9 +18,6 @@ const IdleTimer = ({ children }) => {
     try {
       const bearer_token = localStorage.getItem("bearer_token");
       await logout(bearer_token);
-      localStorage.removeItem("bearer_token");
-      localStorage.removeItem("usuario");
-      navigate("/");
     } catch (error) {
       console.error("Error:", error);
     }

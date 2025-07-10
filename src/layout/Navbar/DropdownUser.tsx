@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { LogOut, User, Mail, ChevronDown, SquareAsterisk } from "lucide-react";
 
@@ -13,25 +12,10 @@ import {
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-
-interface Usuario {
-  nombre: string;
-  apellido_paterno: string;
-  apellido_materno: string;
-  profile: string;
-  username: string;
-}
+import { useAppContext } from "@/context/AppContext";
 
 export default function DropdownUser() {
-  const [usuario, setUsuario] = useState<Usuario | null>(null);
-
-  useEffect(() => {
-    const userData = localStorage.getItem("usuario");
-    if (userData) {
-      const usuarioData = JSON.parse(userData) as Usuario;
-      setUsuario(usuarioData);
-    }
-  }, []);
+  const { user } = useAppContext();
 
   return (
     <DropdownMenu>
@@ -40,7 +24,7 @@ export default function DropdownUser() {
           variant="outline"
           className="flex flex-row items-center gap-2 mr-5"
         >
-          Hola {usuario ? usuario.nombre : "N/A"}
+          Hola {user?.nombre || "N/A"}
           <ChevronDown className="h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>
@@ -53,12 +37,12 @@ export default function DropdownUser() {
           <div className="flex flex-col gap-1 text-[14px]">
             <div className="flex felx-row items-center">
               <User className="ml-2 mr-2 h-4 w-4" />
-              {usuario ? usuario.nombre : "N/A"}{" "}
-              {usuario ? usuario.apellido_paterno : "N/A"}
+              {user?.first_name}{" "}
+              {user?.last_name}
             </div>
             <div className="flex felx-row items-center">
               <Mail className="ml-2 mr-2 h-4 w-4" />
-              {usuario ? usuario.username : "N/A"}
+              {user?.email || "N/A"}
             </div>
           </div>
         </DropdownMenuGroup>

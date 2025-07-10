@@ -2,7 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 
 const ProtectedRoutes: React.FC<any> = ({ children }) => {
-    const navigate = useNavigate();
+  const navigate = useNavigate();
   const [usuarioAutenticado, setUsuarioAutenticado] = useState(false);
 
   useEffect(() => {

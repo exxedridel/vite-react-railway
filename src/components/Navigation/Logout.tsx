@@ -11,11 +11,8 @@ const Logout = () => {
       try {
         const bearer_token = localStorage.getItem("bearer_token");
         await logout(bearer_token);
-        localStorage.removeItem("bearer_token");
-        localStorage.removeItem("usuario");
-        navigate("/");
       } catch (error) {
-        console.error("Error:", error);
+        console.error("Error", error);
       }
     }
     logoutAsync(); 
