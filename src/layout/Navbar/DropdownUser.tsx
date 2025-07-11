@@ -24,7 +24,7 @@ export default function DropdownUser() {
           variant="outline"
           className="flex flex-row items-center gap-2 mr-5"
         >
-          Hola {user?.nombre || "N/A"}
+          Hola {user?.first_name || "N/A"}
           <ChevronDown className="h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>

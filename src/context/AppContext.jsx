@@ -24,10 +24,9 @@ export const AppContextProvider = ({ children }) => {
   const [authToken, setAuthToken] = useState(
     localStorage.getItem("bearer_token")
   );
-  const [user, setUser] = useState();
+  const [user, setUser] = useState(null);
 
-  // Será SERVICIO - Validar AUTH TOKEN
-  // Actualmente solo decodifica auth token
+  // Decodifica y valida AUTH_TOKEN, setea USER
   const validateToken = async (token) => {
     try {
       const decodedToken = jwtDecode(token);
@@ -36,21 +35,17 @@ export const AppContextProvider = ({ children }) => {
         console.warn("El token ha expirado. Limpiando sesión...");
         logout(token);
         return;
+      } else {
+        setUser({
+          first_name: decodedToken.first_name || "N/D",
+          last_name: decodedToken.last_name || "N/D",
+          email: decodedToken.email,
+        });
       }
-      console.log("decodedToken:: ", decodedToken);
-      setUser({
-        first_name: decodedToken.first_name || "N/D",
-        last_name: decodedToken.last_name || "N/D",
-        email: decodedToken.email,
-      });
     } catch (error) {
       console.error("Token no decodificado:", error);
-      // localStorage.removeItem("authToken");
-      // setAuthToken(null);
-      // setCurrentUser(null);
+      setUser(null);
     }
-
-    // setCurrentUser(null);
   };
 
   // SERVICIO - LOGIN
@@ -81,27 +76,10 @@ export const AppContextProvider = ({ children }) => {
       .finally(() => {
         setLoading(false);
       });
-
-    // localStorage.setItem(
-    //   "bearer_token",
-    //   "hY3iO5gR96poQ7g2xp892ddiIOPwc8wm934r0d7T6se4"
-    // );
-    // localStorage.setItem(
-    //   "usuario",
-    //   JSON.stringify({
-    //     nombre: "Heved",
-    //     apellido_paterno: "Ríos",
-    //     apellido_materno: "Delgado",
-    //     username: "hevedrios@gmail.com",
-    //     profile: "Asesor",
-    //   })
-    // );
-    // navigate("/dashboard");
   };
 
-  // SERVICIO - LOGOUT
-  // Actualmente siempre falla, este back no guarda la sesión
-  // solo se valida en front por tiempo de expiración del token
+  // Servicio LOGOUT
+  // Actualmente solo limpia la sesión
   const logout = async (token) => {
     setLoading(true);
     const config = {
@@ -109,35 +87,24 @@ export const AppContextProvider = ({ children }) => {
         Authorization: `Bearer ${token}`,
       },
     };
-    await logoutReq(config)
-      .then((response) => {
-        // console.log("LogOUT respuesta:: ", response);
-        // toast({
-        //   description: (
-        //     <p className="flex flex-row items-center gap-3">
-        //       <CheckCircle2 className="h-5 w-5" />
-        //       {response.data.message}
-        //     </p>
-        //   ),
-        // });
+    await logoutReq(config) // Actualmente no existe
+      .then((res) => {
+        // console.log("LogOUT respuesta:: ", res);
       })
-      .catch((error) => {
-        // console.error("LogOUT error:: ", error);
+      .catch((err) => {
+        // console.error("LogOUT error:: ", err);
       })
       .finally(() => {
         setLoading(false);
         toast({
-          // variant: "destructive",
           description: (
             <p className="flex flex-row items-center gap-3">
               <AlertCircle className="h-5 w-5" />
-              {/* {error.response.data.message} */}
               Se ha cerrado tu sesión.
             </p>
           ),
         });
         localStorage.removeItem("bearer_token");
-        localStorage.removeItem("usuario");
         navigate("/");
       });
   };
