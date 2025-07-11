@@ -104,6 +104,7 @@ export const AppContextProvider = ({ children }) => {
             </p>
           ),
         });
+        console.log("Se ha cerrado tu sesión.")
         localStorage.removeItem("bearer_token");
         navigate("/");
       });
