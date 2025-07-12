@@ -8,8 +8,4 @@ const getAuthorizationHeader = () => {
   return { Authorization: `Bearer ${bearerToken}` };
 };
 
-const axiosConfig = {
-  headers: getAuthorizationHeader(),
-};
-
-export const getTasksReq = async () => await axios.get(baseUrl + path, axiosConfig);
+export const getTasksReq = async () => await axios.get(baseUrl + path, {headers: getAuthorizationHeader()});
