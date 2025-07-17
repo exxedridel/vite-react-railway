@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useAppContext } from "../context/AppContext";
-import { Eye, EyeOff, AlertCircle } from "lucide-react";
+import { Eye, EyeOff, AlertCircle, Waves, HandCoins } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -72,88 +72,75 @@ const Login = () => {
   }
 
   return shouldRender ? (
-    <>
-      <div className="min-h-[500px] h-screen flex flex-col gap-4 items-center justify-center p-3 bg-gradient-to-t from-[--brand] to-[--brand-light]">
-        {isIdle && (
-          <Alert
-            variant="destructive"
-            className="w-full sm:w-[360px] bg-white shadow-lg"
-          >
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Vuelve a inciar sesión</AlertTitle>
-            <AlertDescription>
-              Por motivos de seguridad tu sesión ha expirado debido a
-              inactividad.
-            </AlertDescription>
-          </Alert>
-        )}
-
-        <Form {...form}>
-          <form
-            onSubmit={form.handleSubmit(onSubmit)}
-            autoComplete="off"
-            className="bg-white rounded p-4 shadow-2xl w-full sm:w-[360px] space-y-5"
-          >
-            <div className="flex flex-col items-center justify-center">
-              <img
+    <div className="min-h-[500px] h-screen flex flex-col gap-4 items-center justify-center p-3 bg-gradient-to-t from-[--brand] to-[--brand-light]">
+      <Form {...form}>
+        <form
+          onSubmit={form.handleSubmit(onSubmit)}
+          autoComplete="off"
+          className="w-full sm:w-[360px] p-5 space-y-6"
+        >
+          <div className="flex flex-col items-center justify-center">
+            {/* <img
                 src="/credit-control.webp"
                 alt="cc-logo"
                 width={125}
                 height={125}
                 className="m-5"
-              />
-              <span className="text-3xl">Inicia Sesión</span>
-            </div>
-            <FormField
-              control={form.control}
-              name="email"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Correo</FormLabel>
-                  <FormControl>
-                    <Input autoComplete="off" {...field} />
-                  </FormControl>
-                  <FormMessage className="text-xs" />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="password"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Contraseña</FormLabel>
-                  <FormControl>
-                    <div className="relative">
-                      <Input
-                        type={showPassword ? "text" : "password"}
-                        autoComplete="off"
-                        {...field}
-                      />
-                      <button
-                        type="button"
-                        className="text-xs absolute right-3 top-1/2 transform -translate-y-1/2"
-                        onClick={() => setShowPassword(!showPassword)}
-                      >
-                        {showPassword ? (
-                          <EyeOff className="text-primary/50 h-5 w-5" />
-                        ) : (
-                          <Eye className="text-primary/50 h-5 w-5" />
-                        )}
-                      </button>
-                    </div>
-                  </FormControl>
-                  <FormMessage className="text-xs" />
-                </FormItem>
-              )}
-            />
-            <Button type="submit" className="w-full">
-              Ingresar
-            </Button>
-          </form>
-        </Form>
-      </div>
-    </>
+              /> */}
+            <h1 className="py-10 text-[30px] font-bold italic flex flex-row justify-center items-center gap-1">
+              <span>CreditControl</span> <HandCoins size={30}/>
+            </h1>
+            <span className="text-3xl">Inicia Sesión</span>
+          </div>
+          <FormField
+            control={form.control}
+            name="email"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Correo</FormLabel>
+                <FormControl>
+                  <Input autoComplete="off" {...field} />
+                </FormControl>
+                <FormMessage className="text-xs" />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="password"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Contraseña</FormLabel>
+                <FormControl>
+                  <div className="relative">
+                    <Input
+                      type={showPassword ? "text" : "password"}
+                      autoComplete="off"
+                      {...field}
+                    />
+                    <button
+                      type="button"
+                      className="text-xs absolute right-3 top-1/2 transform -translate-y-1/2"
+                      onClick={() => setShowPassword(!showPassword)}
+                    >
+                      {showPassword ? (
+                        <EyeOff className="text-primary/50 h-5 w-5" />
+                      ) : (
+                        <Eye className="text-primary/50 h-5 w-5" />
+                      )}
+                    </button>
+                  </div>
+                </FormControl>
+                <FormMessage className="text-xs" />
+              </FormItem>
+            )}
+          />
+          <Button type="submit" size="lg" className="w-full">
+            Ingresar
+          </Button>
+        </form>
+      </Form>
+    </div>
   ) : null;
 };
 
