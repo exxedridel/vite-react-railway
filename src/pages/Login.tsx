@@ -77,7 +77,7 @@ const Login = () => {
         <form
           onSubmit={form.handleSubmit(onSubmit)}
           autoComplete="off"
-          className="w-full sm:w-[360px] p-5 space-y-6"
+          className="w-full -mt-[100px] sm:w-[360px] sm:mt-0 p-5 space-y-6"
         >
           <div className="flex flex-col items-center justify-center">
             {/* <img

@@ -4,68 +4,61 @@
 
 @layer base {
   :root {
-    --background: 0 0% 96.5%;
-    --foreground: 222.2 84% 4.9%;
-
+    --background: 0 0% 97.5%;
+    --foreground: 360 8% 15%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-
+    --card-foreground: 240 10% 3.9%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-
+    --popover-foreground: 240 10% 3.9%;
+    --primary: 240 5.9% 10%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 4.8% 90%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 27.5%;
+    --accent: 240 4.8% 99.9%;
+    --accent-foreground: 240 5.9% 10%;
     --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5.9% 84%;
+    --input: 240 5.9% 90%;
+    --ring: 240 5.9% 10%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --success: 180.64 100% 30.86%;
+    --success-foreground: 0 0% 98%;
 
-    --radius: 0.5rem;
+    --brand: 240 5.9% 10%;
+    --brand-foreground: 0 0% 98%;
 
-    --brand-light: #f5f5f5;
-    --brand: #f5f5f5;
+    --radius: 0.4rem;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-
+    --background: 240 10% 6%;
+    --foreground: 0 0% 98%;
+    --card: 345 6% 13%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 6% 6%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 240 5.9% 10%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
     --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 3.7% 30.9%;
+    --input: 240 3.7% 30.9%;
+    --ring: 240 4.9% 83.9%;
 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+    --success: 180.64 100% 26.86%;
+    --success-foreground: 0 0% 98%;
+
+    --brand: 0 0% 98%;
+    --brand-foreground: 240 5.9% 10%;
   }
 }
 
@@ -74,72 +67,114 @@
     @apply border-border;
   }
 
-  /* html {
-    @apply text-3xl
-  } */
+  html,
+  body {
+    scroll-behavior: smooth;
+  }
+
+  html {
+    scroll-snap-type: y mandatory;
+    scroll-snap-points-y: repeat(100%);
+    scroll-snap-type: mandatory;
+    scroll-snap-destination: 100% 0%;
+    scroll-snap-coordinate: 100% 0%;
+  }
 
   body {
     @apply bg-background text-foreground;
   }
 
   .card {
-    @apply bg-white rounded-lg shadow p-4;
+    @apply bg-card rounded-md p-4 shadow border border-border;
+  }
+  .card-small {
+    @apply bg-card rounded-md p-2 shadow border border-border;
+  }
+  .card-noP {
+    @apply bg-card rounded-md shadow border border-border;
   }
 
+  .environment-tag {
+    @apply bg-primary/50 text-primary-foreground/70;
+    position: fixed;
+    z-index: 9000;
+    bottom: clamp(0.1em, 5vw, 8em);
+    left: clamp(0.1em, 5vw, 8em);
+    height: 66px;
+    width: 66px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border-radius: 50%;
+    box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.3);
+    transition: all 0.3s ease;
+  }
 }
 
 ::-ms-reveal {
   display: none;
 }
 
-.text-blue {
-  color: var(--color-aramis);
+.react-datepicker__day--selected,
+.react-datepicker__day--in-selecting-range,
+.react-datepicker__day--in-range,
+.react-datepicker__month-text--selected,
+.react-datepicker__month-text--in-selecting-range,
+.react-datepicker__month-text--in-range,
+.react-datepicker__quarter-text--selected,
+.react-datepicker__quarter-text--in-selecting-range,
+.react-datepicker__quarter-text--in-range,
+.react-datepicker__year-text--selected,
+.react-datepicker__year-text--in-selecting-range,
+.react-datepicker__year-text--in-range {
+  border-radius: 0.3rem;
+  background-color: hsl(var(--brand));
+  color: #fff;
 }
 
-.text-rutas {
-  font-size: 18px;
-  line-height: 18.18px;
-  font-weight: 400;
+.react-datepicker__day--selected:hover,
+.react-datepicker__day--in-selecting-range:hover,
+.react-datepicker__day--in-range:hover,
+.react-datepicker__month-text--selected:hover,
+.react-datepicker__month-text--in-selecting-range:hover,
+.react-datepicker__month-text--in-range:hover,
+.react-datepicker__quarter-text--selected:hover,
+.react-datepicker__quarter-text--in-selecting-range:hover,
+.react-datepicker__quarter-text--in-range:hover,
+.react-datepicker__year-text--selected:hover,
+.react-datepicker__year-text--in-selecting-range:hover,
+.react-datepicker__year-text--in-range:hover {
+  background-color: hsl(var(--brand));
+  color: #fff;
 }
 
+.react-datepicker__month-select {
+  padding: 2px;
+  border-radius: 5px;
+}
+
+.react-datepicker__year-select {
+  padding: 2px;
+  border-radius: 5px;
+}
+
+.react-datepicker__header {
+  background-color: #fff;
+  border-bottom: 1px solid hsl(var(--brand));
+}
+
+.contenedor {
+  @apply w-full lg:max-w-[1400px] mx-auto;
+}
 .text-title {
-  font-size: 24px;
-  line-height: 28.13px;
-  font-weight: 500;
-  color: var(--color-aramis);
+  @apply text-4xl font-bold;
 }
-
-.bg-primary-light {
-  background: linear-gradient(to left, #70e5e5 2%, #b8f2f2 2%);
-  color: var(--color-aramis);
+.text-title2 {
+  @apply text-2xl font-semibold;
 }
-
-.hover\:bg-primary-light:hover {
-  background: linear-gradient(to left, #70e5e5 2%, #b8f2f2 2%);
-  color: var(--color-aramis);
+.text-tag {
+  @apply text-sm font-semibold;
 }
-
-.bg-primary-black {
-  font-size: 18px;
-  font-weight: 400;
-  line-height: 18.18px;
-  color: #000000;
-}
-
-.bg-primary-bo {
-  background-color: var(--color-aramis);
-  color: #fff;
-}
-
-.hover\:bg-primary-bo:hover {
-  background-color: var(--color-aramis-light);
-}
-
-.hover\:text-primary-bo:hover {
-  color: #fff;
-}
-
-.hover\:bg-primary-boe:hover {
-  background-color: hsl(var(--color-aramis-bo));
-  color: #fff;
+.text-routes {
+  @apply flex items-center gap-3 block mx-2 p-2 rounded-lg font-semibold text-[14px];
 }

@@ -31,6 +31,7 @@
     "clsx": "^2.0.0",
     "cmdk": "^0.2.0",
     "date-fns": "^2.30.0",
+    "flowbite-react": "^0.10.1",
     "formik": "^2.2.9",
     "jwt-decode": "^4.0.0",
     "lucide-react": "^0.525.0",
