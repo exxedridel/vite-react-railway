@@ -13,7 +13,7 @@ function Navbar() {
             src="/credit-control.webp"
             alt="cc-logo"
           /> */}
-          <HandCoins size={30} className="ml-1 my-1 w-[55px]"/>
+          <HandCoins size={50} className="ml-1 my-1 w-[55px] text-brand"/>
         </Link>
         <div className="flex flex-row gap-2">
           <ModeToggle />

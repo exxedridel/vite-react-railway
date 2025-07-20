@@ -88,7 +88,7 @@ export function ModeToggle() {
             <SunMoon className="w-5 h-5" /> Sistema
           </div>
         </DropdownMenuItem>
-        {/* <Separator className="my-1" />
+        <Separator className="my-1" />
         <DropdownMenuItem>
           <div className="w-full">
             <div className="w-full mt-1 flex flex-row gap-1 justify-between items-center">
@@ -170,7 +170,7 @@ export function ModeToggle() {
               </div>
             </div>
           </div>
-        </DropdownMenuItem> */}
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

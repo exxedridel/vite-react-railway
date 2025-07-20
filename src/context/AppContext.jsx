@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { jwtDecode } from "jwt-decode";
 import { useNavigate } from "react-router-dom";
 import { loginReq, logoutReq } from "@/services/login.api";
@@ -25,6 +25,28 @@ export const AppContextProvider = ({ children }) => {
     localStorage.getItem("bearer_token")
   );
   const [user, setUser] = useState(null);
+
+   // *** Cambiar color del tema *****************************
+  const initBrandColor = () => {
+    return localStorage.getItem("brandColor") || "191.45 100% 29.8%";
+  };
+  const initBrandForeColor = () => {
+    return localStorage.getItem("brandForeColor") || "0 0% 98%";
+  };
+  const [brandColor, setBrandColor] = useState(initBrandColor);
+  const [brandForeColor, setBrandForeColor] = useState(initBrandForeColor);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty("--brand", brandColor);
+    document.documentElement.style.setProperty(
+      "--brand-foreground",
+      brandForeColor
+    );
+
+    localStorage.setItem("brandColor", brandColor);
+    localStorage.setItem("brandForeColor", brandForeColor);
+  }, [brandColor]);
+  // **********************************************
 
   // Decodifica y valida AUTH_TOKEN, setea USER
   const validateToken = async (token) => {
@@ -127,6 +149,10 @@ export const AppContextProvider = ({ children }) => {
         setCurrentPoliza,
         user,
         setUser,
+        brandColor,
+        setBrandColor,
+        brandForeColor,
+        setBrandForeColor,
       }}
     >
       {children}

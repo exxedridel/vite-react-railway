@@ -87,8 +87,9 @@ const Login = () => {
                 height={125}
                 className="m-5"
               /> */}
-            <h1 className="py-10 text-[30px] font-bold italic flex flex-row justify-center items-center gap-1">
-              <span>CreditControl</span> <HandCoins size={30}/>
+            <h1 className="py-10 text-[30px] italic flex flex-col justify-center items-center gap-2">
+              <HandCoins className="text-brand ml-4" size={90}/>
+              <span className="font-bold">CreditControl</span> 
             </h1>
             <span className="text-3xl">Inicia Sesión</span>
           </div>

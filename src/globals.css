@@ -85,7 +85,7 @@
   }
 
   .card {
-    @apply bg-card rounded-md p-4 shadow border border-border;
+    @apply bg-card rounded-md p-4 shadow border-[0.5px] border-dotted border-brand/70;
   }
   .card-small {
     @apply bg-card rounded-md p-2 shadow border border-border;
