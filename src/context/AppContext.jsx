@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { loginReq, logoutReq } from "@/services/login.api";
 // import { toast } from "@/components/ui/use-toast";
 import { toast } from "sonner";
-import { AlertCircle, CheckCircle2 } from "lucide-react";
+import { AlertCircle, CheckCircle2, LogOut, PartyPopper } from "lucide-react";
 
 export const AppContext = createContext();
 
@@ -27,12 +27,12 @@ export const AppContextProvider = ({ children }) => {
   );
   const [user, setUser] = useState(null);
 
-   // *** Cambiar color del tema *****************************
+  // *** Cambiar color del tema *****************************
   const initBrandColor = () => {
-    return localStorage.getItem("brandColor") || "191.45 100% 29.8%";
+    return localStorage.getItem("brandColor");
   };
   const initBrandForeColor = () => {
-    return localStorage.getItem("brandForeColor") || "0 0% 98%";
+    return localStorage.getItem("brandForeColor");
   };
   const [brandColor, setBrandColor] = useState(initBrandColor);
   const [brandForeColor, setBrandForeColor] = useState(initBrandForeColor);
@@ -79,6 +79,10 @@ export const AppContextProvider = ({ children }) => {
       .then((res) => {
         const token = res.data.token;
         if (token) {
+          toast(<div className="ml-1">¡Te damos la bienvenida!</div>, {
+            duration: 4000,
+            icon: <PartyPopper className="text-brand h-5 w-5" />,
+          });
           console.log("Has accedido correctamente.");
           localStorage.setItem("bearer_token", token);
           validateToken(token);
@@ -86,16 +90,16 @@ export const AppContextProvider = ({ children }) => {
         }
       })
       .catch((err) => {
-      //   toast({
-      //     variant: "destructive",
-      //     description: (
-      //       <p className="flex flex-row items-center gap-3">
-      //         <AlertCircle className="h-5 w-5" />
-      //         {err.response.data.message}
-      //       </p>
-      //     ),
-      //   });
-      toast("fghgfhghgfhfghgfd.")
+        //   toast({
+        //     variant: "destructive",
+        //     description: (
+        //       <p className="flex flex-row items-center gap-3">
+        //         <AlertCircle className="h-5 w-5" />
+        //         {err.response.data.message}
+        //       </p>
+        //     ),
+        //   });
+        toast("fghgfhghgfhfghgfd.");
       })
       .finally(() => {
         setLoading(false);
@@ -103,7 +107,7 @@ export const AppContextProvider = ({ children }) => {
   };
 
   // Servicio LOGOUT
-  // Actualmente solo limpia la sesión
+  // Actualmente solo limpia el bearer_token
   const logout = async (token) => {
     setLoading(true);
     const config = {
@@ -111,7 +115,7 @@ export const AppContextProvider = ({ children }) => {
         Authorization: `Bearer ${token}`,
       },
     };
-    await logoutReq(config) // Actualmente no existe
+    await logoutReq(config) // Actualmente no existe, siempre va al catch
       .then((res) => {
         // console.log("LogOUT respuesta:: ", res);
       })
@@ -120,16 +124,8 @@ export const AppContextProvider = ({ children }) => {
       })
       .finally(() => {
         setLoading(false);
-        // toast({
-        //   description: (
-        //     <p className="flex flex-row items-center gap-3">
-        //       <AlertCircle className="h-5 w-5" />
-        //       Se ha cerrado tu sesión.
-        //     </p>
-        //   ),
-        // });
-        toast("Event has been created.")
-        console.log("Se ha cerrado tu sesión.")
+        toast.success("Se ha cerrado tu sesión.");
+        console.log("Se ha cerrado tu sesión.");
         localStorage.removeItem("bearer_token");
         navigate("/");
       });

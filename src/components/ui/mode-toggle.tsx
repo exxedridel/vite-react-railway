@@ -21,6 +21,7 @@ export function ModeToggle() {
   };
   const changePrimaryWoow = () => {
     setBrandColor("46 82% 47.5%");
+    setBrandForeColor("0 0% 0%");
   };
   const changePrimaryInsuranceServices = () => {
     setBrandColor("191.45 100% 29.8%");
@@ -34,33 +35,17 @@ export function ModeToggle() {
     setBrandColor("271 76% 53%");
     setBrandForeColor("0 0% 98%");
   };
-  const changePrimaryAndroid = () => {
-    setBrandColor("149 72% 53%");
-    setBrandForeColor("0 0% 98%");
-  };
   const changePrimaryDefault = () => {
     setBrandColor("");
     setBrandForeColor("");
-  };
-  const changePrimaryBlue = () => {
-    setBrandColor("208 100% 41%");
-    setBrandForeColor("0 0% 98%");
   };
   const changePrimaryGreen = () => {
     setBrandColor("160 100% 19%");
     setBrandForeColor("0 0% 98%");
   };
-  const changePrimaryOrange = () => {
-    setBrandColor("24 99% 49%");
-    setBrandForeColor("0 0% 98%");
-  };
-  const changePrimaryGray = () => {
-    setBrandColor("0 0% 27%");
-    setBrandForeColor("0 0% 98%");
-  };
-  const changePink = () => {
-    setBrandColor("327 100% 45%");
-    setBrandForeColor("0 0% 98%");
+  const changeYellowgreen = () => {
+    setBrandColor("72 65% 63%");
+    setBrandForeColor("0 0% 0%");
   };
 
   return (
@@ -118,36 +103,11 @@ export function ModeToggle() {
               </div>
             </div>
             <div className="w-full mt-1 flex flex-row gap-1 justify-between items-center">
-              <div className="flex items-center justify-center">
-                <button
-                  className="bg-[#006fcf] hover:bg-[#006fcf]/70 w-5 h-5 rounded-full"
-                  onClick={changePrimaryBlue}
-                ></button>
-              </div>
+             
               <div className="flex items-center justify-center">
                 <button
                   className="bg-[#FF7F50] hover:bg-[#FF7F50]/70 w-5 h-5 rounded-full"
                   onClick={changePrimaryCoral}
-                ></button>
-              </div>
-              <div className="flex items-center justify-center">
-                <button
-                  className="bg-[#32de84] hover:bg-[#32de84]/70 w-5 h-5 rounded-full"
-                  onClick={changePrimaryAndroid}
-                ></button>
-              </div>
-              <div className="flex items-center justify-center">
-                <button
-                  className="bg-[#8A2BE2] hover:bg-[#8A2BE2]/70 w-5 h-5 rounded-full"
-                  onClick={changePrimaryPurple}
-                ></button>
-              </div>
-            </div>
-            <div className="w-full mt-1 flex flex-row gap-1 justify-between items-center">
-              <div className="flex items-center justify-center">
-                <button
-                  className="bg-[#e4007c] hover:bg-[#e4007c]/70 w-5 h-5 rounded-full"
-                  onClick={changePink}
                 ></button>
               </div>
               <div className="flex items-center justify-center">
@@ -158,15 +118,20 @@ export function ModeToggle() {
               </div>
               <div className="flex items-center justify-center">
                 <button
-                  className="bg-[#F96302] hover:bg-[#F96302]/70 w-5 h-5 rounded-full"
-                  onClick={changePrimaryOrange}
+                  className="bg-[#8A2BE2] hover:bg-[#8A2BE2]/70 w-5 h-5 rounded-full"
+                  onClick={changePrimaryPurple}
                 ></button>
               </div>
-              <div className="flex items-center justify-center">
-                <button
-                  className="bg-[#464646] hover:bg-[#464646]/70 w-5 h-5 rounded-full"
-                  onClick={changePrimaryGray}
+               <div className="flex items-center justify-center">
+                 <button
+                  className="bg-[#c4de61] hover:bg-[#c4de61]/70 w-5 h-5 rounded-full"
+                  onClick={changeYellowgreen}
                 ></button>
+              </div>
+            </div>
+            <div className="w-full mt-1 flex flex-row gap-1 justify-between items-center">
+              <div className="flex items-center justify-center">
+                {/* New color button */}
               </div>
             </div>
           </div>
