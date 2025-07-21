@@ -30,7 +30,7 @@
     --brand: 240 5.9% 10%;
     --brand-foreground: 0 0% 98%;
 
-    --radius: 0.4rem;
+    --radius: 1.75rem;
   }
 
   .dark {
@@ -85,13 +85,13 @@
   }
 
   .card {
-    @apply bg-card rounded-md p-4 shadow ;
+    @apply bg-card rounded-md py-6 px-5 shadow border-border;
   }
   .card-small {
-    @apply bg-card rounded-md p-2 shadow border border-border;
+    @apply bg-card rounded-md py-4 px-3 shadow border-border;
   }
   .card-noP {
-    @apply bg-card rounded-md shadow border border-border;
+    @apply bg-card rounded-md shadow border-border;
   }
 
   .environment-tag {

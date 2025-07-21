@@ -72,12 +72,12 @@ const Login = () => {
   }
 
   return shouldRender ? (
-    <div className="min-h-[500px] h-screen flex flex-col gap-4 items-center justify-center p-3 bg-gradient-to-t from-[--brand] to-[--brand-light]">
+    <div className="min-h-[500px] h-[100dvh] flex flex-col gap-4 items-center justify-center p-3 bg-gradient-to-t from-[--brand] to-[--brand-light]">
       <Form {...form}>
         <form
           onSubmit={form.handleSubmit(onSubmit)}
           autoComplete="off"
-          className="w-full -mt-[100px] sm:w-[360px] sm:mt-0 p-5 space-y-6"
+          className="w-full sm:w-[360px]  p-5 space-y-6"
         >
           <div className="flex flex-col items-center justify-center">
             {/* <img
@@ -87,7 +87,7 @@ const Login = () => {
                 height={125}
                 className="m-5"
               /> */}
-            <h1 className="py-10 text-[30px] italic flex flex-col justify-center items-center gap-2">
+            <h1 className="mb-6 text-[30px] italic flex flex-col justify-center items-center gap-2">
               <HandCoins className="text-brand ml-4" size={90}/>
               <span className="font-bold">CreditControl</span> 
             </h1>

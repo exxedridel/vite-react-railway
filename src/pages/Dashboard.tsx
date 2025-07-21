@@ -2,12 +2,14 @@ import { useEffect, useState } from "react";
 import { useAppContext } from "@/context/AppContext";
 import { Button } from "@/components/ui/button";
 import { getTasksReq } from "@/services/tasks.api";
+import { Plus } from "lucide-react";
 
 const Dashboard = () => {
   const { navigate, setLoading } = useAppContext();
   const [tasks, setTasks]: any = useState();
 
   useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
     const getTasks = async () => {
       setLoading(true);
       await getTasksReq()
@@ -26,25 +28,27 @@ const Dashboard = () => {
   }, []);
 
   return (
-    <div className="container flex flex-col items-center gap-5">
-      <div className="card w-full md:w-[800px]">
-        <div className="font-bold text-lg">Registrar Crédito</div>
-        <div>
-          Aquí puedes registrar un nuevo crédito para mantener tus pagos al
-          corriente.
+    <div className="container flex flex-col items-center gap-6">
+      <div className="card w-full md:w-[800px] space-y-1 text-center">
+        <div className="font-bold text-lg">¡Te damos la bienvenida!</div>
+        <div className="flex flex-row justify-center gap-1">
+          <Plus className="text-brand shrink-0 mt-[0.5px]" />
+          <div>
+            Agrega un crédito
+          </div>
         </div>
-        <br />
-        <div className="w-full">
+        {/* <br /> */}
+        {/* <div className="w-full">
           <div className="flex justify-end">
             <Button
               disabled
               variant="default"
               onClick={() => navigate("/buscar-poliza")}
             >
-              Nuevo Registro
+              Nuevo crédito
             </Button>
           </div>
-        </div>
+        </div> */}
       </div>
 
       {tasks?.map((task: any, i: number) => (

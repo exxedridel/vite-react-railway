@@ -22,13 +22,13 @@ export default function DropdownUser() {
       <DropdownMenuTrigger asChild>
         <Button
           variant="outline"
-          className="flex flex-row items-center gap-2 mr-5"
+          className="flex flex-row items-center gap-2"
         >
-          Hola {user?.first_name || "N/A"}
+          Hola, {user?.first_name || "N/A"}
           <ChevronDown className="h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-56">
+      <DropdownMenuContent className="w-56 p-3">
         <DropdownMenuLabel className="select-none">
           Datos de tu cuenta
         </DropdownMenuLabel>

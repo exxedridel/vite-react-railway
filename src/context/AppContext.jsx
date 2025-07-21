@@ -90,16 +90,7 @@ export const AppContextProvider = ({ children }) => {
         }
       })
       .catch((err) => {
-        //   toast({
-        //     variant: "destructive",
-        //     description: (
-        //       <p className="flex flex-row items-center gap-3">
-        //         <AlertCircle className="h-5 w-5" />
-        //         {err.response.data.message}
-        //       </p>
-        //     ),
-        //   });
-        toast("fghgfhghgfhfghgfd.");
+        toast.error(err.response.data.message);
       })
       .finally(() => {
         setLoading(false);
