@@ -2,7 +2,8 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { jwtDecode } from "jwt-decode";
 import { useNavigate } from "react-router-dom";
 import { loginReq, logoutReq } from "@/services/login.api";
-import { toast } from "@/components/ui/use-toast";
+// import { toast } from "@/components/ui/use-toast";
+import { toast } from "sonner";
 import { AlertCircle, CheckCircle2 } from "lucide-react";
 
 export const AppContext = createContext();
@@ -85,15 +86,16 @@ export const AppContextProvider = ({ children }) => {
         }
       })
       .catch((err) => {
-        toast({
-          variant: "destructive",
-          description: (
-            <p className="flex flex-row items-center gap-3">
-              <AlertCircle className="h-5 w-5" />
-              {err.response.data.message}
-            </p>
-          ),
-        });
+      //   toast({
+      //     variant: "destructive",
+      //     description: (
+      //       <p className="flex flex-row items-center gap-3">
+      //         <AlertCircle className="h-5 w-5" />
+      //         {err.response.data.message}
+      //       </p>
+      //     ),
+      //   });
+      toast("fghgfhghgfhfghgfd.")
       })
       .finally(() => {
         setLoading(false);
@@ -118,14 +120,15 @@ export const AppContextProvider = ({ children }) => {
       })
       .finally(() => {
         setLoading(false);
-        toast({
-          description: (
-            <p className="flex flex-row items-center gap-3">
-              <AlertCircle className="h-5 w-5" />
-              Se ha cerrado tu sesión.
-            </p>
-          ),
-        });
+        // toast({
+        //   description: (
+        //     <p className="flex flex-row items-center gap-3">
+        //       <AlertCircle className="h-5 w-5" />
+        //       Se ha cerrado tu sesión.
+        //     </p>
+        //   ),
+        // });
+        toast("Event has been created.")
         console.log("Se ha cerrado tu sesión.")
         localStorage.removeItem("bearer_token");
         navigate("/");
