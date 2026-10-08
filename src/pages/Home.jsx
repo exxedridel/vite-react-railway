@@ -47,7 +47,7 @@ function Home() {
   return (
     <div>
       <h1 className="text-4xl text-white font-bold uppercase text-center py-10">
-        CREDIT CONTROL 
+        CREDIT BENDING 
       </h1>
       {renderMain()}
       <br />

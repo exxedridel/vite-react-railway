@@ -14,7 +14,7 @@ function Navbar() {
         <Link to="/dashboard" className="mr-1">
           {/* <img
             className="ml-3 my-1 w-[55px]"
-            src="/credit-control.webp"
+            src="/credit-bending.webp"
             alt="cc-logo"
           /> */}
           <Plus size={50} className="w-[55px] text-brand" />

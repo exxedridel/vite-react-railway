@@ -80,18 +80,22 @@ const Login = () => {
           className="w-full sm:w-[360px]  p-5 space-y-6"
         >
           <div className="flex flex-col items-center justify-center">
-            {/* <img
-                src="/credit-control.webp"
-                alt="cc-logo"
-                width={125}
-                height={125}
-                className="m-5"
-              /> */}
-            <h1 className="mb-6 text-[30px] italic flex flex-col justify-center items-center gap-2">
-              <HandCoins className="text-brand ml-4" size={90}/>
-              <span className="font-bold">CreditControl</span> 
+            
+            <h1 className="mb-6 text-[32px] italic flex flex-col justify-center items-center gap-2">
+              <img
+                src="/pokemon-logo.png"
+                alt="pokemon-logo"
+                width={300}
+                height={300}
+                className=""
+              />
+              {/* <HandCoins className="text-brand ml-4" size={90} /> */}
+              <span className="-mt-28 mb-4">
+                <span className="">Master</span>
+                <span className="font-bold">Trainer</span>
+              </span>
             </h1>
-            <span className="text-3xl">Inicia Sesión</span>
+            <span className="text-3xl font-light">Inicia Sesión</span>
           </div>
           <FormField
             control={form.control}

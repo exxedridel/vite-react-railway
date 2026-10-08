@@ -3,6 +3,9 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import { BrowserRouter } from "react-router-dom";
 import { AppContextProvider } from "./context/AppContext";
+import { Provider } from "react-redux";
+import { store, persistor } from "./store/store";
+import { PersistGate } from "redux-persist/integration/react";
 import IsAppLoader from "./components/IsAppLoader";
 import { ThemeProvider } from "@/components/ui/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
@@ -11,13 +14,17 @@ import "./globals.css";
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <BrowserRouter>
-      <AppContextProvider>
-        <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
-          <IsAppLoader />
-          <App />
-          <Toaster />
-        </ThemeProvider>
-      </AppContextProvider>
+      <Provider store={store}>
+        <PersistGate loading={null} persistor={persistor}>
+          <AppContextProvider>
+            <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
+              <IsAppLoader />
+              <App />
+              <Toaster />
+            </ThemeProvider>
+          </AppContextProvider>
+        </PersistGate>
+      </Provider>
     </BrowserRouter>
-  </React.StrictMode>
+  </React.StrictMode>,
 );
