@@ -28,7 +28,7 @@ function Navbar() {
             type="button"
             size="sm"
             onClick={() => setPokemonDialogOpen(true)}
-            aria-label="Add a Pokémon"
+            aria-label="Add a pokémon"
             className="gap-0.5 mr-3"
           >
             <Plus className="h-5 w-5 mb-0.5 shrink-0" />

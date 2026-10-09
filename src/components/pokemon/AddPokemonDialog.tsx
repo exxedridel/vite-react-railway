@@ -91,9 +91,7 @@ function AddPokemonDialog() {
       if (requestRef.current !== request) return;
 
       const status =
-        typeof error === "object" &&
-        error !== null &&
-        "status" in error
+        typeof error === "object" && error !== null && "status" in error
           ? error.status
           : undefined;
 
@@ -126,7 +124,7 @@ function AddPokemonDialog() {
     <Dialog open={pokemonDialogOpen} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Add a Pokémon to your party</DialogTitle>
+          <DialogTitle>Add a pokémon to your party</DialogTitle>
           <DialogDescription>
             Type the name or number in the token
           </DialogDescription>
@@ -155,7 +153,10 @@ function AddPokemonDialog() {
                   Searching...
                 </>
               ) : (
-                <div className="flex items-center gap-1.5"><img src="/Pokeball-PNG.png" alt="" className="w-6 mt-0.5"/>Add Pokémon</div>
+                <div className="flex items-center gap-1.5">
+                  <img src="/Pokeball-PNG.png" alt="" className="w-6 mt-0.5" />
+                  Add pokémon
+                </div>
               )}
             </Button>
           </DialogFooter>

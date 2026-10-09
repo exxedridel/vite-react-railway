@@ -10,6 +10,11 @@ type PartyState = {
   pokemons: CapturedPokemon[];
 };
 
+type UpdatePokemonStatsPayload = {
+  captureId: string;
+  values: Record<string, number>;
+};
+
 const initialState: PartyState = {
   pokemons: [],
 };
@@ -37,9 +42,38 @@ const partySlice = createSlice({
         (item) => item.captureId !== action.payload
       );
     },
+
+    updatePokemonStats(
+      state,
+      action: PayloadAction<UpdatePokemonStatsPayload>
+    ) {
+      const { captureId, values } = action.payload;
+
+      const capturedPokemon = state.pokemons.find(
+        (item) => item.captureId === captureId
+      );
+
+      if (!capturedPokemon) return;
+
+      // Validamos todos los valores antes de modificar el equipo.
+      const valid = capturedPokemon.pokemon.stats.every(({ name }) => {
+        const value = values[name];
+        return Number.isSafeInteger(value) && value >= 0;
+      });
+
+      if (!valid) return;
+
+      capturedPokemon.pokemon.stats.forEach((stat) => {
+        stat.value = values[stat.name];
+      });
+    },
   },
 });
 
-export const { addPokemon, removePokemon } = partySlice.actions;
+export const {
+  addPokemon,
+  removePokemon,
+  updatePokemonStats,
+} = partySlice.actions;
 
 export default partySlice.reducer;
