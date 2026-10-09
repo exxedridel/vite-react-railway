@@ -140,7 +140,7 @@ function AddPokemonDialog() {
               autoComplete="off"
               autoCapitalize="none"
               spellCheck={false}
-              placeholder="pikachu or 25"
+              placeholder="E.g. pikachu or 25"
               aria-label="Pokémon name or number"
               disabled={isSearching}
               className="col-span-3"
@@ -155,7 +155,7 @@ function AddPokemonDialog() {
                   Searching...
                 </>
               ) : (
-                "Add Pokémon"
+                <div className="flex items-center gap-1.5"><img src="/Pokeball-PNG.png" alt="" className="w-6 mt-0.5"/>Add Pokémon</div>
               )}
             </Button>
           </DialogFooter>

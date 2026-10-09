@@ -87,7 +87,7 @@ const Login = () => {
                 alt="pokemon-logo"
                 width={300}
                 height={300}
-                className=""
+                className="-mt-24"
               />
               {/* <HandCoins className="text-brand ml-4" size={90} /> */}
               <span className="-mt-28 mb-4">
@@ -95,14 +95,14 @@ const Login = () => {
                 <span className="font-bold">Trainer</span>
               </span>
             </h1>
-            <span className="text-3xl font-light">Inicia Sesión</span>
+            <span className="text-3xl font-light -mt-12 mb-6">Digital Edition</span>
           </div>
           <FormField
             control={form.control}
             name="email"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Correo</FormLabel>
+                <FormLabel>Email</FormLabel>
                 <FormControl>
                   <Input autoComplete="off" {...field} />
                 </FormControl>
@@ -115,7 +115,7 @@ const Login = () => {
             name="password"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Contraseña</FormLabel>
+                <FormLabel>Password</FormLabel>
                 <FormControl>
                   <div className="relative">
                     <Input
@@ -141,7 +141,7 @@ const Login = () => {
             )}
           />
           <Button type="submit" size="lg" className="w-full">
-            Ingresar
+            Log in
           </Button>
         </form>
       </Form>

@@ -11,7 +11,9 @@ function Navbar() {
   const { setPokemonDialogOpen } = useAppContext();
 
   const hasPokemon = useAppSelector((state) => state.party.pokemons.length > 0);
-  const maxPokemonReached = useAppSelector((state) => state.party.pokemons.length < 6);
+  const maxPokemonReached = useAppSelector(
+    (state) => state.party.pokemons.length < 6,
+  );
 
   return (
     <div>
@@ -27,10 +29,10 @@ function Navbar() {
             size="sm"
             onClick={() => setPokemonDialogOpen(true)}
             aria-label="Add a Pokémon"
-            className="gap-2 mr-3"
+            className="gap-0.5 mr-3"
           >
-            <Plus className="h-4 w-4" />
-            Add Pokémon
+            <Plus className="h-5 w-5 mb-0.5 shrink-0" />
+            <img src="/Pokeball-PNG.png" alt="" className="h-6 w-6 shrink-0" />
           </Button>
         )}
       </div>

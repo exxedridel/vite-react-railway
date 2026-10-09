@@ -26,25 +26,37 @@ const Dashboard = () => {
     <div className="container mx-auto px-2 flex flex-col items-center gap-6">
       {!hasPokemon && (
         <>
-          <img
-            src="/pokemon-logo.png"
-            alt="pokemon-logo"
-            width={150}
-            height={150}
-          />
+          <div className="flex flex-col items-center justify-center select-none">
+            
+            <h1 className="mb-6 text-[32px] italic flex flex-col justify-center items-center gap-2">
+              <img
+                src="/pokemon-logo.png"
+                alt="pokemon-logo"
+                width={300}
+                height={300}
+                className="-mt-2"
+              />
+              {/* <HandCoins className="text-brand ml-4" size={90} /> */}
+              <span className="-mt-28 mb-4">
+                <span className="">Master</span>
+                <span className="font-bold">Trainer</span>
+              </span>
+            </h1>
+            <span className="text-3xl font-light -mt-12">Digital Edition</span>
+          </div>
 
           <button
             type="button"
             onClick={() => setPokemonDialogOpen(true)}
-            className="card w-full max-w-[800px] space-y-1 text-center cursor-pointer select-none"
+            className="card w-full max-w-[800px] space-y-1 text-center cursor-pointer select-none mt-8"
           >
             <span className="flex flex-row justify-center items-center gap-1 font-bold text-lg">
               <Plus className="text-brand shrink-0 mt-[0.5px]" />
-              <span>Add a Pokémon</span>
+              <span>Add a pokémon</span>
             </span>
 
             <span className="block">
-              While you have the token 🔴🟢🔵🟡
+              &nbsp;While you have the token&nbsp; 🔴🟢🔵🟡
             </span>
           </button>
         </>
@@ -53,7 +65,7 @@ const Dashboard = () => {
       {hasPokemon && (
         <div className="w-full max-w-[800px]">
           <h2 className="mb-4 text-lg font-bold ml-2">
-            My party · {party.length} pokémon
+            Party · {party.length}/6 pokémon
           </h2>
 
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
