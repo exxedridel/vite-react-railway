@@ -1,3 +1,4 @@
+// src/App.tsx
 import { Route, Routes } from "react-router-dom";
 import ProtectedRoutes from "./components/Navigation/ProtectedRoutes";
 import IdleTimer from "@/components/Navigation/IdleTimer";

@@ -1,125 +1,132 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { jwtDecode } from "jwt-decode";
 import { useNavigate } from "react-router-dom";
-import { loginReq, logoutReq } from "@/services/login.api";
-// import { toast } from "@/components/ui/use-toast";
 import { toast } from "sonner";
-import { AlertCircle, CheckCircle2, LogOut, PartyPopper } from "lucide-react";
+import { PartyPopper } from "lucide-react";
 
-export const AppContext = createContext();
+import { loginReq, logoutReq } from "@/services/login.api";
+
+/** @type {import("react").Context<any>} */
+export const AppContext = createContext(null);
 
 export const useAppContext = () => {
   const context = useContext(AppContext);
+
   if (!context) {
-    throw new Error("useAppContext must be used within a ContextProvider");
+    throw new Error(
+      "useAppContext must be used within an AppContextProvider"
+    );
   }
+
   return context;
 };
 
 export const AppContextProvider = ({ children }) => {
   const navigate = useNavigate();
+
   const [loading, setLoading] = useState(false);
   const [isIdle, setIsIdle] = useState(false);
   const [polizasData, setPolizasData] = useState();
   const [currentPoliza, setCurrentPoliza] = useState();
-  const [authToken, setAuthToken] = useState(
-    localStorage.getItem("bearer_token")
-  );
   const [user, setUser] = useState(null);
 
-  // *** Cambiar color del tema *****************************
-  const initBrandColor = () => {
-    return localStorage.getItem("brandColor");
-  };
-  const initBrandForeColor = () => {
-    return localStorage.getItem("brandForeColor");
-  };
-  const [brandColor, setBrandColor] = useState(initBrandColor);
-  const [brandForeColor, setBrandForeColor] = useState(initBrandForeColor);
+  // Estado compartido del diálogo.
+  const [pokemonDialogOpen, setPokemonDialogOpen] = useState(false);
+
+  // Colores del tema.
+  const [brandColor, setBrandColor] = useState(() =>
+    localStorage.getItem("brandColor")
+  );
+
+  const [brandForeColor, setBrandForeColor] = useState(() =>
+    localStorage.getItem("brandForeColor")
+  );
 
   useEffect(() => {
-    document.documentElement.style.setProperty("--brand", brandColor);
-    document.documentElement.style.setProperty(
-      "--brand-foreground",
-      brandForeColor
-    );
+    if (brandColor) {
+      document.documentElement.style.setProperty("--brand", brandColor);
+      localStorage.setItem("brandColor", brandColor);
+    }
 
-    localStorage.setItem("brandColor", brandColor);
-    localStorage.setItem("brandForeColor", brandForeColor);
-  }, [brandColor]);
-  // **********************************************
+    if (brandForeColor) {
+      document.documentElement.style.setProperty(
+        "--brand-foreground",
+        brandForeColor
+      );
+      localStorage.setItem("brandForeColor", brandForeColor);
+    }
+  }, [brandColor, brandForeColor]);
 
-  // Decodifica y valida AUTH_TOKEN, setea USER
   const validateToken = async (token) => {
     try {
       const decodedToken = jwtDecode(token);
       const currentTime = Date.now() / 1000;
+
       if (decodedToken.exp < currentTime) {
         console.warn("El token ha expirado. Limpiando sesión...");
-        logout(token);
+        await logout(token);
         return;
-      } else {
-        setUser({
-          first_name: decodedToken.first_name || "N/D",
-          last_name: decodedToken.last_name || "N/D",
-          email: decodedToken.email,
-        });
       }
+
+      setUser({
+        first_name: decodedToken.first_name || "N/D",
+        last_name: decodedToken.last_name || "N/D",
+        email: decodedToken.email,
+      });
     } catch (error) {
       console.error("Token no decodificado:", error);
       setUser(null);
     }
   };
 
-  // SERVICIO - LOGIN
   const login = async (credentials) => {
     setLoading(true);
 
-    await loginReq(credentials)
-      .then((res) => {
-        const token = res.data.token;
-        if (token) {
-          toast(<div className="ml-1">¡Te damos la bienvenida!</div>, {
-            duration: 4000,
-            icon: <PartyPopper className="text-brand h-5 w-5" />,
-          });
-          console.log("Has accedido correctamente.");
-          localStorage.setItem("bearer_token", token);
-          validateToken(token);
-          navigate("/dashboard");
-        }
-      })
-      .catch((err) => {
-        toast.error(err.response.data.message);
-      })
-      .finally(() => {
-        setLoading(false);
-      });
+    try {
+      const res = await loginReq(credentials);
+      const token = res.data.token;
+
+      if (token) {
+        toast(<div className="ml-1">¡Te damos la bienvenida!</div>, {
+          duration: 4000,
+          icon: <PartyPopper className="text-brand h-5 w-5" />,
+        });
+
+        localStorage.setItem("bearer_token", token);
+        await validateToken(token);
+        navigate("/dashboard");
+      }
+    } catch (err) {
+      toast.error(
+        err?.response?.data?.message || "No se pudo iniciar sesión."
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // Servicio LOGOUT
-  // Actualmente solo limpia el bearer_token
   const logout = async (token) => {
     setLoading(true);
+    setPokemonDialogOpen(false);
+
     const config = {
       headers: {
         Authorization: `Bearer ${token}`,
       },
     };
-    await logoutReq(config) // Actualmente no existe, siempre va al catch
-      .then((res) => {
-        // console.log("LogOUT respuesta:: ", res);
-      })
-      .catch((err) => {
-        // console.error("LogOUT error:: ", err);
-      })
-      .finally(() => {
-        setLoading(false);
-        toast.success("Se ha cerrado tu sesión.");
-        console.log("Se ha cerrado tu sesión.");
-        localStorage.removeItem("bearer_token");
-        navigate("/");
-      });
+
+    try {
+      await logoutReq(config);
+    } catch {
+      // El cierre local también funciona si el endpoint no está disponible.
+    } finally {
+      localStorage.removeItem("bearer_token");
+      setUser(null);
+      setLoading(false);
+
+      toast.success("Se ha cerrado tu sesión.");
+      navigate("/");
+    }
   };
 
   return (
@@ -143,6 +150,8 @@ export const AppContextProvider = ({ children }) => {
         setBrandColor,
         brandForeColor,
         setBrandForeColor,
+        pokemonDialogOpen,
+        setPokemonDialogOpen,
       }}
     >
       {children}
