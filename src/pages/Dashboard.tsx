@@ -8,6 +8,18 @@ import { useAppContext } from "@/context/AppContext";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { removePokemon } from "@/slices/partySlice";
 
+import { useState } from "react";
+import type { CapturedPokemon } from "@/types/pokemon";
+
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+
 const TYPE_IDS: Record<string, number> = {
   normal: 1,
   fighting: 2,
@@ -39,6 +51,16 @@ const Dashboard = () => {
   const party = useAppSelector((state) => state.party.pokemons);
 
   const hasPokemon = party.length > 0;
+
+  const [pokemonToRemove, setPokemonToRemove] =
+    useState<CapturedPokemon | null>(null);
+
+  const handleConfirmRemove = () => {
+    if (!pokemonToRemove) return;
+
+    dispatch(removePokemon(pokemonToRemove.captureId));
+    setPokemonToRemove(null);
+  };
 
   return (
     <div className="container mx-auto px-2 flex flex-col items-center gap-6">
@@ -74,7 +96,7 @@ const Dashboard = () => {
             </span>
 
             <span className="block">
-              &nbsp;While you have the token&nbsp; 🔴🟢🔵🟡
+              &nbsp;Anytime you own a token&nbsp; 🔴🟢🔵🟡
             </span>
           </button>
         </>
@@ -103,7 +125,7 @@ const Dashboard = () => {
                       variant="ghost"
                       size="icon"
                       className="h-8 w-8 shrink-0"
-                      onClick={() => dispatch(removePokemon(captureId))}
+                      onClick={() => setPokemonToRemove(capturedPokemon)}
                       aria-label={`Eliminar a ${pokemon.name}`}
                     >
                       <X className="h-4 w-4" />
@@ -164,6 +186,46 @@ const Dashboard = () => {
                 </article>
               );
             })}
+            <Dialog
+              open={pokemonToRemove !== null}
+              onOpenChange={(open) => {
+                if (!open) {
+                  setPokemonToRemove(null);
+                }
+              }}
+            >
+              <DialogContent className="sm:max-w-[425px]">
+                <DialogHeader>
+                  <DialogTitle>Are you sure?</DialogTitle>
+
+                  <DialogDescription>
+                    You want to free {" "}
+                    <span className="font-semibold capitalize">
+                      {pokemonToRemove?.pokemon.name}
+                    </span>{" "} to the stack? he will lose his
+                    current stats
+                  </DialogDescription>
+                </DialogHeader>
+
+                <DialogFooter className="gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setPokemonToRemove(null)}
+                  >
+                    Cancelar
+                  </Button>
+
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={handleConfirmRemove}
+                  >
+                    Eliminar
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
       )}
