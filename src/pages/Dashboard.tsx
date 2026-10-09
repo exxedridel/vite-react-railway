@@ -63,7 +63,7 @@ const Dashboard = () => {
   };
 
   return (
-    <div className="container mx-auto px-2 flex flex-col items-center gap-6">
+    <div className="container mx-auto px-1 flex flex-col items-center gap-6">
       {!hasPokemon && (
         <>
           <div className="flex flex-col items-center justify-center select-none">
@@ -108,14 +108,14 @@ const Dashboard = () => {
             Party · {party.length}/6 pokémon
           </h2>
 
-          <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
+          <div className="grid grid-cols-2 gap-1 md:grid-cols-3">
             {party.map((capturedPokemon) => {
               const { captureId, pokemon } = capturedPokemon;
 
               return (
                 <article
                   key={captureId}
-                  className="flex min-w-0 flex-col rounded-2xl border bg-card p-3 text-card-foreground shadow-sm"
+                  className="flex min-w-0 flex-col rounded-2xl border bg-card p-2.5 text-card-foreground shadow-sm"
                 >
                   <div className="flex items-center gap-2">
                     <PokemonHpBar pokemon={pokemon} />

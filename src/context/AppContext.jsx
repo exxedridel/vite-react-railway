@@ -13,9 +13,7 @@ export const useAppContext = () => {
   const context = useContext(AppContext);
 
   if (!context) {
-    throw new Error(
-      "useAppContext must be used within an AppContextProvider"
-    );
+    throw new Error("useAppContext must be used within an AppContextProvider");
   }
 
   return context;
@@ -35,11 +33,11 @@ export const AppContextProvider = ({ children }) => {
 
   // Colores del tema.
   const [brandColor, setBrandColor] = useState(() =>
-    localStorage.getItem("brandColor")
+    localStorage.getItem("brandColor"),
   );
 
   const [brandForeColor, setBrandForeColor] = useState(() =>
-    localStorage.getItem("brandForeColor")
+    localStorage.getItem("brandForeColor"),
   );
 
   useEffect(() => {
@@ -51,7 +49,7 @@ export const AppContextProvider = ({ children }) => {
     if (brandForeColor) {
       document.documentElement.style.setProperty(
         "--brand-foreground",
-        brandForeColor
+        brandForeColor,
       );
       localStorage.setItem("brandForeColor", brandForeColor);
     }
@@ -87,7 +85,7 @@ export const AppContextProvider = ({ children }) => {
       const token = res.data.token;
 
       if (token) {
-        toast(<div className="ml-1">¡Te damos la bienvenida!</div>, {
+        toast(<div className="ml-1">Welcome back trainer! </div>, {
           duration: 4000,
           icon: <PartyPopper className="text-brand h-5 w-5" />,
         });
@@ -97,9 +95,7 @@ export const AppContextProvider = ({ children }) => {
         navigate("/dashboard");
       }
     } catch (err) {
-      toast.error(
-        err?.response?.data?.message || "No se pudo iniciar sesión."
-      );
+      toast.error(err?.response?.data?.message || "No se pudo iniciar sesión.");
     } finally {
       setLoading(false);
     }

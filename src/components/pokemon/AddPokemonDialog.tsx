@@ -126,7 +126,7 @@ function AddPokemonDialog() {
         <DialogHeader>
           <DialogTitle>Add a pokémon to your party</DialogTitle>
           <DialogDescription>
-            Type the name or number in the token
+            Enter the name or number found on the token
           </DialogDescription>
         </DialogHeader>
 
