@@ -9,7 +9,10 @@ import {
 } from "@/components/ui/popover";
 
 import { useAppDispatch } from "@/store/hooks";
-import { togglePokemonStatus, clearPokemonStatuses } from "@/slices/partySlice";
+import {
+  togglePokemonStatus,
+  clearPokemonStatuses,
+} from "@/slices/partySlice";
 
 import {
   STATUS_OPTIONS,
@@ -31,7 +34,7 @@ function PokemonStatusControl({ capturedPokemon }: Props) {
   const statuses = capturedPokemon.statuses ?? [];
 
   const activeOptions = STATUS_OPTIONS.filter((option) =>
-    statuses.includes(option.id),
+    statuses.includes(option.id)
   );
 
   const visibleOptions = activeOptions.slice(0, 2);
@@ -53,25 +56,34 @@ function PokemonStatusControl({ capturedPokemon }: Props) {
             aria-label={`Editar estados de ${capturedPokemon.pokemon.name}`}
           >
             Estado
+
             {activeOptions.length > 0 && (
-              <span className="text-brand">{activeOptions.length}</span>
+              <span className="text-brand">
+                {activeOptions.length}
+              </span>
             )}
+
             <ChevronDown className="h-3.5 w-3.5" />
           </Button>
         </PopoverTrigger>
 
         <PopoverContent
           align="start"
+          side="bottom"
           sideOffset={8}
-          collisionPadding={12}
+          avoidCollisions
+          collisionPadding={16}
+          sticky="always"
           aria-labelledby={`${id}-title`}
           className="
-    w-80 max-w-[calc(100vw-24px)]
-    max-h-[60dvh]
-    overflow-y-auto overscroll-contain touch-pan-y
-  "
+            flex min-h-0 w-80 flex-col
+            max-w-[calc(100vw-32px)]
+            max-h-[min(var(--radix-popover-content-available-height),calc(100dvh-32px))]
+            overflow-hidden p-0
+          "
         >
-          <div className="space-y-4">
+          {/* Contenido desplazable */}
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain touch-pan-y p-4">
             <div>
               <h3 id={`${id}-title`} className="font-semibold">
                 Estados del Pokémon
@@ -92,32 +104,34 @@ function PokemonStatusControl({ capturedPokemon }: Props) {
                 </h4>
 
                 <div className="grid grid-cols-2 gap-2">
-                  {STATUS_OPTIONS.filter(
-                    (option) => option.group === group,
-                  ).map((option) => {
-                    const active = statuses.includes(option.id);
+                  {STATUS_OPTIONS
+                    .filter((option) => option.group === group)
+                    .map((option) => {
+                      const active = statuses.includes(option.id);
 
-                    return (
-                      <Button
-                        key={option.id}
-                        type="button"
-                        variant={active ? "secondary" : "outline"}
-                        aria-pressed={active}
-                        onClick={() => handleToggle(option.id)}
-                        className="h-auto min-h-10 justify-start gap-1.5 px-2 py-2 text-xs"
-                      >
-                        <span aria-hidden="true">{option.icon}</span>
+                      return (
+                        <Button
+                          key={option.id}
+                          type="button"
+                          variant={active ? "secondary" : "outline"}
+                          aria-pressed={active}
+                          onClick={() => handleToggle(option.id)}
+                          className="h-auto min-h-10 justify-start gap-1.5 px-2 py-2 text-xs"
+                        >
+                          <span aria-hidden="true">
+                            {option.icon}
+                          </span>
 
-                        <span className="min-w-0 whitespace-normal text-left">
-                          {option.label}
-                        </span>
+                          <span className="min-w-0 whitespace-normal text-left">
+                            {option.label}
+                          </span>
 
-                        {active && (
-                          <Check className="ml-auto h-3.5 w-3.5 shrink-0 text-brand" />
-                        )}
-                      </Button>
-                    );
-                  })}
+                          {active && (
+                            <Check className="ml-auto h-3.5 w-3.5 shrink-0 text-brand" />
+                          )}
+                        </Button>
+                      );
+                    })}
                 </div>
               </div>
             ))}
@@ -129,9 +143,14 @@ function PokemonStatusControl({ capturedPokemon }: Props) {
                 </h4>
 
                 {activeOptions.map((option) => (
-                  <div key={option.id} className="rounded-lg bg-muted/50 p-3">
+                  <div
+                    key={option.id}
+                    className="rounded-lg bg-muted/50 p-3"
+                  >
                     <p className="text-xs font-semibold">
-                      <span aria-hidden="true">{option.icon}</span>{" "}
+                      <span aria-hidden="true">
+                        {option.icon}
+                      </span>{" "}
                       {option.label}
                     </p>
 
@@ -142,17 +161,25 @@ function PokemonStatusControl({ capturedPokemon }: Props) {
                 ))}
 
                 <p className="text-xs text-muted-foreground">
-                  Por ahora, aplica manualmente los efectos y retira los estados
-                  cuando terminen.
+                  Por ahora, aplica manualmente los efectos y retira
+                  los estados cuando terminen.
                 </p>
               </div>
             )}
+          </div>
 
+          {/* Pie fijo: permanece visible mientras desplazas la lista */}
+          <div
+            className="
+              shrink-0 border-t bg-popover px-3 pt-3
+              pb-[max(0.75rem,env(safe-area-inset-bottom))]
+            "
+          >
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              className="w-full"
+              className="w-full whitespace-normal"
               disabled={activeOptions.length === 0}
               onClick={() => dispatch(clearPokemonStatuses(captureId))}
             >
@@ -162,6 +189,7 @@ function PokemonStatusControl({ capturedPokemon }: Props) {
         </PopoverContent>
       </Popover>
 
+      {/* Resumen visible sobre el escenario */}
       {activeOptions.length > 0 && (
         <div
           className="flex flex-wrap items-center gap-1"
@@ -173,7 +201,10 @@ function PokemonStatusControl({ capturedPokemon }: Props) {
               key={option.id}
               className="inline-flex items-center gap-1 rounded-full border bg-background/95 px-2 py-1 text-[11px] font-medium"
             >
-              <span aria-hidden="true">{option.icon}</span>
+              <span aria-hidden="true">
+                {option.icon}
+              </span>
+
               {option.label}
             </span>
           ))}
