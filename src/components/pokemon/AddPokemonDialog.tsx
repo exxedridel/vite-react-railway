@@ -124,9 +124,9 @@ function AddPokemonDialog() {
     <Dialog open={pokemonDialogOpen} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Add a pokémon to your party</DialogTitle>
+          <DialogTitle>Agrega un pokémon a tu party</DialogTitle>
           <DialogDescription>
-            Enter the name or number found on the token
+            Ingresa el nombre o número que está en el token
           </DialogDescription>
         </DialogHeader>
 
@@ -138,7 +138,7 @@ function AddPokemonDialog() {
               autoComplete="off"
               autoCapitalize="none"
               spellCheck={false}
-              placeholder="E.g. pikachu or 25"
+              placeholder="p. ej. pikachu o 25"
               aria-label="Pokémon name or number"
               disabled={isSearching}
               className="col-span-3"
@@ -155,7 +155,7 @@ function AddPokemonDialog() {
               ) : (
                 <div className="flex items-center gap-1.5">
                   <img src="/Pokeball-PNG.png" alt="" className="w-6 mt-0.5" />
-                  Add pokémon
+                  Agregar pokémon
                 </div>
               )}
             </Button>

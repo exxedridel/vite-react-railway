@@ -233,7 +233,7 @@ function PokemonStatsPopover({ capturedPokemon }: Props) {
 
               <p className="text-xs text-muted-foreground">
                 {ready
-                  ? `HP máximo: ${originalHp}. Guarda para aplicar los cambios.`
+                  ? `Presiona guardar para aplicar los cambios - HP máximo: ${originalHp}`
                   : "Consultando estadísticas originales…"}
               </p>
             </div>
@@ -331,7 +331,7 @@ function PokemonStatsPopover({ capturedPokemon }: Props) {
             onClick={handleReset}
           >
             <RotateCcw className="h-4 w-4" />
-            Reiniciar
+            Reiniciar stats
           </Button>
 
           <div className="flex justify-end gap-2">

@@ -141,7 +141,7 @@ export default function DropdownUser() {
           }}
         >
           <DropdownMenuLabel className="select-none">
-            Trainer profile
+            Pokémon Master Trainer
           </DropdownMenuLabel>
 
           <DropdownMenuSeparator />
@@ -182,7 +182,7 @@ export default function DropdownUser() {
           <DropdownMenuItem disabled>
             {/* <SquareAsterisk className="mr-2 h-4 w-4" /> */}
             <img src="/ditto.png" alt="" className="h-[16.1px] w-[16.1px] mr-2"/>
-            <span>Simulate poké-enemy</span>
+            <span>Simular poké-enemigo</span>
           </DropdownMenuItem>
 
           <DropdownMenuSeparator />
@@ -190,7 +190,7 @@ export default function DropdownUser() {
           <DropdownMenuItem asChild>
             <Link to="/logout">
               <LogOut className="mr-2 h-4 w-4" />
-              <span>Log out</span>
+              <span>Cerrar sesión</span>
             </Link>
           </DropdownMenuItem>
         </DropdownMenuContent>

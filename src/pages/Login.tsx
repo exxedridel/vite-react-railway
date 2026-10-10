@@ -80,7 +80,6 @@ const Login = () => {
           className="w-full sm:w-[360px]  p-5 space-y-6"
         >
           <div className="flex flex-col items-center justify-center">
-            
             <h1 className="mb-6 text-[32px] italic flex flex-col justify-center items-center gap-2">
               <img
                 src="/pokemon-logo.png"
@@ -95,14 +94,16 @@ const Login = () => {
                 <span className="font-bold">Trainer</span>
               </span>
             </h1>
-            <span className="text-3xl font-light -mt-12 mb-6">Digital Edition</span>
+            <span className="text-3xl font-light -mt-12 mb-6">
+              Digital Edition
+            </span>
           </div>
           <FormField
             control={form.control}
             name="email"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Email</FormLabel>
+                <FormLabel>Cuenta o email</FormLabel>
                 <FormControl>
                   <Input autoComplete="off" {...field} />
                 </FormControl>
@@ -115,7 +116,7 @@ const Login = () => {
             name="password"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Password</FormLabel>
+                <FormLabel>Constraseña</FormLabel>
                 <FormControl>
                   <div className="relative">
                     <Input
@@ -141,7 +142,7 @@ const Login = () => {
             )}
           />
           <Button type="submit" size="lg" className="w-full">
-            Log in
+            Iniciar sesión
           </Button>
         </form>
       </Form>

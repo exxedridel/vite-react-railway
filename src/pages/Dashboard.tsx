@@ -1,14 +1,15 @@
+import { useState } from "react";
 import { Plus, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import PokemonStatsPopover from "@/components/pokemon/PokemonStatsPopover";
 import PokemonHpBar from "@/components/pokemon/PokemonHpBar";
+import PokemonBattleDialog from "@/components/pokemon/PokemonBattleDialog";
 
 import { useAppContext } from "@/context/AppContext";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { removePokemon } from "@/slices/partySlice";
 
-import { useState } from "react";
 import type { CapturedPokemon } from "@/types/pokemon";
 
 import {
@@ -55,6 +56,10 @@ const Dashboard = () => {
   const [pokemonToRemove, setPokemonToRemove] =
     useState<CapturedPokemon | null>(null);
 
+  const [battleCaptureId, setBattleCaptureId] = useState<string | null>(
+    null
+  );
+
   const handleConfirmRemove = () => {
     if (!pokemonToRemove) return;
 
@@ -82,7 +87,9 @@ const Dashboard = () => {
               </span>
             </h1>
 
-            <span className="text-3xl font-light -mt-12">Digital Edition</span>
+            <span className="text-3xl font-light -mt-12">
+              Digital Edition
+            </span>
           </div>
 
           <button
@@ -132,17 +139,34 @@ const Dashboard = () => {
                     </Button>
                   </div>
 
-                  {pokemon.image ? (
-                    <img
-                      src={pokemon.image}
-                      alt={pokemon.name}
-                      className="my-2 h-28 w-full object-contain sm:h-36"
-                    />
-                  ) : (
-                    <div className="my-2 flex h-28 items-center justify-center text-xs text-muted-foreground sm:h-36">
-                      No image available
-                    </div>
-                  )}
+                  <button
+                    id={`battle-trigger-${captureId}`}
+                    type="button"
+                    onClick={() => setBattleCaptureId(captureId)}
+                    aria-label={`Abrir combate con ${pokemon.name}`}
+                    aria-haspopup="dialog"
+                    className="
+                      my-2 w-full rounded-xl
+                      transition-colors hover:bg-muted/50
+                      focus-visible:outline-none
+                      focus-visible:ring-2 focus-visible:ring-ring
+                      focus-visible:ring-offset-2
+                      focus-visible:ring-offset-background
+                    "
+                  >
+                    {pokemon.image ? (
+                      <img
+                        src={pokemon.image}
+                        alt={pokemon.name}
+                        draggable={false}
+                        className="h-28 w-full object-contain sm:h-36"
+                      />
+                    ) : (
+                      <div className="flex h-28 items-center justify-center text-xs text-muted-foreground sm:h-36">
+                        No image available
+                      </div>
+                    )}
+                  </button>
 
                   <div className="flex items-center justify-between gap-2">
                     <h3 className="min-w-0 break-words font-semibold capitalize">
@@ -181,116 +205,66 @@ const Dashboard = () => {
                   </div>
 
                   <div className="mt-auto pt-3">
-                    <PokemonStatsPopover capturedPokemon={capturedPokemon} />
+                    <PokemonStatsPopover
+                      capturedPokemon={capturedPokemon}
+                    />
                   </div>
                 </article>
               );
             })}
-            <Dialog
-              open={pokemonToRemove !== null}
-              onOpenChange={(open) => {
-                if (!open) {
-                  setPokemonToRemove(null);
-                }
-              }}
-            >
-              <DialogContent className="sm:max-w-[425px]">
-                <DialogHeader>
-                  <DialogTitle>Are you sure?</DialogTitle>
-
-                  <DialogDescription>
-                    You want to free {" "}
-                    <span className="font-semibold capitalize">
-                      {pokemonToRemove?.pokemon.name}
-                    </span>{" "} to the stack? he will lose his
-                    current stats
-                  </DialogDescription>
-                </DialogHeader>
-
-                <DialogFooter className="gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setPokemonToRemove(null)}
-                  >
-                    Cancelar
-                  </Button>
-
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    onClick={handleConfirmRemove}
-                  >
-                    Eliminar
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
           </div>
         </div>
       )}
+
+      {/* Confirmación para liberar */}
+      <Dialog
+        open={pokemonToRemove !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPokemonToRemove(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>¿Estás seguro?</DialogTitle>
+
+            <DialogDescription>
+              ¿Quieres liberar a{" "}
+              <span className="font-semibold capitalize">
+                {pokemonToRemove?.pokemon.name}
+              </span>
+              ? Volverá al stock de pokémons y se reiniciarán sus stats
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter className="gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setPokemonToRemove(null)}
+            >
+              Cancelar
+            </Button>
+
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleConfirmRemove}
+            >
+              Liberar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Pantalla de combate */}
+      <PokemonBattleDialog
+        captureId={battleCaptureId}
+        onClose={() => setBattleCaptureId(null)}
+      />
     </div>
   );
 };
 
 export default Dashboard;
-
-// import { getTasksReq } from "@/services/tasks.api";
-// import { useGetPokemonsQuery } from "@/api/creditsApi";
-
-// const {
-//   data: pokemons,
-//   isLoading: isLoadingPokemons,
-//   isError: isErrorPokemons,
-//   error: errorPokemons,
-// } = useGetPokemonsQuery();
-
-// useEffect(() => {
-//   window.scrollTo({ top: 0, behavior: "smooth" });
-//   const getTasks = async () => {
-//     setLoading(true);
-//     await getTasksReq()
-//       .then((res) => {
-//         console.log("getTasksReq Res:: ", res.data);
-//         setTasks(res?.data);
-//       })
-//       .catch((err) => {
-//         console.log("getTasksReq Err:: ", err);
-//       })
-//       .finally(() => {
-//         setLoading(false);
-//       });
-//   };
-//   getTasks();
-// }, []);
-
-{
-  /* <br /> */
-}
-{
-  /* <div className="w-full">
-          <div className="flex justify-end">
-            <Button
-              disabled
-              variant="default"
-              onClick={() => navigate("/buscar-poliza")}
-            >
-              Nuevo crédito
-            </Button>
-          </div>
-        </div> */
-}
-
-{
-  /* {tasks?.map((task: any, i: number) => (
-        <div key={i} className="card w-full md:w-[800px]">
-          {JSON.stringify(task, null, 2)}
-        </div>
-      ))} */
-}
-
-{
-  /* <pre>
-        <code>{JSON.stringify(pokemons, null, 2)}</code>
-      </pre> */
-}

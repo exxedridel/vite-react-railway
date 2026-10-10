@@ -85,7 +85,7 @@ export const AppContextProvider = ({ children }) => {
       const token = res.data.token;
 
       if (token) {
-        toast(<div className="ml-1">Welcome back trainer! </div>, {
+        toast(<div className="ml-1">¡Te damos la bienvenida!</div>, {
           duration: 4000,
           icon: <PartyPopper className="text-brand h-5 w-5" />,
         });

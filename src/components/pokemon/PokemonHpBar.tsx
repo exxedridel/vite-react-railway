@@ -1,3 +1,4 @@
+// src/components/pokemon/PokemonHpBar.tsx
 import { useEffect } from "react";
 
 import { Progress } from "@/components/ui/progress";
