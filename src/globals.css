@@ -178,3 +178,202 @@
 .text-routes {
   @apply flex items-center gap-3 block mx-2 p-2 rounded-lg font-semibold text-[14px];
 }
+
+
+
+
+/* =========================================
+   ESCENARIO DE COMBATE
+   ========================================= */
+
+.pokemon-arena {
+  position: relative;
+  isolation: isolate;
+  height: 176px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+/* Terreno */
+.pokemon-arena .pokemon-arena-ground {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 45%;
+  transition: height 350ms ease;
+}
+
+/* Plataforma vacía */
+.pokemon-arena .pokemon-arena-empty-platform {
+  position: absolute;
+  width: 30%;
+  height: 12%;
+  left: 62%;
+  bottom: 35%;
+  border-radius: 50%;
+  opacity: 0.55;
+
+  transition:
+    width 350ms ease,
+    height 350ms ease,
+    left 350ms ease,
+    bottom 350ms ease,
+    opacity 350ms ease;
+}
+
+/* =========================================
+   VISTA PROPIA
+   ========================================= */
+
+/* Contenedor con dimensiones explícitas */
+.pokemon-arena .pokemon-arena-position {
+  position: absolute;
+  z-index: 10;
+  width: 224px;
+  height: 144px;
+  left: 42%;
+  bottom: 8px;
+  transform: translateX(-50%);
+
+  transition:
+    left 350ms ease,
+    bottom 350ms ease;
+}
+
+/* Plataforma y sprite se escalan juntos */
+.pokemon-arena .pokemon-arena-model {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform: scale(1);
+  transform-origin: center bottom;
+  transition: transform 350ms ease;
+}
+
+/* Plataforma ocupada */
+.pokemon-arena .pokemon-arena-platform {
+  position: absolute;
+  width: 192px;
+  height: 48px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-radius: 50%;
+}
+
+/* Botón que contiene el sprite */
+.pokemon-arena .pokemon-arena-sprite {
+  position: absolute;
+  display: block;
+  z-index: 10;
+  width: 144px;
+  height: 144px;
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+/* Imagen */
+.pokemon-arena .pokemon-arena-sprite img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: contain;
+  image-rendering: pixelated;
+  user-select: none;
+}
+
+/* =========================================
+   VISTA RIVAL
+   ========================================= */
+
+.pokemon-arena.pokemon-arena--opponent .pokemon-arena-ground {
+  height: 60%;
+}
+
+.pokemon-arena.pokemon-arena--opponent .pokemon-arena-position {
+  left: 68%;
+  bottom: 44px;
+}
+
+.pokemon-arena.pokemon-arena--opponent .pokemon-arena-model {
+  transform: scale(0.78);
+}
+
+/* Plataforma vacía en primer plano */
+.pokemon-arena.pokemon-arena--opponent
+  .pokemon-arena-empty-platform {
+  width: 55%;
+  height: 24%;
+  left: -8%;
+  bottom: -5%;
+  opacity: 0.85;
+}
+
+/* =========================================
+   PANTALLAS MÁS GRANDES
+   ========================================= */
+
+@media (min-width: 640px) {
+  .pokemon-arena {
+    height: 208px;
+  }
+
+  .pokemon-arena .pokemon-arena-position {
+    width: 256px;
+    height: 176px;
+  }
+
+  .pokemon-arena .pokemon-arena-platform {
+    width: 224px;
+    height: 48px;
+  }
+
+  .pokemon-arena .pokemon-arena-sprite {
+    width: 176px;
+    height: 176px;
+  }
+
+  .pokemon-arena.pokemon-arena--opponent .pokemon-arena-position {
+    bottom: 52px;
+  }
+}
+
+/* =========================================
+   MOVIMIENTO REDUCIDO
+   ========================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  .pokemon-arena .pokemon-arena-ground,
+  .pokemon-arena .pokemon-arena-empty-platform,
+  .pokemon-arena .pokemon-arena-position,
+  .pokemon-arena .pokemon-arena-model {
+    transition: none;
+  }
+}
+
+
+@keyframes pokemon-breathe {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+
+  50% {
+    transform: translateY(-3px) scale(1.015, 1.025);
+  }
+}
+
+.pokemon-arena .pokemon-arena-sprite img.pokemon-breathe {
+  transform-origin: center bottom;
+  animation: pokemon-breathe 2.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pokemon-arena .pokemon-arena-sprite img.pokemon-breathe {
+    animation: none;
+  }
+}
