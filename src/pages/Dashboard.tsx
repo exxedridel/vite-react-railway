@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Plus, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -45,6 +45,9 @@ const TYPE_IDS: Record<string, number> = {
 const TYPE_ICON_BASE =
   "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/types/generation-ix/scarlet-violet/small";
 
+const CRY_BASE =
+  "https://raw.githubusercontent.com/PokeAPI/cries/main/cries/pokemon/latest";
+
 const Dashboard = () => {
   const { setPokemonDialogOpen } = useAppContext();
 
@@ -60,8 +63,53 @@ const Dashboard = () => {
     null
   );
 
+  const cryAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    return () => {
+      cryAudioRef.current?.pause();
+      cryAudioRef.current = null;
+    };
+  }, []);
+
+  const stopPokemonCry = () => {
+    const audio = cryAudioRef.current;
+
+    if (audio) {
+      audio.pause();
+      audio.currentTime = 0;
+      cryAudioRef.current = null;
+    }
+  };
+
+  const handleOpenBattle = (capturedPokemon: CapturedPokemon) => {
+    stopPokemonCry();
+
+    setBattleCaptureId(capturedPokemon.captureId);
+
+    const audio = new Audio(
+      `${CRY_BASE}/${capturedPokemon.pokemon.id}.ogg`
+    );
+
+    audio.volume = 0.6;
+    cryAudioRef.current = audio;
+
+    // La reproducción comienza desde el clic del usuario.
+    // Si el audio falla, el combate sigue funcionando.
+    void audio.play().catch(() => {});
+  };
+
+  const handleCloseBattle = () => {
+    stopPokemonCry();
+    setBattleCaptureId(null);
+  };
+
   const handleConfirmRemove = () => {
     if (!pokemonToRemove) return;
+
+    if (battleCaptureId === pokemonToRemove.captureId) {
+      handleCloseBattle();
+    }
 
     dispatch(removePokemon(pokemonToRemove.captureId));
     setPokemonToRemove(null);
@@ -142,7 +190,7 @@ const Dashboard = () => {
                   <button
                     id={`battle-trigger-${captureId}`}
                     type="button"
-                    onClick={() => setBattleCaptureId(captureId)}
+                    onClick={() => handleOpenBattle(capturedPokemon)}
                     aria-label={`Abrir combate con ${pokemon.name}`}
                     aria-haspopup="dialog"
                     className="
@@ -261,7 +309,7 @@ const Dashboard = () => {
       {/* Pantalla de combate */}
       <PokemonBattleDialog
         captureId={battleCaptureId}
-        onClose={() => setBattleCaptureId(null)}
+        onClose={handleCloseBattle}
       />
     </div>
   );
