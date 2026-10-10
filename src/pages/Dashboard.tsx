@@ -2,16 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { Plus, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import PokemonStatsPopover from "@/components/pokemon/PokemonStatsPopover";
-import PokemonHpBar from "@/components/pokemon/PokemonHpBar";
-import PokemonBattleDialog from "@/components/pokemon/PokemonBattleDialog";
-
-import { useAppContext } from "@/context/AppContext";
-import { useAppDispatch, useAppSelector } from "@/store/hooks";
-import { removePokemon } from "@/slices/partySlice";
-
-import type { CapturedPokemon } from "@/types/pokemon";
-
 import {
   Dialog,
   DialogContent,
@@ -21,29 +11,17 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-const TYPE_IDS: Record<string, number> = {
-  normal: 1,
-  fighting: 2,
-  flying: 3,
-  poison: 4,
-  ground: 5,
-  rock: 6,
-  bug: 7,
-  ghost: 8,
-  steel: 9,
-  fire: 10,
-  water: 11,
-  grass: 12,
-  electric: 13,
-  psychic: 14,
-  ice: 15,
-  dragon: 16,
-  dark: 17,
-  fairy: 18,
-};
+import PokemonStatsPopover from "@/components/pokemon/PokemonStatsPopover";
+import PokemonHpBar from "@/components/pokemon/PokemonHpBar";
+import PokemonBattleDialog from "@/components/pokemon/PokemonBattleDialog";
+import PokemonTypeBadges from "@/components/pokemon/PokemonTypeBadges";
+import PokemonConditionBadges from "@/components/pokemon/PokemonConditionBadges";
 
-const TYPE_ICON_BASE =
-  "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/types/generation-ix/scarlet-violet/small";
+import { useAppContext } from "@/context/AppContext";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { removePokemon } from "@/slices/partySlice";
+
+import type { CapturedPokemon } from "@/types/pokemon";
 
 const CRY_BASE =
   "https://raw.githubusercontent.com/PokeAPI/cries/main/cries/pokemon/latest";
@@ -54,16 +32,16 @@ const Dashboard = () => {
   const dispatch = useAppDispatch();
   const party = useAppSelector((state) => state.party.pokemons);
 
-  const hasPokemon = party.length > 0;
-
   const [pokemonToRemove, setPokemonToRemove] =
     useState<CapturedPokemon | null>(null);
 
   const [battleCaptureId, setBattleCaptureId] = useState<string | null>(
-    null
+    null,
   );
 
   const cryAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  const hasPokemon = party.length > 0;
 
   useEffect(() => {
     return () => {
@@ -88,14 +66,12 @@ const Dashboard = () => {
     setBattleCaptureId(capturedPokemon.captureId);
 
     const audio = new Audio(
-      `${CRY_BASE}/${capturedPokemon.pokemon.id}.ogg`
+      `${CRY_BASE}/${capturedPokemon.pokemon.id}.ogg`,
     );
 
     audio.volume = 0.6;
     cryAudioRef.current = audio;
 
-    // La reproducción comienza desde el clic del usuario.
-    // Si el audio falla, el combate sigue funcionando.
     void audio.play().catch(() => {});
   };
 
@@ -116,11 +92,11 @@ const Dashboard = () => {
   };
 
   return (
-    <div className="container mx-auto px-1 flex flex-col items-center gap-6">
+    <div className="container mx-auto flex flex-col items-center gap-6 px-1">
       {!hasPokemon && (
         <>
-          <div className="flex flex-col items-center justify-center select-none">
-            <h1 className="mb-6 text-[32px] italic flex flex-col justify-center items-center gap-2">
+          <div className="flex select-none flex-col items-center justify-center">
+            <h1 className="mb-6 flex flex-col items-center justify-center gap-2 text-[32px] italic">
               <img
                 src="/pokemon-logo.png"
                 alt="pokemon-logo"
@@ -135,7 +111,7 @@ const Dashboard = () => {
               </span>
             </h1>
 
-            <span className="text-3xl font-light -mt-12">
+            <span className="-mt-12 text-3xl font-light">
               Digital Edition
             </span>
           </div>
@@ -143,10 +119,10 @@ const Dashboard = () => {
           <button
             type="button"
             onClick={() => setPokemonDialogOpen(true)}
-            className="card w-full max-w-[800px] space-y-1 text-center cursor-pointer select-none mt-8"
+            className="card mt-8 w-full max-w-[800px] cursor-pointer select-none space-y-1 text-center"
           >
-            <span className="flex flex-row justify-center items-center gap-1 font-bold text-lg">
-              <Plus className="text-brand shrink-0 mt-[0.5px]" />
+            <span className="flex flex-row items-center justify-center gap-1 text-lg font-bold">
+              <Plus className="mt-[0.5px] shrink-0 text-brand" />
               <span>Add a pokémon</span>
             </span>
 
@@ -159,7 +135,7 @@ const Dashboard = () => {
 
       {hasPokemon && (
         <div className="w-full max-w-[800px]">
-          <h2 className="mb-4 text-lg font-bold ml-2">
+          <h2 className="mb-4 ml-2 text-lg font-bold">
             Party · {party.length}/6 pokémon
           </h2>
 
@@ -167,11 +143,16 @@ const Dashboard = () => {
             {party.map((capturedPokemon) => {
               const { captureId, pokemon } = capturedPokemon;
 
+              const isFainted =
+                pokemon.stats.find((stat) => stat.name === "hp")
+                  ?.value === 0;
+
               return (
                 <article
                   key={captureId}
                   className="flex min-w-0 flex-col rounded-2xl border bg-card p-2.5 text-card-foreground shadow-sm"
                 >
+                  {/* HP y botón para liberar */}
                   <div className="flex items-center gap-2">
                     <PokemonHpBar pokemon={pokemon} />
 
@@ -180,42 +161,53 @@ const Dashboard = () => {
                       variant="ghost"
                       size="icon"
                       className="h-8 w-8 shrink-0"
-                      onClick={() => setPokemonToRemove(capturedPokemon)}
-                      aria-label={`Eliminar a ${pokemon.name}`}
+                      onClick={() =>
+                        setPokemonToRemove(capturedPokemon)
+                      }
+                      aria-label={`Liberar a ${pokemon.name}`}
                     >
                       <X className="h-4 w-4" />
                     </Button>
                   </div>
 
+                  {/* Imagen con estados superpuestos */}
                   <button
                     id={`battle-trigger-${captureId}`}
                     type="button"
                     onClick={() => handleOpenBattle(capturedPokemon)}
-                    aria-label={`Abrir combate con ${pokemon.name}`}
+                    aria-label={`Abrir combate de ${pokemon.name}${
+                      isFainted ? ", debilitado" : ""
+                    }`}
                     aria-haspopup="dialog"
                     className="
-                      my-2 w-full rounded-xl
-                      transition-colors hover:bg-muted/50
+                      relative my-2 block h-28 w-full rounded-xl
                       focus-visible:outline-none
                       focus-visible:ring-2 focus-visible:ring-ring
-                      focus-visible:ring-offset-2
-                      focus-visible:ring-offset-background
+                      sm:h-36
                     "
                   >
                     {pokemon.image ? (
                       <img
                         src={pokemon.image}
                         alt={pokemon.name}
-                        draggable={false}
-                        className="h-28 w-full object-contain sm:h-36"
+                        className={`
+                          h-full w-full object-contain
+                          transition-[filter,opacity]
+                          ${isFainted ? "grayscale opacity-60" : ""}
+                        `}
                       />
                     ) : (
-                      <div className="flex h-28 items-center justify-center text-xs text-muted-foreground sm:h-36">
+                      <span className="flex h-full items-center justify-center text-xs text-muted-foreground">
                         No image available
-                      </div>
+                      </span>
                     )}
+
+                    <PokemonConditionBadges
+                      capturedPokemon={capturedPokemon}
+                    />
                   </button>
 
+                  {/* Nombre y número */}
                   <div className="flex items-center justify-between gap-2">
                     <h3 className="min-w-0 break-words font-semibold capitalize">
                       {pokemon.name}
@@ -226,32 +218,12 @@ const Dashboard = () => {
                     </span>
                   </div>
 
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    {pokemon.types.map((type) => (
-                      <span
-                        key={type}
-                        className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-1 text-xs capitalize text-muted-foreground"
-                      >
-                        {TYPE_IDS[type] && (
-                          <span className="inline-flex h-4 w-4 shrink-0 overflow-hidden rounded-full">
-                            <img
-                              src={`${TYPE_ICON_BASE}/${TYPE_IDS[type]}.png`}
-                              alt=""
-                              aria-hidden="true"
-                              className="h-full w-full object-cover"
-                              loading="lazy"
-                              onError={(event) => {
-                                event.currentTarget.style.display = "none";
-                              }}
-                            />
-                          </span>
-                        )}
-
-                        {type}
-                      </span>
-                    ))}
+                  {/* Tipos con iconos */}
+                  <div className="mt-2">
+                    <PokemonTypeBadges types={pokemon.types} />
                   </div>
 
+                  {/* Estadísticas */}
                   <div className="mt-auto pt-3">
                     <PokemonStatsPopover
                       capturedPokemon={capturedPokemon}
@@ -282,7 +254,7 @@ const Dashboard = () => {
               <span className="font-semibold capitalize">
                 {pokemonToRemove?.pokemon.name}
               </span>
-              ? Volverá al stock de pokémons y se reiniciarán sus stats
+              ? Volverá al stock de pokémons y se reiniciarán sus stats.
             </DialogDescription>
           </DialogHeader>
 
@@ -306,11 +278,14 @@ const Dashboard = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Pantalla de combate */}
-      <PokemonBattleDialog
-        captureId={battleCaptureId}
-        onClose={handleCloseBattle}
-      />
+      {/* Modal de combate */}
+      {battleCaptureId !== null && (
+        <PokemonBattleDialog
+          key={battleCaptureId}
+          captureId={battleCaptureId}
+          onClose={handleCloseBattle}
+        />
+      )}
     </div>
   );
 };

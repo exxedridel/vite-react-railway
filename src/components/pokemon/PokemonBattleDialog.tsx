@@ -22,6 +22,8 @@ import { updatePokemonStats } from "@/slices/partySlice";
 
 import type { BattleOpponent } from "@/lib/battleOpponent";
 
+import PokemonHpControls from "@/components/pokemon/PokemonHpControls";
+
 type Props = {
   captureId: string | null;
   onClose: () => void;
@@ -37,8 +39,7 @@ function PokemonBattleDialog({ captureId, onClose }: Props) {
     state.party.pokemons.find((item) => item.captureId === captureId),
   );
 
-  const [getPokemon, { data, isError, isFetching }] =
-    useLazyGetPokemonQuery();
+  const [getPokemon, { data, isError, isFetching }] = useLazyGetPokemonQuery();
 
   const [opponentView, setOpponentView] = useState(false);
   const [opponent, setOpponent] = useState<BattleOpponent | null>(null);
@@ -129,10 +130,7 @@ function PokemonBattleDialog({ captureId, onClose }: Props) {
 
     if (!latestHp) return;
 
-    const nextHp = Math.min(
-      originalHp,
-      Math.max(0, latestHp.value + amount),
-    );
+    const nextHp = Math.min(originalHp, Math.max(0, latestHp.value + amount));
 
     if (nextHp === latestHp.value) return;
 
@@ -173,9 +171,7 @@ function PokemonBattleDialog({ captureId, onClose }: Props) {
         onCloseAutoFocus={(event) => {
           event.preventDefault();
 
-          document
-            .getElementById(`battle-trigger-${captureId}`)
-            ?.focus();
+          document.getElementById(`battle-trigger-${captureId}`)?.focus();
         }}
       >
         <header
@@ -228,49 +224,11 @@ function PokemonBattleDialog({ captureId, onClose }: Props) {
               aria-label="Puntos de salud"
               className="shrink-0 rounded-2xl border bg-card p-4 text-card-foreground"
             >
-              <PokemonHpBar pokemon={pokemon} />
-
-              <div className="mt-4 grid grid-cols-[1fr_auto_1fr] items-center gap-4">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-12 gap-2"
-                  disabled={!canEditHp || currentHp <= 0}
-                  onClick={() => handleChangeHp(-1)}
-                  aria-label="Restar un punto de HP"
-                >
-                  <Minus className="h-5 w-5" />
-                  <span>1 HP</span>
-                </Button>
-
-                <div
-                  className="min-w-12 text-center"
-                  aria-live="polite"
-                  aria-atomic="true"
-                >
-                  <span className="text-3xl font-bold tabular-nums">
-                    {currentHp}
-                  </span>
-
-                  <span className="block text-xs text-muted-foreground">
-                    HP
-                  </span>
-                </div>
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-12 gap-2"
-                  disabled={
-                    !canEditHp || currentHp >= (originalHp ?? 0)
-                  }
-                  onClick={() => handleChangeHp(1)}
-                  aria-label="Sumar un punto de HP"
-                >
-                  <Plus className="h-5 w-5" />
-                  <span>1 HP</span>
-                </Button>
-              </div>
+              <PokemonHpControls
+                currentHp={currentHp}
+                maxHp={originalHp}
+                onChangeHp={handleChangeHp}
+              />
 
               {!canEditHp && (
                 <div className="mt-3 text-center">
@@ -299,6 +257,10 @@ function PokemonBattleDialog({ captureId, onClose }: Props) {
                   )}
                 </div>
               )}
+
+              <div className="mt-4">
+                <PokemonHpBar pokemon={pokemon} />
+              </div>
             </section>
 
             <PokemonBattleArena
