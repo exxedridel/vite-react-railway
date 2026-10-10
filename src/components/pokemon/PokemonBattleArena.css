@@ -1,0 +1,139 @@
+/* Estilos exclusivos del escenario. No reemplaces tu global.css. */
+.battle-scene {
+  position: relative;
+  isolation: isolate;
+  height: 240px;
+  overflow: hidden;
+}
+
+.battle-scene__ground {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 52%;
+}
+
+.battle-scene__combatant {
+  position: absolute;
+  transform: translateX(-50%);
+  transition: left 350ms ease, bottom 350ms ease, width 350ms ease, height 350ms ease;
+}
+
+.battle-scene__combatant--near {
+  z-index: 10;
+  left: 29%;
+  bottom: 38px;
+  width: 144px;
+  height: 144px;
+}
+
+.battle-scene__combatant--far {
+  z-index: 5;
+  left: 74%;
+  bottom: 102px;
+  width: 104px;
+  height: 104px;
+}
+
+.battle-scene__platform {
+  position: absolute;
+  width: 112%;
+  height: 24%;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  border-radius: 50%;
+}
+
+.battle-scene__shadow {
+  position: absolute;
+  left: 50%;
+  bottom: 6%;
+  width: 52%;
+  height: 12%;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  filter: blur(4px);
+}
+
+.battle-scene .battle-scene__sprite {
+  position: absolute;
+  z-index: 1;
+  bottom: 8px;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.battle-scene__sprite:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.battle-scene .battle-scene__sprite img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: contain;
+  image-rendering: pixelated;
+  user-select: none;
+  transform-origin: center bottom;
+}
+
+@keyframes battle-scene-breathe {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-3px) scale(1.015, 1.025); }
+}
+
+.battle-scene .battle-scene__sprite img.battle-scene__breathing {
+  animation: battle-scene-breathe 2.4s ease-in-out infinite;
+}
+
+.battle-scene__combatant--far img.battle-scene__breathing {
+  animation-delay: -1.2s;
+}
+
+.battle-scene__fainted {
+  filter: grayscale(1);
+  opacity: 0.6;
+}
+
+@media (min-width: 640px) {
+  .battle-scene { height: 264px; }
+  .battle-scene__combatant--near { width: 176px; height: 176px; }
+  .battle-scene__combatant--far { width: 128px; height: 128px; bottom: 112px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .battle-scene__combatant { transition: none; }
+  .battle-scene .battle-scene__sprite img.battle-scene__breathing { animation: none; }
+}
+
+/* Acerca los pies de cada Pokémon a su plataforma. */
+.battle-scene .battle-scene__combatant--near .battle-scene__sprite {
+  bottom: -12px;
+}
+
+.battle-scene .battle-scene__combatant--far .battle-scene__sprite {
+  bottom: -8px;
+}
+
+@media (min-width: 640px) {
+  .battle-scene .battle-scene__combatant--near .battle-scene__sprite {
+    bottom: -16px;
+  }
+
+  .battle-scene .battle-scene__combatant--far .battle-scene__sprite {
+    bottom: -12px;
+  }
+}
