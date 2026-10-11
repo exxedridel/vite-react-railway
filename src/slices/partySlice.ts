@@ -1,3 +1,9 @@
+import {
+  clampStage,
+  isBattleStageName,
+  normalizeStages,
+} from "@/lib/battleModifiers";
+import type { BattleStageName } from "@/types/pokemon";
 import { createSlice, nanoid, type PayloadAction } from "@reduxjs/toolkit";
 import {
   STATUS_OPTIONS,
@@ -13,6 +19,7 @@ import {
   isLeveled,
   preserveHpRatio,
   validBaseStats,
+  neutralBattleStages,
 } from "@/lib/pokemonStats";
 
 type PartyState = { pokemons: CapturedPokemon[] };
@@ -119,6 +126,36 @@ const partySlice = createSlice({
       const hp = pokemon.stats.find((s) => s.name === "hp");
       if (hp) hp.value = Math.min(getMaxHp(pokemon)!, values.hp);
     },
+    changePokemonBattleStage(
+      state,
+      action: PayloadAction<{
+        captureId: string;
+        stat: BattleStageName;
+        amount: number;
+      }>,
+    ) {
+      const { captureId, stat, amount } = action.payload;
+      const pokemon = state.pokemons.find(
+        (p) => p.captureId === captureId,
+      )?.pokemon;
+      if (
+        !pokemon ||
+        !isLeveled(pokemon) ||
+        !isBattleStageName(stat) ||
+        !Number.isSafeInteger(amount)
+      )
+        return;
+      const stages = normalizeStages(pokemon.battleStages);
+      stages[stat] = clampStage(stages[stat] + amount);
+      pokemon.battleStages = stages;
+    },
+    resetPokemonBattleStages(state, action: PayloadAction<string>) {
+      const pokemon = state.pokemons.find(
+        (p) => p.captureId === action.payload,
+      )?.pokemon;
+      if (pokemon && isLeveled(pokemon))
+        pokemon.battleStages = neutralBattleStages();
+    },
     togglePokemonStatus(
       state,
       action: PayloadAction<{ captureId: string; status: PokemonStatus }>,
@@ -155,5 +192,7 @@ export const {
   updatePokemonStats,
   togglePokemonStatus,
   clearPokemonStatuses,
+  changePokemonBattleStage,
+  resetPokemonBattleStages,
 } = partySlice.actions;
 export default partySlice.reducer;

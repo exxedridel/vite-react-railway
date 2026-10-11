@@ -1,3 +1,4 @@
+import { getEffectiveBattleStats } from "@/lib/battleModifiers";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -8,7 +9,7 @@ import { usePokemonProgression } from "@/hooks/usePokemonProgression";
 import { calculateStats, isLeveled, STAT_LABELS } from "@/lib/pokemonStats";
 import type { CapturedPokemon } from "@/types/pokemon";
 
-// Consulta provisional. Los controles de modificadores se implementarán después.
+// Consulta de los valores efectivos. Los modificadores se editan en el panel de combate.
 export default function PokemonStatsPopover({
   capturedPokemon,
 }: {
@@ -16,6 +17,7 @@ export default function PokemonStatsPopover({
 }) {
   const { pokemon } = capturedPokemon;
   const { ready, isError, retry } = usePokemonProgression(pokemon);
+  const effective = getEffectiveBattleStats(pokemon);
   const stats = isLeveled(pokemon)
     ? calculateStats(pokemon.baseStats, pokemon.level)
     : [];
@@ -42,7 +44,7 @@ export default function PokemonStatsPopover({
           <div>
             <h3 className="font-semibold capitalize">{pokemon.name}</h3>
             <p className="text-xs text-muted-foreground">
-              Lv. {pokemon.level ?? 50} · Stats calculados
+              Lv. {pokemon.level ?? 50} · Stats de combate
             </p>
           </div>
         </div>
@@ -63,7 +65,9 @@ export default function PokemonStatsPopover({
                   <dt className="text-muted-foreground">
                     {stat.name === "hp" ? "HP máximo" : STAT_LABELS[stat.name]}
                   </dt>
-                  <dd className="font-semibold tabular-nums">{stat.value}</dd>
+                  <dd className="font-semibold tabular-nums">
+                    {stat.name === "hp" ? stat.value : effective[stat.name]}
+                  </dd>
                 </div>
               ))}
             </dl>

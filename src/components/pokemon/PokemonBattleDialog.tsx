@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { Minus, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -16,7 +16,9 @@ import { usePokemonProgression } from "@/hooks/usePokemonProgression";
 import PokemonHpControls from "./PokemonHpControls";
 import PokemonTypeBadges from "./PokemonTypeBadges";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
-import { changePokemonHp } from "@/slices/partySlice";
+import { store } from "@/store/store";
+import PokemonPlayerPanel from "./PokemonPlayerPanel";
+import { changePokemonHp, setPokemonLevel } from "@/slices/partySlice";
 type Props = {
   captureId: string | null;
   onClose: () => void;
@@ -76,6 +78,17 @@ function PokemonBattleDialog({ captureId, onClose }: Props) {
   // Todos los hooks se ejecutan antes de este retorno.
   if (!capturedPokemon) return null;
   const { pokemon } = capturedPokemon;
+  const currentLevel = pokemon.level ?? 50;
+  const canEditLevel = pokemon.progressionVersion === 1;
+  const handleChangeLevel = (amount: number) => {
+    const latest = store
+      .getState()
+      .party.pokemons.find((p) => p.captureId === capturedPokemon.captureId);
+    if (!latest || latest.pokemon.progressionVersion !== 1) return;
+    const level = (latest.pokemon.level ?? 50) + amount;
+    if (!Number.isSafeInteger(level) || level < 1) return;
+    dispatch(setPokemonLevel({ captureId: latest.captureId, level }));
+  };
   const currentHp =
     pokemon.stats.find((stat) => stat.name === "hp")?.value ?? 0;
   const canEditHp = originalHp !== undefined;
@@ -118,9 +131,47 @@ function PokemonBattleDialog({ captureId, onClose }: Props) {
               <p className="text-xs font-semibold uppercase tracking-widest text-brand">
                 En combate
               </p>
-              <DialogTitle className="mt-1 break-words text-2xl font-bold capitalize">
-                {pokemon.name}
-              </DialogTitle>
+              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-2">
+                <DialogTitle className="min-w-0 break-words text-2xl font-bold capitalize">
+                  {pokemon.name}
+                </DialogTitle>
+                <div
+                  role="group"
+                  aria-label="Nivel del Pokémon"
+                  className="inline-flex shrink-0 items-center gap-1 rounded-full border bg-muted/50 p-1"
+                >
+                  <span
+                    className="px-2 text-sm font-semibold tabular-nums"
+                    aria-live="polite"
+                  >
+                    Lv. {currentLevel}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 rounded-full"
+                    disabled={!canEditLevel || currentLevel <= 1}
+                    onClick={() => handleChangeLevel(-1)}
+                    aria-label="Bajar un nivel"
+                  >
+                    <Minus className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 rounded-full"
+                    disabled={
+                      !canEditLevel || !Number.isSafeInteger(currentLevel + 1)
+                    }
+                    onClick={() => handleChangeLevel(1)}
+                    aria-label="Subir un nivel"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
               <DialogDescription className="sr-only">
                 Combate de {pokemon.name}.
               </DialogDescription>
@@ -194,6 +245,7 @@ function PokemonBattleDialog({ captureId, onClose }: Props) {
               onTogglePerspective={handleTogglePerspective}
               onPlayCry={handlePlayCry}
             />
+            <PokemonPlayerPanel captureId={capturedPokemon.captureId} />
             <PokemonOpponentPanel
               key={captureId}
               opponent={opponent}
