@@ -41,8 +41,6 @@ export const STATUS_OPTIONS = [
     group: "primary",
     rule: "Causa daño al final del turno que aumenta progresivamente mientras el Pokémon permanece en combate.",
   },
-
-  // Efectos adicionales combinables.
   {
     id: "confused",
     label: "Confusion",
@@ -116,20 +114,43 @@ export const STATUS_OPTIONS = [
 ] as const;
 
 export type PokemonStatus = (typeof STATUS_OPTIONS)[number]["id"];
+export type PokemonStat = { name: string; value: number };
+export type BattleStageName =
+  | "attack"
+  | "defense"
+  | "special-attack"
+  | "special-defense"
+  | "speed"
+  | "accuracy"
+  | "evasiveness";
+export type BattleStages = Record<BattleStageName, number>;
 
 export type Pokemon = {
   id: number;
   name: string;
   image: string | null;
   types: string[];
-  stats: {
-    name: string;
-    value: number;
-  }[];
+  // En la party: HP actual y los otros cinco stats calculados.
+  // En la respuesta de pokeApi: valores base, hasta crear la captura.
+  stats: PokemonStat[];
+  // Opcionales únicamente para admitir respuestas de API y capturas antiguas.
+  progressionVersion?: 1;
+  level?: number;
+  baseStats?: PokemonStat[];
+  battleStages?: BattleStages;
+};
+
+export type LeveledPokemon = Pokemon & {
+  progressionVersion: 1;
+  level: number;
+  baseStats: PokemonStat[];
+  battleStages: BattleStages;
 };
 
 export type CapturedPokemon = {
   captureId: string;
   pokemon: Pokemon;
   statuses?: PokemonStatus[];
+  // Respaldo de los valores previos a la migración; no interviene en el cálculo.
+  legacyStats?: PokemonStat[];
 };

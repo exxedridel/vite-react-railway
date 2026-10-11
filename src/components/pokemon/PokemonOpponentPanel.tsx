@@ -1,3 +1,5 @@
+import PokemonTypeBadges from "./PokemonTypeBadges";
+import { createLeveledPokemon } from "@/lib/pokemonStats";
 import {
   useEffect,
   useRef,
@@ -6,7 +8,6 @@ import {
   type FormEvent,
   type SetStateAction,
 } from "react";
-
 import {
   Loader2,
   Minus,
@@ -16,9 +17,7 @@ import {
   Swords,
   X,
 } from "lucide-react";
-
 import { toast } from "sonner";
-
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -29,11 +28,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-
-import PokemonTypeBadges from "@/components/pokemon/PokemonTypeBadges";
-
 import { useLazyGetPokemonQuery } from "@/api/pokeApi";
-
+import type { Pokemon } from "@/types/pokemon";
 import {
   BATTLE_STATS,
   createBattleOpponent,
@@ -44,24 +40,19 @@ import {
   type BattleStat,
 } from "@/lib/battleOpponent";
 
-import type { Pokemon } from "@/types/pokemon";
-
 type Props = {
   opponent: BattleOpponent | null;
   onChange: Dispatch<SetStateAction<BattleOpponent | null>>;
 };
 
-type OpponentSummaryProps = {
-  pokemon: Pokemon;
-  showSprite?: boolean;
-};
-
 function OpponentSummary({
   pokemon,
   showSprite = true,
-}: OpponentSummaryProps) {
+}: {
+  pokemon: Pokemon;
+  showSprite?: boolean;
+}) {
   const [failed, setFailed] = useState(false);
-
   return (
     <div className="flex items-center gap-3">
       {showSprite && (
@@ -80,49 +71,41 @@ function OpponentSummary({
           )}
         </div>
       )}
-
       <div className="min-w-0 space-y-2">
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="break-words font-semibold capitalize">
             {pokemon.name}
           </h3>
-
           <span className="text-xs text-muted-foreground">
             #{String(pokemon.id).padStart(3, "0")}
           </span>
         </div>
-
         <PokemonTypeBadges types={pokemon.types} />
       </div>
     </div>
   );
 }
 
-export default function PokemonOpponentPanel({
-  opponent,
-  onChange,
-}: Props) {
+export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [candidate, setCandidate] = useState<Pokemon | null>(null);
   const [searching, setSearching] = useState(false);
-
   const [getPokemon] = useLazyGetPokemonQuery();
-
   const requestVersion = useRef(0);
   const searchingRef = useRef(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
-  useEffect(() => {
-    return () => {
+  useEffect(
+    () => () => {
       requestVersion.current += 1;
-    };
-  }, []);
+    },
+    [],
+  );
 
   const handleOpenChange = (next: boolean) => {
     requestVersion.current += 1;
     searchingRef.current = false;
-
     setSearching(false);
     setCandidate(null);
     setSearch("");
@@ -131,60 +114,41 @@ export default function PokemonOpponentPanel({
 
   const handleSearch = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-
     if (searchingRef.current) return;
-
     const raw = search.trim().toLowerCase();
-
     if (!raw) {
       toast.error("Escribe el nombre o número del rival.");
       return;
     }
-
     const query = /^\d+$/.test(raw) ? String(Number(raw)) : raw;
     const version = ++requestVersion.current;
-
     searchingRef.current = true;
     setSearching(true);
     setCandidate(null);
-
     try {
       const result = await getPokemon(query, true).unwrap();
-
       if (version !== requestVersion.current) return;
-
-      const required = [
-        "hp",
-        ...BATTLE_STATS.map((stat) => stat.name),
-      ];
-
-      const hasRequiredStats = required.every((name) =>
-        result.stats.some(
-          (stat) =>
-            stat.name === name &&
-            Number.isSafeInteger(stat.value) &&
-            stat.value > 0,
-        ),
-      );
-
-      if (!hasRequiredStats) {
-        toast.error(
-          "El Pokémon no tiene todas las estadísticas necesarias.",
-        );
+      const required = ["hp", ...BATTLE_STATS.map((stat) => stat.name)];
+      if (
+        !required.every((name) =>
+          result.stats.some(
+            (stat) =>
+              stat.name === name &&
+              Number.isSafeInteger(stat.value) &&
+              stat.value > 0,
+          ),
+        )
+      ) {
+        toast.error("El Pokémon no tiene todas las estadísticas necesarias.");
         return;
       }
-
-      setCandidate(result);
+      setCandidate(createLeveledPokemon(result));
     } catch (error: unknown) {
       if (version !== requestVersion.current) return;
-
       const status =
-        typeof error === "object" &&
-        error !== null &&
-        "status" in error
+        typeof error === "object" && error !== null && "status" in error
           ? error.status
           : undefined;
-
       toast.error(
         status === 404
           ? "Pokémon no encontrado. Revisa su nombre en inglés o número."
@@ -200,7 +164,6 @@ export default function PokemonOpponentPanel({
 
   const handleConfirm = () => {
     if (!candidate || searching) return;
-
     onChange(createBattleOpponent(candidate));
     handleOpenChange(false);
   };
@@ -212,10 +175,7 @@ export default function PokemonOpponentPanel({
             ...current,
             stages: {
               ...current.stages,
-              [stat]: Math.max(
-                -6,
-                Math.min(6, current.stages[stat] + amount),
-              ),
+              [stat]: Math.max(-6, Math.min(6, current.stages[stat] + amount)),
             },
           }
         : null,
@@ -229,10 +189,8 @@ export default function PokemonOpponentPanel({
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="flex items-center gap-2 font-semibold">
-          <Swords className="h-4 w-4 text-brand" />
-          Oponente
+          <Swords className="h-4 w-4 text-brand" /> Oponente
         </h2>
-
         <Button
           ref={triggerRef}
           type="button"
@@ -251,53 +209,39 @@ export default function PokemonOpponentPanel({
             pokemon={opponent.pokemon}
             showSprite={false}
           />
-
           <p className="text-xs text-muted-foreground">
-            HP base:{" "}
-            {
-              opponent.pokemon.stats.find(
-                (stat) => stat.name === "hp",
-              )?.value
-            }{" "}
-            · El rival controla su HP en su celular.
+            HP máximo · Lv. {opponent.pokemon.level}:{" "}
+            {opponent.pokemon.stats.find((stat) => stat.name === "hp")?.value} ·
+            El rival controla su HP en su celular.
           </p>
-
           <details className="rounded-xl border p-3">
             <summary className="cursor-pointer text-sm font-medium">
               Stats y cambios durante el combate
             </summary>
-
             <p className="my-3 text-xs text-muted-foreground">
-              Todos empiezan en 0. Registra aquí los aumentos o reducciones
-              por movimientos: son niveles, no puntos.
+              Todos empiezan en 0. Registra aquí los aumentos o reducciones por
+              movimientos: son niveles, no puntos.
             </p>
-
             <div className="space-y-3">
               {BATTLE_STATS.map((stat) => {
                 const base =
                   opponent.pokemon.stats.find(
                     (entry) => entry.name === stat.name,
                   )?.value ?? 1;
-
                 const stage = opponent.stages[stat.name];
                 const effective = getEffectiveStat(base, stage);
-
                 return (
                   <div
                     key={stat.name}
                     className="flex flex-wrap items-center justify-between gap-2 border-b pb-2 last:border-0"
                   >
                     <div>
-                      <p className="text-sm font-medium">
-                        {stat.label}
-                      </p>
-
+                      <p className="text-sm font-medium">{stat.label}</p>
                       <p className="text-xs text-muted-foreground tabular-nums">
                         {base} → {effective} · ×
                         {Number(stageMultiplier(stage).toFixed(3))}
                       </p>
                     </div>
-
                     <div className="flex items-center gap-1">
                       <Button
                         type="button"
@@ -310,7 +254,6 @@ export default function PokemonOpponentPanel({
                       >
                         <Minus className="h-4 w-4" />
                       </Button>
-
                       <output
                         className="w-8 text-center text-sm font-semibold tabular-nums"
                         aria-label={`Nivel de ${stat.label}`}
@@ -318,7 +261,6 @@ export default function PokemonOpponentPanel({
                       >
                         {stage > 0 ? `+${stage}` : stage}
                       </output>
-
                       <Button
                         type="button"
                         variant="outline"
@@ -335,7 +277,6 @@ export default function PokemonOpponentPanel({
                 );
               })}
             </div>
-
             <Button
               type="button"
               variant="ghost"
@@ -347,19 +288,14 @@ export default function PokemonOpponentPanel({
               onClick={() =>
                 onChange((current) =>
                   current
-                    ? {
-                        ...current,
-                        stages: createNeutralStages(),
-                      }
+                    ? { ...current, stages: createNeutralStages() }
                     : null,
                 )
               }
             >
-              <RotateCcw className="h-4 w-4" />
-              Reiniciar cambios
+              <RotateCcw className="h-4 w-4" /> Reiniciar cambios
             </Button>
           </details>
-
           <Button
             type="button"
             variant="ghost"
@@ -367,8 +303,7 @@ export default function PokemonOpponentPanel({
             className="gap-2"
             onClick={() => onChange(null)}
           >
-            <X className="h-4 w-4" />
-            Quitar oponente
+            <X className="h-4 w-4" /> Quitar oponente
           </Button>
         </>
       ) : (
@@ -387,21 +322,15 @@ export default function PokemonOpponentPanel({
         >
           <DialogHeader>
             <DialogTitle>Seleccionar oponente</DialogTitle>
-
             <DialogDescription>
-              Busca por nombre en inglés o número. El rival se carga con
-              sus estadísticas originales.
+              Busca por nombre en inglés o número. El rival se carga con sus
+              estadísticas calculadas a nivel 50.
             </DialogDescription>
           </DialogHeader>
-
           <form onSubmit={handleSearch} className="space-y-2">
-            <label
-              htmlFor="opponent-search"
-              className="text-sm font-medium"
-            >
+            <label htmlFor="opponent-search" className="text-sm font-medium">
               Nombre o número
             </label>
-
             <div className="flex gap-2">
               <Input
                 id="opponent-search"
@@ -417,7 +346,6 @@ export default function PokemonOpponentPanel({
                 spellCheck={false}
                 className="min-w-0 flex-1"
               />
-
               <Button
                 type="submit"
                 disabled={searching || !search.trim()}
@@ -431,14 +359,9 @@ export default function PokemonOpponentPanel({
               </Button>
             </div>
           </form>
-
           {candidate && (
             <div className="space-y-3 rounded-xl border p-3">
-              <OpponentSummary
-                key={candidate.id}
-                pokemon={candidate}
-              />
-
+              <OpponentSummary key={candidate.id} pokemon={candidate} />
               <dl className="grid grid-cols-2 gap-2 text-xs">
                 {candidate.stats.map((stat) => (
                   <div
@@ -448,27 +371,22 @@ export default function PokemonOpponentPanel({
                     <dt>
                       {stat.name === "hp"
                         ? "HP"
-                        : BATTLE_STATS.find(
+                        : (BATTLE_STATS.find(
                             (entry) => entry.name === stat.name,
-                          )?.label ?? stat.name}
+                          )?.label ?? stat.name)}
                     </dt>
-
-                    <dd className="font-semibold tabular-nums">
-                      {stat.value}
-                    </dd>
+                    <dd className="font-semibold tabular-nums">{stat.value}</dd>
                   </div>
                 ))}
               </dl>
-
               {opponent && (
                 <p className="text-xs text-muted-foreground">
-                  Al confirmar se reemplazará el rival actual y sus
-                  cambios temporales.
+                  Al confirmar se reemplazará el rival actual y sus cambios
+                  temporales.
                 </p>
               )}
             </div>
           )}
-
           <DialogFooter className="gap-2">
             <Button
               type="button"
@@ -477,7 +395,6 @@ export default function PokemonOpponentPanel({
             >
               Cancelar
             </Button>
-
             <Button
               type="button"
               disabled={!candidate || searching}

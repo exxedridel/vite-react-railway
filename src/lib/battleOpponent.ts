@@ -1,4 +1,5 @@
-import type { Pokemon } from "@/types/pokemon";
+import { createLeveledPokemon, neutralBattleStages } from "@/lib/pokemonStats";
+import type { BattleStages, Pokemon } from "@/types/pokemon";
 
 export const BATTLE_STATS = [
   { name: "attack", label: "Attack" },
@@ -9,29 +10,19 @@ export const BATTLE_STATS = [
 ] as const;
 
 export type BattleStat = (typeof BATTLE_STATS)[number]["name"];
-export type StatStages = Record<BattleStat, number>;
+export type StatStages = BattleStages;
 export type BattleOpponent = {
   pokemon: Pokemon;
   stages: StatStages;
 };
 
 export function createNeutralStages(): StatStages {
-  return {
-    attack: 0,
-    defense: 0,
-    "special-attack": 0,
-    "special-defense": 0,
-    speed: 0,
-  };
+  return neutralBattleStages();
 }
 
 export function createBattleOpponent(pokemon: Pokemon): BattleOpponent {
   return {
-    pokemon: {
-      ...pokemon,
-      types: [...pokemon.types],
-      stats: pokemon.stats.map((stat) => ({ ...stat })),
-    },
+    pokemon: createLeveledPokemon(pokemon),
     stages: createNeutralStages(),
   };
 }
@@ -58,6 +49,6 @@ export function getOpponentEffectiveStats(opponent: BattleOpponent) {
           ? getEffectiveStat(stat.value, opponent.stages[staged.name])
           : stat.value,
       ];
-    })
+    }),
   );
 }
