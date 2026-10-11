@@ -1,5 +1,9 @@
+import PokemonMoveExecutionDialog, {
+  BattleResultView,
+} from "./PokemonMoveExecutionDialog";
+import { getCurrentHp } from "@/lib/pokemonStats";
 import { useState } from "react";
-import { Plus, RefreshCw } from "lucide-react";
+import { Plus, RefreshCw, Swords } from "lucide-react";
 import { toast } from "sonner";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { store } from "@/store/store";
@@ -324,6 +328,10 @@ export default function PokemonMovesPanel({
     state.party.pokemons.find((p) => p.captureId === captureId),
   );
   const [choice, setChoice] = useState<Choice | null>(null);
+  const [executingMoveId, setExecutingMoveId] = useState<number | null>(null);
+  const opponent = useAppSelector((state) => state.party.opponent);
+  const lastResult = useAppSelector((state) => state.party.lastBattleResult);
+
   if (!capture) return null;
   const moves = capture.moves ?? [];
   const used = Math.max(
@@ -361,6 +369,20 @@ export default function PokemonMovesPanel({
             <Button
               type="button"
               size="sm"
+              className="mt-auto w-full gap-2"
+              disabled={
+                !opponent ||
+                getCurrentHp(capture.pokemon) <= 0 ||
+                (opponent.kind === "wild" &&
+                  getCurrentHp(opponent.pokemon) <= 0)
+              }
+              onClick={() => setExecutingMoveId(move.id)}
+            >
+              <Swords className="h-4 w-4 shrink-0" /> Usar movimiento
+            </Button>
+            <Button
+              type="button"
+              size="sm"
               variant="outline"
               className="mt-auto w-full gap-2"
               onClick={() => setChoice({ kind: "tm", replaceMoveId: move.id })}
@@ -392,8 +414,28 @@ export default function PokemonMovesPanel({
         movimientos aprendidos se guardan en tu equipo.
       </p>
       <p className="mt-1 text-xs text-muted-foreground">
-        La ejecución de ataques se habilitará en la siguiente etapa.
+        {opponent
+          ? "Cada confirmación ejecuta un nuevo movimiento. El último resultado queda guardado."
+          : "Selecciona un oponente para usar tus movimientos."}
       </p>
+      {lastResult?.captureId === captureId && (
+        <details className="mt-3 rounded-xl border p-3">
+          <summary className="cursor-pointer text-sm font-medium">
+            Último resultado · {lastResult.moveName}
+          </summary>
+          <div className="mt-3">
+            <BattleResultView result={lastResult} />
+          </div>
+        </details>
+      )}
+      {executingMoveId !== null && (
+        <PokemonMoveExecutionDialog
+          key={`${captureId}-${executingMoveId}`}
+          captureId={captureId}
+          moveId={executingMoveId}
+          onClose={() => setExecutingMoveId(null)}
+        />
+      )}
       {choice && (
         <MovePicker
           key={`${captureId}-${choice.kind}-${choice.kind === "tm" ? (choice.replaceMoveId ?? "new") : "free"}`}

@@ -7,13 +7,12 @@ import {
   ChevronDown,
   Pencil,
   Trash2,
+  History,
   RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
-
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,7 +22,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-
 import {
   Dialog,
   DialogContent,
@@ -32,13 +30,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-
 import { useAppContext } from "@/context/AppContext";
 import { useAppDispatch } from "@/store/hooks";
 import { resetGame } from "@/slices/partySlice";
+import PokemonActivityDialog from "@/components/pokemon/PokemonActivityDialog";
 
 const NICKNAME_STORAGE_KEY = "trainer_nickname";
-
 const getStoredNickname = (): string => {
   try {
     return localStorage.getItem(NICKNAME_STORAGE_KEY)?.trim() || "";
@@ -46,90 +43,75 @@ const getStoredNickname = (): string => {
     return "";
   }
 };
+type ActiveDialog = "nickname" | "reset" | "history" | null;
 
 export default function DropdownUser() {
   const { user, navigate, setPokemonDialogOpen } = useAppContext();
   const dispatch = useAppDispatch();
-
   const [nickname, setNickname] = useState(getStoredNickname);
   const [nicknameDraft, setNicknameDraft] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [resetDialogOpen, setResetDialogOpen] = useState(false);
-
+  const [activeDialog, setActiveDialog] = useState<ActiveDialog>(null);
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
-
+  const openingDialogRef = useRef(false);
+  const resetSubmittedRef = useRef(false);
   const backendFullName =
-    [user?.first_name, user?.last_name].filter(Boolean).join(" ") ||
-    "N/A";
-
+    [user?.first_name, user?.last_name].filter(Boolean).join(" ") || "N/A";
   const buttonName = nickname || user?.first_name || "N/A";
   const profileName = nickname || backendFullName;
 
-  const handleEditNickname = () => {
-    setNicknameDraft(nickname);
+  const openDialog = (dialog: Exclude<ActiveDialog, null>) => {
+    openingDialogRef.current = true;
+    if (dialog === "nickname") setNicknameDraft(nickname);
+    if (dialog === "reset") resetSubmittedRef.current = false;
     setMenuOpen(false);
-    setDialogOpen(true);
+    setActiveDialog(dialog);
   };
-
+  const closeDialog = () => {
+    openingDialogRef.current = false;
+    setActiveDialog(null);
+  };
   const handleSaveNickname = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-
     const value = nicknameDraft.trim();
-
     if (!value) {
       toast.error("Escribe un nickname.");
       return;
     }
-
     if (value.length > 30) {
       toast.error("El nickname debe tener máximo 30 caracteres.");
       return;
     }
-
     try {
       localStorage.setItem(NICKNAME_STORAGE_KEY, value);
-
       setNickname(value);
-      setDialogOpen(false);
-
+      closeDialog();
       toast.success("Nickname guardado.");
     } catch {
       toast.error("No se pudo guardar el nickname en este navegador.");
     }
   };
-
   const handleRemoveNickname = () => {
     try {
       localStorage.removeItem(NICKNAME_STORAGE_KEY);
-
       setNickname("");
       setNicknameDraft("");
-      setDialogOpen(false);
-
+      closeDialog();
       toast.success("Nickname eliminado.");
     } catch {
       toast.error("No se pudo eliminar el nickname.");
     }
   };
-
-  const handleOpenResetDialog = () => {
-    setMenuOpen(false);
-    setResetDialogOpen(true);
-  };
-
   const handleResetGame = () => {
+    if (resetSubmittedRef.current) return;
+    resetSubmittedRef.current = true;
     setPokemonDialogOpen(false);
-
-    // Vacía la party, elimina al oponente y habilita otro inicial.
-    // Redux Persist guarda el nuevo estado automáticamente.
     dispatch(resetGame());
-
-    setResetDialogOpen(false);
+    closeDialog();
     navigate("/dashboard");
-
     toast.success("Partida reiniciada.", {
-      description: "Ya puedes elegir un nuevo Pokémon inicial.",
+      description:
+        "Ya puedes elegir un nuevo Pokémon inicial. El reinicio quedó en el historial.",
     });
   };
 
@@ -147,86 +129,63 @@ export default function DropdownUser() {
               alt=""
               className="w-11 h-11 -ml-3 mb-1 -mr-1.5"
             />
-
-            <span className="mr-1 max-w-[140px] truncate">
-              {buttonName}
-            </span>
-
+            <span className="mr-1 max-w-[140px] truncate">{buttonName}</span>
             <ChevronDown className="h-4 w-4 shrink-0" />
           </Button>
         </DropdownMenuTrigger>
-
         <DropdownMenuContent
-          className="w-64 p-3"
+          className="w-64 max-h-[var(--radix-dropdown-menu-content-available-height)] overflow-y-auto p-3"
           onCloseAutoFocus={(event) => {
-            // Permite que el diálogo abierto reciba el foco.
-            if (dialogOpen || resetDialogOpen) {
-              event.preventDefault();
-            }
+            if (openingDialogRef.current) event.preventDefault();
           }}
         >
           <DropdownMenuLabel className="select-none">
             Pokémon Master Trainer
           </DropdownMenuLabel>
-
           <DropdownMenuSeparator />
-
           <DropdownMenuGroup>
             <div className="flex flex-col gap-1 text-sm">
               <div className="flex flex-row items-center">
                 <User className="ml-2 mr-2 h-4 w-4 shrink-0" />
-
-                <span className="min-w-0 break-words">
-                  {profileName}
-                </span>
-
+                <span className="min-w-0 break-words">{profileName}</span>
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
-                  onClick={handleEditNickname}
-                  aria-label={
-                    nickname ? "Editar nickname" : "Agregar nickname"
-                  }
+                  onClick={() => openDialog("nickname")}
+                  aria-label={nickname ? "Editar nickname" : "Agregar nickname"}
                   className="ml-1 h-8 w-8 shrink-0"
                 >
                   <Pencil className="h-3.5 w-3.5 text-brand" />
                 </Button>
               </div>
-
               <div className="flex flex-row items-center text-primary/60">
                 <Mail className="ml-2 mr-2 h-4 w-4 shrink-0" />
-
                 <span className="min-w-0 break-all">
                   {user?.email || "N/A"}
                 </span>
               </div>
             </div>
           </DropdownMenuGroup>
-
           <DropdownMenuSeparator />
-
+          <DropdownMenuItem onSelect={() => openDialog("history")}>
+            <History className="mr-2 h-4 w-4" />
+            <span>Historial de actividad</span>
+          </DropdownMenuItem>
           <DropdownMenuItem disabled>
             <img
               src="/ditto.png"
               alt=""
-              className="mr-2 h-[16.1px] w-[16.1px]"
+              className="h-[16.1px] w-[16.1px] mr-2"
             />
             <span>Simular poké-enemigo</span>
           </DropdownMenuItem>
-
           <DropdownMenuSeparator />
-
-          <DropdownMenuItem
-            onSelect={handleOpenResetDialog}
-            className="text-destructive focus:text-destructive"
-          >
+          <DropdownMenuItem onSelect={() => openDialog("reset")}>
             <RotateCcw className="mr-2 h-4 w-4" />
             <span>Reiniciar juego</span>
           </DropdownMenuItem>
-
           <DropdownMenuSeparator />
-
           <DropdownMenuItem asChild>
             <Link to="/logout">
               <LogOut className="mr-2 h-4 w-4" />
@@ -236,8 +195,12 @@ export default function DropdownUser() {
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {/* Diálogo para editar el nickname */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog
+        open={activeDialog === "nickname"}
+        onOpenChange={(open) => {
+          if (!open) closeDialog();
+        }}
+      >
         <DialogContent
           className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-[425px]"
           onCloseAutoFocus={(event) => {
@@ -249,42 +212,29 @@ export default function DropdownUser() {
             <DialogTitle>
               {nickname ? "Editar nickname" : "Agregar nickname"}
             </DialogTitle>
-
             <DialogDescription>
-              Elige el nombre de tu entrenador para este navegador.
-              Si lo eliminas, aparecerá el nombre de tu cuenta.
+              Elige el nombre de tu entrenador para este navegador. Si lo
+              eliminas, aparecerá el nombre de tu cuenta.
             </DialogDescription>
           </DialogHeader>
-
           <form onSubmit={handleSaveNickname}>
             <div className="space-y-3 py-4">
-              <label
-                htmlFor="trainer-nickname"
-                className="text-sm font-medium"
-              >
+              <label htmlFor="trainer-nickname" className="text-sm font-medium">
                 Nickname
               </label>
-
               <Input
                 id="trainer-nickname"
                 value={nicknameDraft}
-                onChange={(event) =>
-                  setNicknameDraft(event.target.value)
-                }
+                onChange={(event) => setNicknameDraft(event.target.value)}
                 placeholder="Tu nombre de entrenador"
                 autoComplete="off"
                 maxLength={30}
                 aria-describedby="nickname-length"
               />
-
-              <p
-                id="nickname-length"
-                className="text-xs text-muted-foreground"
-              >
+              <p id="nickname-length" className="text-xs text-muted-foreground">
                 Máximo 30 caracteres.
               </p>
             </div>
-
             <DialogFooter className="gap-2">
               {nickname && (
                 <Button
@@ -296,7 +246,6 @@ export default function DropdownUser() {
                   Eliminar
                 </Button>
               )}
-
               <Button type="submit" disabled={!nicknameDraft.trim()}>
                 Guardar
               </Button>
@@ -305,10 +254,11 @@ export default function DropdownUser() {
         </DialogContent>
       </Dialog>
 
-      {/* Confirmación para reiniciar la partida */}
       <Dialog
-        open={resetDialogOpen}
-        onOpenChange={setResetDialogOpen}
+        open={activeDialog === "reset"}
+        onOpenChange={(open) => {
+          if (!open) closeDialog();
+        }}
       >
         <DialogContent
           className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-[425px]"
@@ -319,24 +269,18 @@ export default function DropdownUser() {
         >
           <DialogHeader>
             <DialogTitle>¿Reiniciar el juego?</DialogTitle>
-
             <DialogDescription>
-              Se eliminará todo tu equipo, incluido el inicial, con sus
-              niveles, movimientos y estados. También se quitará al
-              oponente guardado. Podrás elegir un nuevo Pokémon inicial.
-              Esta acción no se puede deshacer.
+              Se eliminará todo tu equipo, incluido el inicial, con sus niveles,
+              movimientos y estados. También se quitará al oponente guardado.
+              Podrás elegir un nuevo Pokémon inicial. Esta acción no se puede
+              deshacer. El historial de las últimas 10 acciones se conserva y
+              registrará este reinicio.
             </DialogDescription>
           </DialogHeader>
-
           <DialogFooter className="gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setResetDialogOpen(false)}
-            >
+            <Button type="button" variant="outline" onClick={closeDialog}>
               Cancelar
             </Button>
-
             <Button
               type="button"
               variant="destructive"
@@ -347,6 +291,14 @@ export default function DropdownUser() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <PokemonActivityDialog
+        open={activeDialog === "history"}
+        onOpenChange={(open) => {
+          if (!open) closeDialog();
+        }}
+        returnFocusRef={menuTriggerRef}
+      />
     </>
   );
 }

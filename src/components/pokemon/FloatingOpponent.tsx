@@ -1,3 +1,4 @@
+import { isPokemonFainted } from "@/lib/pokemonCondition";
 import {
   useLayoutEffect,
   useRef,
@@ -20,7 +21,12 @@ import {
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { setBattleOpponent } from "@/slices/partySlice";
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from "@/components/ui/dialog";
 import type { Pokemon } from "@/types/pokemon";
 
@@ -93,7 +99,7 @@ function OpponentSprite({ pokemon }: { pokemon: Pokemon }) {
       alt={pokemon.name}
       draggable={false}
       onError={() => setSourceIndex((i) => i + 1)}
-      className="pointer-events-none h-[72px] w-[72px] shrink-0 select-none object-contain [image-rendering:pixelated]"
+      className={`pointer-events-none h-[72px] w-[72px] shrink-0 select-none object-contain [image-rendering:pixelated] ${isPokemonFainted(pokemon) ? "grayscale opacity-60" : ""}`}
     />
   ) : (
     <span className="px-1 text-center text-[10px] capitalize">
@@ -103,6 +109,7 @@ function OpponentSprite({ pokemon }: { pokemon: Pokemon }) {
 }
 
 function DraggableOpponent({ pokemon }: { pokemon: Pokemon }) {
+  const fainted = isPokemonFainted(pokemon);
   const dispatch = useAppDispatch();
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
   const cancelRemoveRef = useRef<HTMLButtonElement>(null);
@@ -236,7 +243,7 @@ function DraggableOpponent({ pokemon }: { pokemon: Pokemon }) {
           <button
             ref={buttonRef}
             type="button"
-            aria-label={`Rival: ${pokemon.name}, nivel ${pokemon.level ?? 50}, tipos ${pokemon.types.join(", ")}. Toca para elegir esquina o arrastra para mover.`}
+            aria-label={`Rival: ${pokemon.name}${fainted ? ", debilitado" : ""}, nivel ${pokemon.level ?? 50}, tipos ${pokemon.types.join(", ")}. Toca para elegir esquina o arrastra para mover.`}
             title="Arrastra al rival o toca para elegir esquina"
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
@@ -255,6 +262,14 @@ function DraggableOpponent({ pokemon }: { pokemon: Pokemon }) {
               visibility: position ? "visible" : "hidden",
             }}
           >
+            {fainted && (
+              <span
+                role="status"
+                className="absolute -top-2 left-1/2 -translate-x-1/2 rounded-full bg-destructive px-2 py-0.5 text-[10px] font-semibold text-destructive-foreground"
+              >
+                Fainted
+              </span>
+            )}
             <OpponentSprite key={pokemon.id} pokemon={pokemon} />
             <span className="text-[10px] font-semibold">
               Rival · Lv. {pokemon.level ?? 50}
@@ -345,11 +360,19 @@ function DraggableOpponent({ pokemon }: { pokemon: Pokemon }) {
           <DialogHeader>
             <DialogTitle>¿Quitar oponente?</DialogTitle>
             <DialogDescription>
-              Se quitará a <span className="font-semibold capitalize">{pokemon.name}</span> y se descartarán su nivel y sus modificadores guardados. Tu equipo no cambiará.
+              Se quitará a{" "}
+              <span className="font-semibold capitalize">{pokemon.name}</span> y
+              se descartarán su nivel y sus modificadores guardados. Tu equipo
+              no cambiará.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">
-            <Button ref={cancelRemoveRef} type="button" variant="outline" onClick={() => setRemoveDialogOpen(false)}>
+            <Button
+              ref={cancelRemoveRef}
+              type="button"
+              variant="outline"
+              onClick={() => setRemoveDialogOpen(false)}
+            >
               Cancelar
             </Button>
             <Button

@@ -1,3 +1,4 @@
+import { hasLivingHp, isPokemonFainted } from "@/lib/pokemonCondition";
 import PokemonHpControls from "./PokemonHpControls";
 import PokemonHpBar from "./PokemonHpBar";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
@@ -53,9 +54,11 @@ type Props = {
 function OpponentSummary({
   pokemon,
   showSprite = true,
+  fainted = false,
 }: {
   pokemon: Pokemon;
   showSprite?: boolean;
+  fainted?: boolean;
 }) {
   const [failed, setFailed] = useState(false);
   return (
@@ -71,7 +74,7 @@ function OpponentSummary({
               src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pokemon.id}.png`}
               alt={pokemon.name}
               onError={() => setFailed(true)}
-              className="h-20 w-20 object-contain [image-rendering:pixelated]"
+              className={`h-20 w-20 object-contain [image-rendering:pixelated] ${fainted ? "grayscale opacity-60" : ""}`}
             />
           )}
         </div>
@@ -85,6 +88,14 @@ function OpponentSummary({
             #{String(pokemon.id).padStart(3, "0")}
           </span>
         </div>
+        {fainted && (
+          <span
+            role="status"
+            className="inline-flex rounded-full bg-destructive px-2 py-1 text-xs font-semibold text-destructive-foreground"
+          >
+            Fainted · Debilitado
+          </span>
+        )}
         <PokemonTypeBadges types={pokemon.types} />
       </div>
     </div>
@@ -115,6 +126,25 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
   const requestVersion = useRef(0);
   const searchingRef = useRef(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const opponentFainted = isPokemonFainted(opponent?.pokemon);
+  const canCapture =
+    !!opponent &&
+    opponent.kind === "wild" &&
+    hasLivingHp(opponent.pokemon) &&
+    partySize < 6 &&
+    !needsStarter &&
+    !!opponent.encounterId &&
+    opponent.moves?.length === 3;
+
+  // Si el rival cae a cero con la confirmación abierta, invalida ese intento.
+  useEffect(() => {
+    if (
+      captureTargetId &&
+      (!canCapture || captureTargetId !== opponent?.encounterId)
+    ) {
+      setCaptureTargetId(null);
+    }
+  }, [captureTargetId, canCapture, opponent?.encounterId]);
 
   useEffect(
     () => () => {
@@ -259,6 +289,11 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
       toast.error("Este encuentro ya no está disponible.");
       return;
     }
+    if (!hasLivingHp(current.opponent.pokemon)) {
+      setCaptureTargetId(null);
+      toast.error("No puedes capturar un Pokémon debilitado.");
+      return;
+    }
     const name = current.opponent.pokemon.name;
     const action = captureWildOpponent(captureTargetId);
     dispatch(action);
@@ -347,6 +382,7 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
             key={opponent.pokemon.id}
             pokemon={opponent.pokemon}
             showSprite={false}
+            fainted={opponentFainted}
           />
           <div
             role="group"
@@ -441,23 +477,20 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
                 type="button"
                 ref={captureButtonRef}
                 className="w-full gap-2"
-                disabled={
-                  partySize >= 6 ||
-                  needsStarter ||
-                  !opponent.encounterId ||
-                  opponent.moves?.length !== 3
-                }
+                disabled={!canCapture}
                 onClick={() => setCaptureTargetId(opponent.encounterId ?? null)}
               >
                 <img src="/Pokeball-PNG.png" alt="" className="h-5 w-5" />{" "}
                 Captura conseguida
               </Button>
               <p className="text-xs text-muted-foreground">
-                {partySize >= 6
-                  ? "Equipo lleno (6/6). El salvaje seguirá guardado hasta que liberes un espacio."
-                  : needsStarter
-                    ? "Primero debes elegir tu Pokémon inicial."
-                    : "Usa este botón solo si la tirada de dados del tablero permitió capturarlo."}
+                {opponentFainted
+                  ? "Fainted: no puedes capturar un Pokémon con 0 HP."
+                  : partySize >= 6
+                    ? "Equipo lleno (6/6). El salvaje seguirá guardado hasta que liberes un espacio."
+                    : needsStarter
+                      ? "Primero debes elegir tu Pokémon inicial."
+                      : "Usa este botón solo si la tirada de dados del tablero permitió capturarlo."}
               </p>
             </div>
           )}
@@ -500,7 +533,9 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
 
       <Dialog
         open={
-          captureTargetId !== null && captureTargetId === opponent?.encounterId
+          canCapture &&
+          captureTargetId !== null &&
+          captureTargetId === opponent?.encounterId
         }
         onOpenChange={(next) => {
           if (!next) setCaptureTargetId(null);
@@ -514,7 +549,8 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
           }}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
-            (captureButtonRef.current ?? triggerRef.current)?.focus();
+            const target = captureButtonRef.current;
+            (target && !target.disabled ? target : triggerRef.current)?.focus();
           }}
         >
           <DialogHeader>
@@ -537,7 +573,7 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
             </Button>
             <Button
               type="button"
-              disabled={partySize >= 6 || needsStarter}
+              disabled={!canCapture}
               onClick={handleCapture}
             >
               Sí, agregar al equipo

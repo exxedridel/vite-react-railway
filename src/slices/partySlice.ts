@@ -1,3 +1,8 @@
+import { hasLivingHp } from "@/lib/pokemonCondition";
+import { describePartyActivity } from "@/lib/partyActivity";
+import type { ActivityEntry, ActivityMeta } from "@/types/activity";
+import { battleContextKey, resolveBattleMove } from "@/lib/battleEngine";
+import type { BattleResult, BattleRolls } from "@/types/battle";
 import {
   canChooseStarter,
   isStarterSpecies,
@@ -11,7 +16,12 @@ import {
   normalizeStages,
 } from "@/lib/battleModifiers";
 import type { BattleStageName } from "@/types/pokemon";
-import { createSlice, nanoid, type PayloadAction } from "@reduxjs/toolkit";
+import {
+  createSlice,
+  nanoid,
+  type PayloadAction,
+  type UnknownAction,
+} from "@reduxjs/toolkit";
 import {
   STATUS_OPTIONS,
   type CapturedPokemon,
@@ -29,15 +39,30 @@ import {
   neutralBattleStages,
 } from "@/lib/pokemonStats";
 
-type PartyState = {
+type ExecuteMoveInput = {
+  captureId: string;
+  moveId: number;
+  commandId: string;
+  expectedContext: string;
+  conditionsConfirmed: boolean;
+};
+export type PartyState = {
+  activityHistory?: ActivityEntry[];
+  activitySequence?: number;
+  lastBattleResult?: BattleResult | null;
+  resolvedBattleIds?: string[];
   pokemons: CapturedPokemon[];
   starterClaimed?: boolean;
   opponent: BattleOpponent | null;
 };
 const initialState: PartyState = {
+  activityHistory: [],
+  activitySequence: 0,
   pokemons: [],
   opponent: null,
   starterClaimed: false,
+  lastBattleResult: null,
+  resolvedBattleIds: [],
 };
 const primaryStatuses = new Set<PokemonStatus>(
   STATUS_OPTIONS.filter((s) => s.group === "primary").map((s) => s.id),
@@ -47,6 +72,58 @@ const partySlice = createSlice({
   name: "party",
   initialState,
   reducers: {
+    executePokemonMove: {
+      // Las tiradas pertenecen a la acción, nunca al render ni al reducer.
+      prepare(input: ExecuteMoveInput) {
+        return {
+          payload: {
+            ...input,
+            rolls: { accuracy: Math.random(), critical: Math.random() },
+          },
+        };
+      },
+      reducer(
+        state,
+        action: PayloadAction<ExecuteMoveInput & { rolls: BattleRolls }>,
+      ) {
+        const {
+          captureId,
+          moveId,
+          commandId,
+          expectedContext,
+          conditionsConfirmed,
+          rolls,
+        } = action.payload;
+        if (!commandId || state.resolvedBattleIds?.includes(commandId)) return;
+        const capture = state.pokemons.find((p) => p.captureId === captureId);
+        const opponent = state.opponent;
+        const move = capture?.moves?.find((m) => m.id === moveId);
+        if (!capture || !opponent || !move) return;
+        if (battleContextKey(capture, opponent) !== expectedContext) return;
+        const result = resolveBattleMove(
+          capture,
+          opponent,
+          move,
+          rolls,
+          commandId,
+          conditionsConfirmed,
+        );
+        if (result.outcome === "hit" && opponent.kind === "wild") {
+          const hp = opponent.pokemon.stats.find((s) => s.name === "hp");
+          if (hp) {
+            result.wildHpBefore = hp.value;
+            result.appliedDamage = Math.min(hp.value, result.damage);
+            hp.value = Math.max(0, hp.value - result.damage);
+            result.wildHpAfter = hp.value;
+          }
+        }
+        state.lastBattleResult = result;
+        state.resolvedBattleIds = [
+          ...(state.resolvedBattleIds ?? []),
+          commandId,
+        ];
+      },
+    },
     setBattleOpponent(state, action: PayloadAction<BattleOpponent | null>) {
       state.opponent = action.payload;
     },
@@ -67,7 +144,8 @@ const partySlice = createSlice({
         )
           return;
         if (state.pokemons.length >= 6 || canChooseStarter(state)) return;
-        if (!isLeveled(opponent.pokemon)) return;
+        if (!isLeveled(opponent.pokemon) || !hasLivingHp(opponent.pokemon))
+          return;
         const moves = opponent.moves ?? [];
         if (moves.length !== 3 || new Set(moves.map((m) => m.id)).size !== 3)
           return;
@@ -199,7 +277,13 @@ const partySlice = createSlice({
       capture.initialMovesChosen = used + 1;
     },
     resetGame() {
-      return { pokemons: [], opponent: null, starterClaimed: false };
+      return {
+        pokemons: [],
+        opponent: null,
+        starterClaimed: false,
+        lastBattleResult: null,
+        resolvedBattleIds: [],
+      };
     },
     removePokemon(state, action: PayloadAction<string>) {
       const capture = state.pokemons.find(
@@ -344,22 +428,125 @@ const partySlice = createSlice({
     },
   },
 });
-export const {
-  learnPokemonMoveWithTm,
-  setPokemonLearnset,
-  captureWildOpponent,
-  resetGame,
-  setBattleOpponent,
-  addPokemon,
-  learnInitialMove,
-  removePokemon,
-  migratePokemonSpecies,
-  changePokemonHp,
-  setPokemonLevel,
-  updatePokemonStats,
-  togglePokemonStatus,
-  clearPokemonStatuses,
-  changePokemonBattleStage,
-  resetPokemonBattleStages,
-} = partySlice.actions;
-export default partySlice.reducer;
+// El reloj se consulta al crear la acción. El reducer permanece determinista.
+// Mantiene los nombres, argumentos, .type y .match que ya utilizan los componentes.
+function withActivityMeta<T extends (...args: never[]) => { type: string }>(
+  creator: T,
+): T {
+  const wrapped = (...args: Parameters<T>) => {
+    const action = creator(...args);
+    return {
+      ...action,
+      meta: {
+        activity: {
+          id: nanoid(),
+          occurredAt: new Date().toISOString(),
+        } satisfies ActivityMeta,
+      },
+    };
+  };
+  return Object.assign(wrapped, creator) as T;
+}
+
+export const executePokemonMove = withActivityMeta(
+  partySlice.actions.executePokemonMove,
+);
+export const learnPokemonMoveWithTm = withActivityMeta(
+  partySlice.actions.learnPokemonMoveWithTm,
+);
+export const setPokemonLearnset = withActivityMeta(
+  partySlice.actions.setPokemonLearnset,
+);
+export const captureWildOpponent = withActivityMeta(
+  partySlice.actions.captureWildOpponent,
+);
+export const resetGame = withActivityMeta(partySlice.actions.resetGame);
+export const setBattleOpponent = withActivityMeta(
+  partySlice.actions.setBattleOpponent,
+);
+export const addPokemon = withActivityMeta(partySlice.actions.addPokemon);
+export const learnInitialMove = withActivityMeta(
+  partySlice.actions.learnInitialMove,
+);
+export const removePokemon = withActivityMeta(partySlice.actions.removePokemon);
+export const migratePokemonSpecies = withActivityMeta(
+  partySlice.actions.migratePokemonSpecies,
+);
+export const changePokemonHp = withActivityMeta(
+  partySlice.actions.changePokemonHp,
+);
+export const setPokemonLevel = withActivityMeta(
+  partySlice.actions.setPokemonLevel,
+);
+export const updatePokemonStats = withActivityMeta(
+  partySlice.actions.updatePokemonStats,
+);
+export const togglePokemonStatus = withActivityMeta(
+  partySlice.actions.togglePokemonStatus,
+);
+export const clearPokemonStatuses = withActivityMeta(
+  partySlice.actions.clearPokemonStatuses,
+);
+export const changePokemonBattleStage = withActivityMeta(
+  partySlice.actions.changePokemonBattleStage,
+);
+export const resetPokemonBattleStages = withActivityMeta(
+  partySlice.actions.resetPokemonBattleStages,
+);
+
+function activityMeta(action: UnknownAction): ActivityMeta | null {
+  if (
+    !action.meta ||
+    typeof action.meta !== "object" ||
+    !("activity" in action.meta)
+  )
+    return null;
+  const value = action.meta.activity;
+  if (
+    !value ||
+    typeof value !== "object" ||
+    !("id" in value) ||
+    !("occurredAt" in value)
+  )
+    return null;
+  if (
+    typeof value.id !== "string" ||
+    typeof value.occurredAt !== "string" ||
+    !Number.isFinite(Date.parse(value.occurredAt))
+  )
+    return null;
+  return { id: value.id, occurredAt: value.occurredAt };
+}
+
+export default function partyReducer(
+  state: PartyState | undefined,
+  action: UnknownAction,
+): PartyState {
+  const before = state ?? initialState;
+  let next = partySlice.reducer(state, action);
+  // Reiniciar la partida conserva las últimas acciones, incluso si se usa una acción sin meta.
+  if (action.type === partySlice.actions.resetGame.type) {
+    next = {
+      ...next,
+      activityHistory: before.activityHistory ?? [],
+      activitySequence: before.activitySequence ?? 0,
+    };
+  }
+  if (next === before) return next;
+  const meta = activityMeta(action);
+  if (!meta) return next;
+  const draft = describePartyActivity(action.type, before, next);
+  if (!draft) return next;
+  const sequence = (before.activitySequence ?? 0) + 1;
+  const entry: ActivityEntry = {
+    ...draft,
+    id: `${meta.id}:${sequence}`,
+    sequence,
+    occurredAt: meta.occurredAt,
+  };
+  return {
+    ...next,
+    activitySequence: sequence,
+    activityHistory: [entry, ...(before.activityHistory ?? [])].slice(0, 10),
+  };
+}
