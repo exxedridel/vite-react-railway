@@ -9,6 +9,7 @@ import {
   ArrowDownRight,
   ArrowUpLeft,
   ArrowUpRight,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,7 +17,11 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { useAppSelector } from "@/store/hooks";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { setBattleOpponent } from "@/slices/partySlice";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 import type { Pokemon } from "@/types/pokemon";
 
 type Corner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
@@ -98,6 +103,9 @@ function OpponentSprite({ pokemon }: { pokemon: Pokemon }) {
 }
 
 function DraggableOpponent({ pokemon }: { pokemon: Pokemon }) {
+  const dispatch = useAppDispatch();
+  const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
+  const cancelRemoveRef = useRef<HTMLButtonElement>(null);
   const [corner, setCorner] = useState<Corner>(readCorner);
   const [position, setPosition] = useState<Point | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -272,6 +280,9 @@ function DraggableOpponent({ pokemon }: { pokemon: Pokemon }) {
           </button>
         </PopoverTrigger>
         <PopoverContent
+          onCloseAutoFocus={(event) => {
+            if (removeDialogOpen) event.preventDefault();
+          }}
           side={corner.startsWith("bottom") ? "top" : "bottom"}
           align={corner.endsWith("right") ? "end" : "start"}
           sideOffset={8}
@@ -301,8 +312,59 @@ function DraggableOpponent({ pokemon }: { pokemon: Pokemon }) {
               </Button>
             ))}
           </div>
+          <div className="mt-3 border-t pt-3">
+            <Button
+              type="button"
+              variant="destructive"
+              className="w-full gap-2"
+              aria-haspopup="dialog"
+              onClick={() => {
+                setMenuOpen(false);
+                setRemoveDialogOpen(true);
+              }}
+            >
+              <Trash2 className="h-4 w-4" />
+              Quitar oponente
+            </Button>
+          </div>
         </PopoverContent>
       </Popover>
+
+      <Dialog open={removeDialogOpen} onOpenChange={setRemoveDialogOpen}>
+        <DialogContent
+          className="pointer-events-auto sm:max-w-[425px]"
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            cancelRemoveRef.current?.focus();
+          }}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            buttonRef.current?.focus();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>¿Quitar oponente?</DialogTitle>
+            <DialogDescription>
+              Se quitará a <span className="font-semibold capitalize">{pokemon.name}</span> y se descartarán su nivel y sus modificadores guardados. Tu equipo no cambiará.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button ref={cancelRemoveRef} type="button" variant="outline" onClick={() => setRemoveDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => {
+                setRemoveDialogOpen(false);
+                dispatch(setBattleOpponent(null));
+              }}
+            >
+              Quitar oponente
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
