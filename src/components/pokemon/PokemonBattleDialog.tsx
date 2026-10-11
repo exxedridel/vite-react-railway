@@ -1,3 +1,5 @@
+import BattleMusicControl from "./BattleMusicControl";
+import { getBattlePresence } from "@/lib/battlePresence";
 import PokemonMovesPanel from "./PokemonMovesPanel";
 import {
   useEffect,
@@ -97,6 +99,7 @@ function PokemonBattleDialog({ captureId, onClose }: Props) {
   // Todos los hooks se ejecutan antes de este retorno.
   if (!capturedPokemon) return null;
   const { pokemon } = capturedPokemon;
+  const presence = getBattlePresence(opponent);
   const currentLevel = pokemon.level ?? 50;
   const canEditLevel = pokemon.progressionVersion === 1;
   const handleChangeLevel = (amount: number) => {
@@ -147,8 +150,11 @@ function PokemonBattleDialog({ captureId, onClose }: Props) {
         >
           <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-widest text-brand">
-                En combate
+              <p
+                aria-live="polite"
+                className={`text-xs font-semibold uppercase tracking-widest ${presence.active ? "text-brand" : "text-muted-foreground"}`}
+              >
+                {presence.label}
               </p>
               <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-2">
                 <DialogTitle className="min-w-0 break-words text-2xl font-bold capitalize">
@@ -198,17 +204,20 @@ function PokemonBattleDialog({ captureId, onClose }: Props) {
                 <PokemonTypeBadges types={pokemon.types} />
               </div>
             </div>
-            <DialogClose asChild>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                className="h-11 w-11 shrink-0 rounded-full"
-                aria-label="Cerrar combate y volver al equipo"
-              >
-                <X className="h-5 w-5" />
-              </Button>
-            </DialogClose>
+            <div className="flex shrink-0 items-center gap-2">
+              <BattleMusicControl compact />
+              <DialogClose asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-11 w-11 shrink-0 rounded-full"
+                  aria-label="Cerrar combate y volver al equipo"
+                >
+                  <X className="h-5 w-5" />
+                </Button>
+              </DialogClose>
+            </div>
           </div>
         </header>
         {/* Contenido desplazable */}

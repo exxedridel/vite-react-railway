@@ -1,17 +1,20 @@
 import Navbar from "./Navbar/Navbar";
 import AddPokemonDialog from "@/components/pokemon/AddPokemonDialog";
+import { BattleMusicProvider } from "@/context/BattleMusicContext";
 
 function Layout({ children }) {
   return (
-    <div>
-      <Navbar />
+    <BattleMusicProvider>
+      <div>
+        <Navbar />
 
-      <div className="w-full mx-auto col-span-5 lg:p-12 py-2">
-        {children}
+        <div className="mx-auto w-full pt-1 pb-4">
+          {children}
+        </div>
+
+        <AddPokemonDialog />
       </div>
-
-      <AddPokemonDialog />
-    </div>
+    </BattleMusicProvider>
   );
 }
 

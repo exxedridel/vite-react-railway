@@ -7,7 +7,7 @@ import elegirClienteReducer from "@/slices/elegirClienteSlice";
 import partyReducer from "@/slices/partySlice";
 
 import { elegirClienteApi } from "@/api/elegirClienteApi";
-import { cobranzaApi } from "@/api/cobranzaApi";
+
 import { elegirClienteApiNoToken } from "@/api/elegirClienteApiNoToken";
 import { creditsApi } from "@/api/creditsApi";
 import { pokeApi } from "@/api/pokeApi";
@@ -18,7 +18,7 @@ const rootReducer = combineReducers({
   party: partyReducer,
 
   [elegirClienteApi.reducerPath]: elegirClienteApi.reducer,
-  [cobranzaApi.reducerPath]: cobranzaApi.reducer,
+ 
   [elegirClienteApiNoToken.reducerPath]: elegirClienteApiNoToken.reducer,
   [creditsApi.reducerPath]: creditsApi.reducer,
   [pokeApi.reducerPath]: pokeApi.reducer,
@@ -49,7 +49,7 @@ export const store = configureStore({
       },
     }).concat(
       elegirClienteApi.middleware,
-      cobranzaApi.middleware,
+    
       elegirClienteApiNoToken.middleware,
       creditsApi.middleware,
       pokeApi.middleware
