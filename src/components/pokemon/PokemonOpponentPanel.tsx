@@ -81,6 +81,9 @@ function OpponentSummary({
 
 export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
   const [open, setOpen] = useState(false);
+  const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
+  const cancelRemoveRef = useRef<HTMLButtonElement>(null);
+  const removeButtonRef = useRef<HTMLButtonElement>(null);
   const [search, setSearch] = useState("");
   const [candidate, setCandidate] = useState<Pokemon | null>(null);
   const [searching, setSearching] = useState(false);
@@ -248,7 +251,7 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
             HP máximo: {getMaxHp(opponent.pokemon) ?? "—"} · El rival controla
             su HP en su celular.
           </p>
-          <details className="rounded-xl border p-3" >
+          <details className="rounded-xl border p-3">
             <summary className="cursor-pointer text-sm font-medium">
               Stats y cambios durante el combate
             </summary>
@@ -273,7 +276,8 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
             variant="ghost"
             size="sm"
             className="gap-2"
-            onClick={() => onChange(null)}
+            ref={removeButtonRef}
+            onClick={() => setRemoveDialogOpen(true)}
           >
             <X className="h-4 w-4" /> Quitar oponente
           </Button>
@@ -283,6 +287,55 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
           Busca al Pokémon rival para cargar sus tipos y estadísticas.
         </p>
       )}
+
+      <Dialog
+        open={removeDialogOpen && opponent !== null}
+        onOpenChange={setRemoveDialogOpen}
+      >
+        <DialogContent
+          className="sm:max-w-[425px]"
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            cancelRemoveRef.current?.focus();
+          }}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            (removeButtonRef.current ?? triggerRef.current)?.focus();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>¿Quitar oponente?</DialogTitle>
+            <DialogDescription>
+              Se quitará a{" "}
+              <span className="font-semibold capitalize">
+                {opponent?.pokemon.name}
+              </span>{" "}
+              y se descartarán su nivel y sus modificadores guardados. Tu equipo
+              no cambiará.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button
+              ref={cancelRemoveRef}
+              type="button"
+              variant="outline"
+              onClick={() => setRemoveDialogOpen(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => {
+                onChange(null);
+                setRemoveDialogOpen(false);
+              }}
+            >
+              Quitar oponente
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent

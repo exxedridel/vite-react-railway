@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { Minus, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,7 +24,11 @@ import PokemonTypeBadges from "./PokemonTypeBadges";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { store } from "@/store/store";
 import PokemonPlayerPanel from "./PokemonPlayerPanel";
-import { changePokemonHp, setPokemonLevel } from "@/slices/partySlice";
+import {
+  changePokemonHp,
+  setPokemonLevel,
+  setBattleOpponent,
+} from "@/slices/partySlice";
 type Props = {
   captureId: string | null;
   onClose: () => void;
@@ -37,12 +47,21 @@ function PokemonBattleDialog({ captureId, onClose }: Props) {
     retry,
   } = usePokemonProgression(capturedPokemon?.pokemon);
   const [opponentView, setOpponentView] = useState(false);
-  const [opponent, setOpponent] = useState<BattleOpponent | null>(null);
+  // El mismo rival se comparte entre todos los Pokémon de este navegador.
+  // El fallback admite localStorage anterior a esta actualización.
+  const opponent = useAppSelector((state) => state.party.opponent ?? null);
+  const setOpponent: Dispatch<SetStateAction<BattleOpponent | null>> = (
+    update,
+  ) => {
+    const current = store.getState().party.opponent ?? null;
+    const next = typeof update === "function" ? update(current) : update;
+    // Redux recibe solo el resultado serializable, nunca la función.
+    dispatch(setBattleOpponent(next));
+  };
   const cryAudioRef = useRef<HTMLAudioElement | null>(null);
   const pokemonId = capturedPokemon?.pokemon.id;
   // Cada apertura comienza en vista propia.
   useEffect(() => {
-    setOpponent(null);
     setOpponentView(false);
   }, [captureId, pokemonId]);
   // Detiene el audio al cambiar de captura, cerrar o desmontar.
@@ -69,7 +88,6 @@ function PokemonBattleDialog({ captureId, onClose }: Props) {
   };
   const handleClose = () => {
     stopPokemonCry();
-    setOpponent(null);
     onClose();
   };
   const handleTogglePerspective = () => {

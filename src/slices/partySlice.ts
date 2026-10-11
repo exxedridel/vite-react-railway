@@ -1,3 +1,4 @@
+import type { BattleOpponent } from "@/lib/battleOpponent";
 import {
   clampStage,
   isBattleStageName,
@@ -22,8 +23,11 @@ import {
   neutralBattleStages,
 } from "@/lib/pokemonStats";
 
-type PartyState = { pokemons: CapturedPokemon[] };
-const initialState: PartyState = { pokemons: [] };
+type PartyState = {
+  pokemons: CapturedPokemon[];
+  opponent: BattleOpponent | null;
+};
+const initialState: PartyState = { pokemons: [], opponent: null };
 const primaryStatuses = new Set<PokemonStatus>(
   STATUS_OPTIONS.filter((s) => s.group === "primary").map((s) => s.id),
 );
@@ -32,6 +36,9 @@ const partySlice = createSlice({
   name: "party",
   initialState,
   reducers: {
+    setBattleOpponent(state, action: PayloadAction<BattleOpponent | null>) {
+      state.opponent = action.payload;
+    },
     addPokemon: {
       reducer(state, action: PayloadAction<CapturedPokemon>) {
         state.pokemons.push(action.payload);
@@ -184,6 +191,7 @@ const partySlice = createSlice({
   },
 });
 export const {
+  setBattleOpponent,
   addPokemon,
   removePokemon,
   migratePokemonSpecies,
