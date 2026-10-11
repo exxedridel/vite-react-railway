@@ -1,3 +1,4 @@
+import { canChooseStarter } from "@/lib/starterPokemon";
 import { useEffect, useRef, useState } from "react";
 import { Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -32,6 +33,7 @@ const Dashboard = () => {
   const [battleCaptureId, setBattleCaptureId] = useState<string | null>(null);
   const cryAudioRef = useRef<HTMLAudioElement | null>(null);
   const hasPokemon = party.length > 0;
+  const eligible = useAppSelector((state) => canChooseStarter(state.party));
 
   useEffect(
     () => () => {
@@ -40,6 +42,24 @@ const Dashboard = () => {
     },
     [],
   );
+
+  // Si se reinicia la partida, limpia también los diálogos y el audio locales.
+  useEffect(() => {
+    if (
+      battleCaptureId &&
+      !party.some((p) => p.captureId === battleCaptureId)
+    ) {
+      cryAudioRef.current?.pause();
+      cryAudioRef.current = null;
+      setBattleCaptureId(null);
+    }
+    if (
+      pokemonToRemove &&
+      !party.some((p) => p.captureId === pokemonToRemove.captureId)
+    ) {
+      setPokemonToRemove(null);
+    }
+  }, [party, battleCaptureId, pokemonToRemove]);
 
   const stopPokemonCry = () => {
     const audio = cryAudioRef.current;
@@ -62,7 +82,7 @@ const Dashboard = () => {
     setBattleCaptureId(null);
   };
   const handleConfirmRemove = () => {
-    if (!pokemonToRemove) return;
+    if (!pokemonToRemove || pokemonToRemove.origin === "starter") return;
     if (battleCaptureId === pokemonToRemove.captureId) handleCloseBattle();
     dispatch(removePokemon(pokemonToRemove.captureId));
     setPokemonToRemove(null);
@@ -88,19 +108,31 @@ const Dashboard = () => {
             </h1>
             <span className="-mt-12 text-3xl font-light">Digital Edition</span>
           </div>
-          <button
-            type="button"
-            onClick={() => setPokemonDialogOpen(true)}
-            className="card mt-8 w-full max-w-[800px] cursor-pointer select-none space-y-1 text-center"
-          >
-            <span className="flex flex-row items-center justify-center gap-1 text-lg font-bold">
-              <Plus className="mt-[0.5px] shrink-0 text-brand" />
-              <span>Add a pokémon</span>
-            </span>
-            <span className="block">
-              &nbsp;Anytime you own a token&nbsp; 🔴🟢🔵🟡
-            </span>
-          </button>
+          {eligible ? (
+            <button
+              type="button"
+              onClick={() => setPokemonDialogOpen(true)}
+              className="card mt-8 w-full max-w-[800px] cursor-pointer select-none space-y-1 text-center"
+            >
+              <span className="flex flex-row items-center justify-center gap-1 text-lg font-bold">
+                <Plus className="mt-[0.5px] shrink-0 text-brand" />
+                <span>Elige tu Pokémon inicial</span>
+              </span>
+              <span className="block">
+                Comienza en nivel 50 y elige hasta dos movimientos.
+              </span>
+            </button>
+          ) : (
+            <div className="mt-8 w-full max-w-[800px] rounded-2xl border bg-card p-5 text-center">
+              <p className="font-semibold">Tu equipo está vacío</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                La elección del inicial ya fue utilizada. Puedes reiniciar el
+                juego desde la barra de navegación para comenzar otra partida.
+                Los siguientes Pokémon se obtendrán mediante encuentros
+                salvajes; ese flujo se habilitará en la siguiente etapa.
+              </p>
+            </div>
+          )}
         </>
       )}
 
@@ -121,16 +153,18 @@ const Dashboard = () => {
                 >
                   <div className="flex items-center gap-2">
                     <PokemonHpBar pokemon={pokemon} />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 shrink-0"
-                      onClick={() => setPokemonToRemove(capturedPokemon)}
-                      aria-label={`Liberar a ${pokemon.name}`}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
+                    {capturedPokemon.origin !== "starter" && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0"
+                        onClick={() => setPokemonToRemove(capturedPokemon)}
+                        aria-label={`Liberar a ${pokemon.name}`}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
                   <button
                     id={`battle-trigger-${captureId}`}
@@ -164,6 +198,16 @@ const Dashboard = () => {
                   <div className="mt-2">
                     <PokemonTypeBadges types={pokemon.types} />
                   </div>
+                  {capturedPokemon.origin === "starter" &&
+                    (capturedPokemon.initialMovesChosen ?? 0) < 2 && (
+                      <button
+                        type="button"
+                        className="mt-3 text-left text-xs font-medium text-brand underline underline-offset-4"
+                        onClick={() => handleOpenBattle(capturedPokemon)}
+                      >
+                        Elegir movimientos iniciales
+                      </button>
+                    )}
                   <div className="mt-auto pt-3">
                     <PokemonStatsPopover capturedPokemon={capturedPokemon} />
                   </div>
@@ -188,7 +232,8 @@ const Dashboard = () => {
               <span className="font-semibold capitalize">
                 {pokemonToRemove?.pokemon.name}
               </span>
-              ? Volverá al stock de pokémons y se reiniciarán sus stats.
+              ? Se perderán sus estadísticas y movimientos guardados. Esta
+              acción no permite elegir otro inicial.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">

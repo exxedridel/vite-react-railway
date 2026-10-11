@@ -1,3 +1,4 @@
+import type { LearnedMove } from "@/types/moves";
 import {
   createLeveledPokemon,
   neutralBattleStages,
@@ -13,12 +14,20 @@ import type { BattleStageName, BattleStages, Pokemon } from "@/types/pokemon";
 export const BATTLE_STATS = BATTLE_STAT_OPTIONS;
 export type BattleStat = BattleStageName;
 export type StatStages = BattleStages;
-export type BattleOpponent = { pokemon: Pokemon; stages: StatStages };
+export type BattleOpponent = {
+  pokemon: Pokemon;
+  stages: StatStages;
+  // Los rivales guardados antes de esta versión se consideran de entrenador.
+  kind?: "trainer" | "wild";
+  encounterId?: string;
+  moves?: LearnedMove[];
+};
 export function createNeutralStages(): StatStages {
   return neutralBattleStages();
 }
 export function createBattleOpponent(pokemon: Pokemon): BattleOpponent {
   return {
+    kind: "trainer",
     pokemon: createLeveledPokemon(
       pokemon,
       pokemon.baseStats ?? pokemon.stats,

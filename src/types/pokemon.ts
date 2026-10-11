@@ -1,3 +1,5 @@
+import type { LearnedMove, PokemonLearnset } from "@/types/moves";
+
 export const STATUS_OPTIONS = [
   {
     id: "burned",
@@ -133,6 +135,7 @@ export type Pokemon = {
   // En la party: HP actual y los otros cinco stats calculados.
   // En la respuesta de pokeApi: valores base, hasta crear la captura.
   stats: PokemonStat[];
+  learnset?: PokemonLearnset;
   // Opcionales únicamente para admitir respuestas de API y capturas antiguas.
   progressionVersion?: 1;
   level?: number;
@@ -149,6 +152,9 @@ export type LeveledPokemon = Pokemon & {
 
 export type CapturedPokemon = {
   captureId: string;
+  origin?: "starter" | "wild" | "legacy";
+  moves?: LearnedMove[];
+  initialMovesChosen?: number;
   pokemon: Pokemon;
   statuses?: PokemonStatus[];
   // Respaldo de los valores previos a la migración; no interviene en el cálculo.

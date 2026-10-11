@@ -1,7 +1,19 @@
+import PokemonHpControls from "./PokemonHpControls";
+import PokemonHpBar from "./PokemonHpBar";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { store } from "@/store/store";
+import { captureWildOpponent } from "@/slices/partySlice";
+import { canChooseStarter } from "@/lib/starterPokemon";
+import { generateWildEncounter } from "@/lib/wildEncounter";
 import PokemonTypeBadges from "./PokemonTypeBadges";
 import { clampStage, normalizeStages } from "@/lib/battleModifiers";
 import PokemonBattleStatsControls from "./PokemonBattleStatsControls";
-import { createLeveledPokemon, STAT_NAMES, getMaxHp } from "@/lib/pokemonStats";
+import {
+  createLeveledPokemon,
+  STAT_NAMES,
+  getMaxHp,
+  getCurrentHp,
+} from "@/lib/pokemonStats";
 import {
   useEffect,
   useRef,
@@ -22,7 +34,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useLazyGetPokemonQuery } from "@/api/pokeApi";
+import { pokeApi, useLazyGetPokemonQuery } from "@/api/pokeApi";
 import type { Pokemon } from "@/types/pokemon";
 import {
   BATTLE_STATS,
@@ -80,6 +92,18 @@ function OpponentSummary({
 }
 
 export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
+  const dispatch = useAppDispatch();
+  const partySize = useAppSelector((state) => state.party.pokemons.length);
+  const needsStarter = useAppSelector((state) => canChooseStarter(state.party));
+  const [captureTargetId, setCaptureTargetId] = useState<string | null>(null);
+  const [encounterKind, setEncounterKind] = useState<"wild" | "trainer">(
+    "wild",
+  );
+  const [building, setBuilding] = useState(false);
+  const [progress, setProgress] = useState({ done: 0, total: 0 });
+  const generationRef = useRef<AbortController | null>(null);
+  const captureButtonRef = useRef<HTMLButtonElement>(null);
+  const cancelCaptureRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
   const cancelRemoveRef = useRef<HTMLButtonElement>(null);
@@ -95,11 +119,17 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
   useEffect(
     () => () => {
       requestVersion.current += 1;
+      generationRef.current?.abort();
     },
     [],
   );
 
   const handleOpenChange = (next: boolean) => {
+    generationRef.current?.abort();
+    generationRef.current = null;
+    setBuilding(false);
+    setProgress({ done: 0, total: 0 });
+    if (next) setEncounterKind("wild");
     requestVersion.current += 1;
     searchingRef.current = false;
     setSearching(false);
@@ -110,7 +140,7 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
 
   const handleSearch = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (searchingRef.current) return;
+    if (searchingRef.current || generationRef.current) return;
     const raw = search.trim().toLowerCase();
     if (!raw) {
       toast.error("Escribe el nombre o número del rival.");
@@ -122,7 +152,7 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
     setSearching(true);
     setCandidate(null);
     try {
-      const result = await getPokemon(query, true).unwrap();
+      const result = await getPokemon(query, false).unwrap();
       if (version !== requestVersion.current) return;
       const required = STAT_NAMES;
       if (
@@ -158,10 +188,117 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
     }
   };
 
-  const handleConfirm = () => {
-    if (!candidate || searching) return;
-    onChange(createBattleOpponent(candidate));
-    handleOpenChange(false);
+  const handleConfirm = async () => {
+    if (!candidate || searching || generationRef.current) return;
+    if (encounterKind === "trainer") {
+      onChange(createBattleOpponent(candidate));
+      handleOpenChange(false);
+      return;
+    }
+    const controller = new AbortController();
+    generationRef.current = controller;
+    setBuilding(true);
+    const version = requestVersion.current;
+    try {
+      const encounter = await generateWildEncounter(
+        candidate,
+        async (id) => {
+          const cached = pokeApi.endpoints.getMove.select(id)(
+            store.getState(),
+          ).data;
+          if (cached) return cached;
+          const request = dispatch(pokeApi.endpoints.getMove.initiate(id));
+          const abort = () => request.abort();
+          controller.signal.addEventListener("abort", abort, { once: true });
+          try {
+            return await request.unwrap();
+          } finally {
+            controller.signal.removeEventListener("abort", abort);
+            request.unsubscribe();
+          }
+        },
+        controller.signal,
+        (done, total) => {
+          if (!controller.signal.aborted && version === requestVersion.current)
+            setProgress({ done, total });
+        },
+      );
+      if (controller.signal.aborted || version !== requestVersion.current)
+        return;
+      onChange(encounter);
+      handleOpenChange(false);
+      toast.success("Encuentro salvaje preparado.");
+    } catch (error: unknown) {
+      if (controller.signal.aborted || version !== requestVersion.current)
+        return;
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "No se pudieron cargar los movimientos. Intenta nuevamente.",
+      );
+    } finally {
+      if (generationRef.current === controller) {
+        controller.abort();
+        generationRef.current = null;
+        setBuilding(false);
+      }
+    }
+  };
+
+  const handleCapture = () => {
+    if (!captureTargetId) return;
+    const current = store.getState().party;
+    if (current.pokemons.length >= 6) {
+      toast.error(
+        "Tu equipo está lleno. Libera un espacio antes de registrar la captura.",
+      );
+      return;
+    }
+    if (current.opponent?.encounterId !== captureTargetId) {
+      setCaptureTargetId(null);
+      toast.error("Este encuentro ya no está disponible.");
+      return;
+    }
+    const name = current.opponent.pokemon.name;
+    const action = captureWildOpponent(captureTargetId);
+    dispatch(action);
+    if (
+      !store
+        .getState()
+        .party.pokemons.some((p) => p.captureId === action.payload.captureId)
+    ) {
+      toast.error(
+        "No se pudo registrar la captura. Revisa que el encuentro tenga sus tres movimientos.",
+      );
+      return;
+    }
+    setCaptureTargetId(null);
+    toast.success(`${name} se unió a tu equipo.`, {
+      description: "Conserva su nivel, HP y sus tres movimientos.",
+    });
+  };
+
+  const changeWildHp = (amount: number) => {
+    if (!Number.isSafeInteger(amount)) return;
+    onChange((current) => {
+      if (!current || current.kind !== "wild") return current;
+      const maximum = getMaxHp(current.pokemon);
+      if (maximum === undefined) return current;
+      return {
+        ...current,
+        pokemon: {
+          ...current.pokemon,
+          stats: current.pokemon.stats.map((stat) =>
+            stat.name === "hp"
+              ? {
+                  ...stat,
+                  value: Math.max(0, Math.min(maximum, stat.value + amount)),
+                }
+              : stat,
+          ),
+        },
+      };
+    });
   };
 
   const changeStage = (stat: BattleStat, amount: number) => {
@@ -247,10 +384,83 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
               <Plus className="h-4 w-4" />
             </Button>
           </div>
-          <p className="text-xs text-muted-foreground">
-            HP máximo: {getMaxHp(opponent.pokemon) ?? "—"} · El rival controla
-            su HP en su celular.
-          </p>
+          {opponent.kind === "wild" ? (
+            <div className="space-y-4 rounded-xl border bg-muted/20 p-3">
+              <p className="text-xs font-semibold text-brand">
+                Pokémon salvaje
+              </p>
+              <PokemonHpControls
+                currentHp={getCurrentHp(opponent.pokemon)}
+                maxHp={getMaxHp(opponent.pokemon)}
+                onChangeHp={changeWildHp}
+              />
+              <PokemonHpBar pokemon={opponent.pokemon} />
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              HP máximo: {getMaxHp(opponent.pokemon) ?? "—"} · El rival controla
+              su HP en su celular.
+            </p>
+          )}
+          {opponent.kind === "wild" && (
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold">
+                Movimientos del salvaje · {opponent.moves?.length ?? 0}/4
+              </h3>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {(opponent.moves ?? []).map((move, index) => (
+                  <article
+                    key={move.id}
+                    className="space-y-2 rounded-xl border p-3"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-1">
+                      <h4 className="text-sm font-semibold">
+                        {move.displayName}
+                      </h4>
+                      {index === 0 && (
+                        <span className="text-[10px] font-semibold text-brand">
+                          STAB
+                        </span>
+                      )}
+                    </div>
+                    <PokemonTypeBadges types={[move.type]} />
+                    <p className="text-xs capitalize text-muted-foreground">
+                      {move.damageClass} · Power {move.power ?? "—"} · Accuracy{" "}
+                      {move.accuracy === null ? "—" : `${move.accuracy}%`}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {move.description}
+                    </p>
+                  </article>
+                ))}
+                <div className="flex min-h-20 items-center justify-center rounded-xl border border-dashed p-3 text-xs text-muted-foreground">
+                  Cuarto espacio reservado para TM/HM
+                </div>
+              </div>
+              <Button
+                type="button"
+                ref={captureButtonRef}
+                className="w-full gap-2"
+                disabled={
+                  partySize >= 6 ||
+                  needsStarter ||
+                  !opponent.encounterId ||
+                  opponent.moves?.length !== 3
+                }
+                onClick={() => setCaptureTargetId(opponent.encounterId ?? null)}
+              >
+                <img src="/Pokeball-PNG.png" alt="" className="h-5 w-5" />{" "}
+                Captura conseguida
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                {partySize >= 6
+                  ? "Equipo lleno (6/6). El salvaje seguirá guardado hasta que liberes un espacio."
+                  : needsStarter
+                    ? "Primero debes elegir tu Pokémon inicial."
+                    : "Usa este botón solo si la tirada de dados del tablero permitió capturarlo."}
+              </p>
+            </div>
+          )}
           <details className="rounded-xl border p-3">
             <summary className="cursor-pointer text-sm font-medium">
               Stats y cambios durante el combate
@@ -287,6 +497,54 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
           Busca al Pokémon rival para cargar sus tipos y estadísticas.
         </p>
       )}
+
+      <Dialog
+        open={
+          captureTargetId !== null && captureTargetId === opponent?.encounterId
+        }
+        onOpenChange={(next) => {
+          if (!next) setCaptureTargetId(null);
+        }}
+      >
+        <DialogContent
+          className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-[425px]"
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            cancelCaptureRef.current?.focus();
+          }}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            (captureButtonRef.current ?? triggerRef.current)?.focus();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>¿Captura conseguida?</DialogTitle>
+            <DialogDescription>
+              Confirma que tus dados permitieron atrapar a{" "}
+              {opponent?.pokemon.name}. Se unirá al equipo con su nivel actual,
+              HP y sus tres movimientos. Sus modificadores temporales de combate
+              volverán a cero y dejará de aparecer como oponente.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              ref={cancelCaptureRef}
+              onClick={() => setCaptureTargetId(null)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              disabled={partySize >= 6 || needsStarter}
+              onClick={handleCapture}
+            >
+              Sí, agregar al equipo
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={removeDialogOpen && opponent !== null}
@@ -339,19 +597,50 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
 
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent
-          className="max-h-[85dvh] overflow-y-auto sm:max-w-[425px]"
+          className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-[425px]"
           onCloseAutoFocus={(event) => {
             event.preventDefault();
             triggerRef.current?.focus();
           }}
         >
           <DialogHeader>
-            <DialogTitle>Seleccionar oponente</DialogTitle>
+            <DialogTitle>Preparar oponente</DialogTitle>
             <DialogDescription>
               Busca por nombre en inglés o número. El rival se carga con sus
               estadísticas calculadas a nivel 50.
             </DialogDescription>
           </DialogHeader>
+          <fieldset disabled={searching || building} className="space-y-2">
+            <legend className="text-sm font-medium">Tipo de encuentro</legend>
+            <div className="flex flex-wrap gap-4 text-sm">
+              <label className="flex cursor-pointer items-center gap-2">
+                <input
+                  type="radio"
+                  name="encounter-kind"
+                  value="wild"
+                  checked={encounterKind === "wild"}
+                  onChange={() => setEncounterKind("wild")}
+                />{" "}
+                Salvaje
+              </label>
+              <label className="flex cursor-pointer items-center gap-2">
+                <input
+                  type="radio"
+                  name="encounter-kind"
+                  value="trainer"
+                  checked={encounterKind === "trainer"}
+                  onChange={() => setEncounterKind("trainer")}
+                />{" "}
+                De otro entrenador
+              </label>
+            </div>
+          </fieldset>
+          {encounterKind === "wild" && (
+            <p className="text-xs text-muted-foreground">
+              Se generarán tres movimientos compatibles: un ataque STAB y dos
+              aleatorios. El cuarto espacio quedará para TM/HM.
+            </p>
+          )}
           <form onSubmit={handleSearch} className="space-y-2">
             <label htmlFor="opponent-search" className="text-sm font-medium">
               Nombre o número
@@ -364,7 +653,7 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
                   setSearch(event.target.value);
                   setCandidate(null);
                 }}
-                disabled={searching}
+                disabled={searching || building}
                 placeholder="charizard o 6"
                 autoComplete="off"
                 autoCapitalize="none"
@@ -373,7 +662,7 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
               />
               <Button
                 type="submit"
-                disabled={searching || !search.trim()}
+                disabled={searching || building || !search.trim()}
                 aria-label="Buscar oponente"
               >
                 {searching ? (
@@ -412,6 +701,12 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
               )}
             </div>
           )}
+          {building && (
+            <p role="status" className="text-sm text-muted-foreground">
+              Consultando movimientos: {progress.done}/{progress.total}. La
+              primera carga puede tardar unos segundos.
+            </p>
+          )}
           <DialogFooter className="gap-2">
             <Button
               type="button"
@@ -422,10 +717,14 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
             </Button>
             <Button
               type="button"
-              disabled={!candidate || searching}
+              disabled={!candidate || searching || building}
               onClick={handleConfirm}
             >
-              Usar este oponente
+              {building
+                ? "Preparando encuentro…"
+                : encounterKind === "wild"
+                  ? "Iniciar encuentro salvaje"
+                  : "Usar este oponente"}
             </Button>
           </DialogFooter>
         </DialogContent>

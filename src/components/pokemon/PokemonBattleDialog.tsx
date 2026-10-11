@@ -1,3 +1,4 @@
+import PokemonMovesPanel from "./PokemonMovesPanel";
 import {
   useEffect,
   useRef,
@@ -269,18 +270,7 @@ function PokemonBattleDialog({ captureId, onClose }: Props) {
               opponent={opponent}
               onChange={setOpponent}
             />
-            {/* Movimientos */}
-            <section
-              aria-label="Movimientos"
-              className="flex flex-1 flex-col rounded-2xl border bg-card p-4 text-card-foreground"
-            >
-              <h2 className="font-semibold">Movimientos</h2>
-              <div className="mt-3 rounded-xl border border-dashed p-4 text-center">
-                <p className="text-sm text-muted-foreground">
-                  Este Pokémon todavía no tiene movimientos configurados.
-                </p>
-              </div>
-            </section>
+            <PokemonMovesPanel captureId={capturedPokemon.captureId} />
           </div>
         </div>
       </DialogContent>

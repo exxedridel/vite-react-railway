@@ -1,3 +1,9 @@
+import {
+  canChooseStarter,
+  isStarterSpecies,
+  MOVE_VERSION_GROUP,
+} from "@/lib/starterPokemon";
+import type { PokemonMove } from "@/types/moves";
 import type { BattleOpponent } from "@/lib/battleOpponent";
 import {
   clampStage,
@@ -25,9 +31,14 @@ import {
 
 type PartyState = {
   pokemons: CapturedPokemon[];
+  starterClaimed?: boolean;
   opponent: BattleOpponent | null;
 };
-const initialState: PartyState = { pokemons: [], opponent: null };
+const initialState: PartyState = {
+  pokemons: [],
+  opponent: null,
+  starterClaimed: false,
+};
 const primaryStatuses = new Set<PokemonStatus>(
   STATUS_OPTIONS.filter((s) => s.group === "primary").map((s) => s.id),
 );
@@ -39,9 +50,58 @@ const partySlice = createSlice({
     setBattleOpponent(state, action: PayloadAction<BattleOpponent | null>) {
       state.opponent = action.payload;
     },
+    captureWildOpponent: {
+      prepare(encounterId: string) {
+        return { payload: { encounterId, captureId: nanoid() } };
+      },
+      reducer(
+        state,
+        action: PayloadAction<{ encounterId: string; captureId: string }>,
+      ) {
+        const opponent = state.opponent;
+        if (
+          !opponent ||
+          opponent.kind !== "wild" ||
+          !opponent.encounterId ||
+          opponent.encounterId !== action.payload.encounterId
+        )
+          return;
+        if (state.pokemons.length >= 6 || canChooseStarter(state)) return;
+        if (!isLeveled(opponent.pokemon)) return;
+        const moves = opponent.moves ?? [];
+        if (moves.length !== 3 || new Set(moves.map((m) => m.id)).size !== 3)
+          return;
+        if (
+          !moves.every((move) =>
+            opponent.pokemon.learnset?.moves.some((m) => m.id === move.id),
+          )
+        )
+          return;
+        state.pokemons.push({
+          captureId: action.payload.captureId,
+          origin: "wild",
+          // Conserva nivel y HP. Solo se limpian los modificadores temporales.
+          pokemon: { ...opponent.pokemon, battleStages: neutralBattleStages() },
+          statuses: [],
+          moves: moves.map((move) => ({ ...move, source: "wild" })),
+          initialMovesChosen: 0,
+        });
+        state.starterClaimed = true;
+        // Captura y retirada del rival ocurren en la misma acción: evita duplicados.
+        state.opponent = null;
+      },
+    },
     addPokemon: {
       reducer(state, action: PayloadAction<CapturedPokemon>) {
+        const { pokemon } = action.payload;
+        if (!canChooseStarter(state) || !isStarterSpecies(pokemon.id)) return;
+        if (
+          pokemon.learnset?.versionGroup !== MOVE_VERSION_GROUP ||
+          !pokemon.learnset.moves.length
+        )
+          return;
         state.pokemons.push(action.payload);
+        state.starterClaimed = true;
       },
       prepare(pokemon: Pokemon) {
         return {
@@ -49,11 +109,47 @@ const partySlice = createSlice({
             captureId: nanoid(),
             pokemon: createLeveledPokemon(pokemon),
             statuses: [],
+            origin: "starter",
+            moves: [],
+            initialMovesChosen: 0,
           } satisfies CapturedPokemon,
         };
       },
     },
+    learnInitialMove(
+      state,
+      action: PayloadAction<{ captureId: string; move: PokemonMove }>,
+    ) {
+      const { captureId, move } = action.payload;
+      const capture = state.pokemons.find((p) => p.captureId === captureId);
+      if (!capture || capture.origin !== "starter") return;
+      const moves = capture.moves ?? [];
+      const used = Math.max(
+        capture.initialMovesChosen ?? 0,
+        moves.filter((m) => m.source === "starter").length,
+      );
+      if (used >= 2 || moves.length >= 4 || moves.some((m) => m.id === move.id))
+        return;
+      if (
+        !capture.pokemon.learnset?.moves.some(
+          (m) => m.id === move.id && m.name === move.name,
+        )
+      )
+        return;
+      if (!["physical", "special", "status"].includes(move.damageClass)) return;
+      capture.moves = [...moves, { ...move, source: "starter" }];
+      capture.initialMovesChosen = used + 1;
+    },
+    resetGame() {
+      return { pokemons: [], opponent: null, starterClaimed: false };
+    },
     removePokemon(state, action: PayloadAction<string>) {
+      const capture = state.pokemons.find(
+        (p) => p.captureId === action.payload,
+      );
+      // El inicial solo se elimina cuando se reinicia toda la partida.
+      if (!capture || capture.origin === "starter") return;
+      state.starterClaimed = true;
       state.pokemons = state.pokemons.filter(
         (p) => p.captureId !== action.payload,
       );
@@ -191,8 +287,11 @@ const partySlice = createSlice({
   },
 });
 export const {
+  captureWildOpponent,
+  resetGame,
   setBattleOpponent,
   addPokemon,
+  learnInitialMove,
   removePokemon,
   migratePokemonSpecies,
   changePokemonHp,

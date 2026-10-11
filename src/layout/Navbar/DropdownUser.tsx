@@ -5,9 +5,9 @@ import {
   User,
   Mail,
   ChevronDown,
-  SquareAsterisk,
   Pencil,
   Trash2,
+  RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -34,6 +34,8 @@ import {
 } from "@/components/ui/dialog";
 
 import { useAppContext } from "@/context/AppContext";
+import { useAppDispatch } from "@/store/hooks";
+import { resetGame } from "@/slices/partySlice";
 
 const NICKNAME_STORAGE_KEY = "trainer_nickname";
 
@@ -46,17 +48,20 @@ const getStoredNickname = (): string => {
 };
 
 export default function DropdownUser() {
-  const { user } = useAppContext();
+  const { user, navigate, setPokemonDialogOpen } = useAppContext();
+  const dispatch = useAppDispatch();
 
   const [nickname, setNickname] = useState(getStoredNickname);
   const [nicknameDraft, setNicknameDraft] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
 
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
 
   const backendFullName =
-    [user?.first_name, user?.last_name].filter(Boolean).join(" ") || "N/A";
+    [user?.first_name, user?.last_name].filter(Boolean).join(" ") ||
+    "N/A";
 
   const buttonName = nickname || user?.first_name || "N/A";
   const profileName = nickname || backendFullName;
@@ -108,6 +113,26 @@ export default function DropdownUser() {
     }
   };
 
+  const handleOpenResetDialog = () => {
+    setMenuOpen(false);
+    setResetDialogOpen(true);
+  };
+
+  const handleResetGame = () => {
+    setPokemonDialogOpen(false);
+
+    // Vacía la party, elimina al oponente y habilita otro inicial.
+    // Redux Persist guarda el nuevo estado automáticamente.
+    dispatch(resetGame());
+
+    setResetDialogOpen(false);
+    navigate("/dashboard");
+
+    toast.success("Partida reiniciada.", {
+      description: "Ya puedes elegir un nuevo Pokémon inicial.",
+    });
+  };
+
   return (
     <>
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
@@ -134,8 +159,8 @@ export default function DropdownUser() {
         <DropdownMenuContent
           className="w-64 p-3"
           onCloseAutoFocus={(event) => {
-            // Deja que el diálogo reciba el foco al abrirse.
-            if (dialogOpen) {
+            // Permite que el diálogo abierto reciba el foco.
+            if (dialogOpen || resetDialogOpen) {
               event.preventDefault();
             }
           }}
@@ -160,7 +185,9 @@ export default function DropdownUser() {
                   variant="ghost"
                   size="icon"
                   onClick={handleEditNickname}
-                  aria-label={nickname ? "Editar nickname" : "Agregar nickname"}
+                  aria-label={
+                    nickname ? "Editar nickname" : "Agregar nickname"
+                  }
                   className="ml-1 h-8 w-8 shrink-0"
                 >
                   <Pencil className="h-3.5 w-3.5 text-brand" />
@@ -180,9 +207,22 @@ export default function DropdownUser() {
           <DropdownMenuSeparator />
 
           <DropdownMenuItem disabled>
-            {/* <SquareAsterisk className="mr-2 h-4 w-4" /> */}
-            <img src="/ditto.png" alt="" className="h-[16.1px] w-[16.1px] mr-2"/>
+            <img
+              src="/ditto.png"
+              alt=""
+              className="mr-2 h-[16.1px] w-[16.1px]"
+            />
             <span>Simular poké-enemigo</span>
+          </DropdownMenuItem>
+
+          <DropdownMenuSeparator />
+
+          <DropdownMenuItem
+            onSelect={handleOpenResetDialog}
+            className="text-destructive focus:text-destructive"
+          >
+            <RotateCcw className="mr-2 h-4 w-4" />
+            <span>Reiniciar juego</span>
           </DropdownMenuItem>
 
           <DropdownMenuSeparator />
@@ -196,9 +236,10 @@ export default function DropdownUser() {
         </DropdownMenuContent>
       </DropdownMenu>
 
+      {/* Diálogo para editar el nickname */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent
-          className="sm:max-w-[425px]"
+          className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-[425px]"
           onCloseAutoFocus={(event) => {
             event.preventDefault();
             menuTriggerRef.current?.focus();
@@ -227,7 +268,9 @@ export default function DropdownUser() {
               <Input
                 id="trainer-nickname"
                 value={nicknameDraft}
-                onChange={(event) => setNicknameDraft(event.target.value)}
+                onChange={(event) =>
+                  setNicknameDraft(event.target.value)
+                }
                 placeholder="Tu nombre de entrenador"
                 autoComplete="off"
                 maxLength={30}
@@ -259,6 +302,49 @@ export default function DropdownUser() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirmación para reiniciar la partida */}
+      <Dialog
+        open={resetDialogOpen}
+        onOpenChange={setResetDialogOpen}
+      >
+        <DialogContent
+          className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-[425px]"
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            menuTriggerRef.current?.focus();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>¿Reiniciar el juego?</DialogTitle>
+
+            <DialogDescription>
+              Se eliminará todo tu equipo, incluido el inicial, con sus
+              niveles, movimientos y estados. También se quitará al
+              oponente guardado. Podrás elegir un nuevo Pokémon inicial.
+              Esta acción no se puede deshacer.
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter className="gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setResetDialogOpen(false)}
+            >
+              Cancelar
+            </Button>
+
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleResetGame}
+            >
+              Sí, reiniciar juego
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
