@@ -3,7 +3,7 @@ import {
   isStarterSpecies,
   MOVE_VERSION_GROUP,
 } from "@/lib/starterPokemon";
-import type { PokemonMove } from "@/types/moves";
+import type { PokemonMove, PokemonLearnset } from "@/types/moves";
 import type { BattleOpponent } from "@/lib/battleOpponent";
 import {
   clampStage,
@@ -115,6 +115,64 @@ const partySlice = createSlice({
           } satisfies CapturedPokemon,
         };
       },
+    },
+    setPokemonLearnset(
+      state,
+      action: PayloadAction<{
+        captureId: string;
+        pokemonId: number;
+        learnset: PokemonLearnset;
+      }>,
+    ) {
+      const capture = state.pokemons.find(
+        (p) => p.captureId === action.payload.captureId,
+      );
+      if (!capture || capture.pokemon.id !== action.payload.pokemonId) return;
+      if (action.payload.learnset.versionGroup !== MOVE_VERSION_GROUP) return;
+      // Solo actualiza el catálogo de compatibilidad, nunca nivel, HP ni movimientos.
+      capture.pokemon.learnset = action.payload.learnset;
+    },
+    learnPokemonMoveWithTm(
+      state,
+      action: PayloadAction<{
+        captureId: string;
+        move: PokemonMove;
+        replaceMoveId?: number;
+      }>,
+    ) {
+      const { captureId, move, replaceMoveId } = action.payload;
+      const capture = state.pokemons.find((p) => p.captureId === captureId);
+      if (!capture) return;
+      const moves = capture.moves ?? [];
+      if (moves.some((m) => m.id === move.id)) return;
+      if (
+        !capture.pokemon.learnset?.moves.some(
+          (m) => m.id === move.id && m.name === move.name,
+        )
+      )
+        return;
+      if (!["physical", "special", "status"].includes(move.damageClass)) return;
+      const replacementIndex =
+        replaceMoveId === undefined
+          ? -1
+          : moves.findIndex((m) => m.id === replaceMoveId);
+      if (replaceMoveId === undefined && moves.length >= 4) return;
+      if (replaceMoveId !== undefined && replacementIndex < 0) return;
+      // Mantiene las elecciones gratuitas ya utilizadas, incluso al sustituirlas.
+      if (capture.origin === "starter") {
+        capture.initialMovesChosen = Math.max(
+          capture.initialMovesChosen ?? 0,
+          moves.filter((m) => m.source === "starter").length,
+        );
+      }
+      const learned = { ...move, source: "tm" as const };
+      if (replaceMoveId === undefined) {
+        capture.moves = [...moves, learned];
+      } else {
+        capture.moves = moves.map((m, index) =>
+          index === replacementIndex ? learned : m,
+        );
+      }
     },
     learnInitialMove(
       state,
@@ -287,6 +345,8 @@ const partySlice = createSlice({
   },
 });
 export const {
+  learnPokemonMoveWithTm,
+  setPokemonLearnset,
   captureWildOpponent,
   resetGame,
   setBattleOpponent,
