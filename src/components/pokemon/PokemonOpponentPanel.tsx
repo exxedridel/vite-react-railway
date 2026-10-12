@@ -1,3 +1,4 @@
+import { pokemonAllowed, regionSummary } from "@/lib/gameSettings";
 import { hasLivingHp, isPokemonFainted } from "@/lib/pokemonCondition";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { store } from "@/store/store";
@@ -90,6 +91,9 @@ function OpponentSummary({
 }
 export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
   const dispatch = useAppDispatch();
+  const allowedRegionsLabel = useAppSelector((state) =>
+    regionSummary(state.party),
+  );
   const partySize = useAppSelector((state) => state.party.pokemons.length);
   const needsStarter = useAppSelector((state) => canChooseStarter(state.party));
   const [captureTargetId, setCaptureTargetId] = useState<string | null>(null);
@@ -166,6 +170,15 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
     try {
       const result = await getPokemon(query, false).unwrap();
       if (version !== requestVersion.current) return;
+      if (
+        encounterKind === "wild" &&
+        !pokemonAllowed(store.getState().party, result.id)
+      ) {
+        toast.error(
+          `Esta especie no pertenece a las regiones de la partida: ${regionSummary(store.getState().party)}.`,
+        );
+        return;
+      }
       const required = STAT_NAMES;
       if (
         !required.every((name) =>
@@ -206,6 +219,10 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
       handleOpenChange(false);
       return;
     }
+    if (!pokemonAllowed(store.getState().party, candidate.id)) {
+      toast.error("Elige una especie de las regiones permitidas.");
+      return;
+    }
     const controller = new AbortController();
     generationRef.current = controller;
     setBuilding(true);
@@ -236,6 +253,10 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
       );
       if (controller.signal.aborted || version !== requestVersion.current)
         return;
+      if (!pokemonAllowed(store.getState().party, encounter.pokemon.id)) {
+        toast.error("La configuración cambió. Busca de nuevo al rival.");
+        return;
+      }
       onChange(encounter);
       handleOpenChange(false);
       toast.success("Encuentro salvaje preparado.");
@@ -539,8 +560,9 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
           </fieldset>
           {encounterKind === "wild" && (
             <p className="text-xs text-muted-foreground">
-              Se generarán tres movimientos compatibles: un ataque STAB y dos
-              aleatorios. El cuarto espacio quedará para TM/HM.
+              Regiones permitidas: {allowedRegionsLabel}. Se generarán tres
+              movimientos compatibles: un ataque STAB y dos aleatorios. El
+              cuarto espacio quedará para TM/HM.
             </p>
           )}
           <form onSubmit={handleSearch} className="space-y-2">

@@ -6,6 +6,7 @@ import type {
 } from "@/types/pokemon";
 
 export const INITIAL_LEVEL = 50;
+export const HP_MULTIPLIER = 1.3;
 export const STAT_NAMES = [
   "hp",
   "attack",
@@ -55,8 +56,13 @@ export function calculateStats(
   }
   return STAT_NAMES.map((name) => {
     const base = baseStats.find((s) => s.name === name)!.value;
-    const value =
+    const calculated =
       Math.floor((base * level) / 50) + (name === "hp" ? level + 10 : 5);
+
+    const value =
+      name === "hp"
+        ? Math.floor(calculated * HP_MULTIPLIER)
+        : calculated;
     if (!Number.isSafeInteger(value) || value < 1)
       throw new Error("Estadística fuera de rango.");
     return { name, value };
@@ -67,9 +73,9 @@ export function isLeveled(
 ): pokemon is LeveledPokemon {
   return Boolean(
     pokemon?.progressionVersion === 1 &&
-      pokemon.baseStats &&
-      pokemon.level &&
-      pokemon.battleStages,
+    pokemon.baseStats &&
+    pokemon.level &&
+    pokemon.battleStages,
   );
 }
 export function getCurrentHp(pokemon: Pokemon): number {

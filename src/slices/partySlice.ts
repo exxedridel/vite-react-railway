@@ -1,3 +1,10 @@
+import {
+  pokemonAllowed,
+  validRegions,
+  REGION_OPTIONS,
+  type GameSettings,
+  type RegionId,
+} from "@/lib/gameSettings";
 import { hasLivingHp } from "@/lib/pokemonCondition";
 import { describePartyActivity } from "@/lib/partyActivity";
 import type { ActivityEntry, ActivityMeta } from "@/types/activity";
@@ -51,6 +58,7 @@ type ExecuteMoveInput = {
   conditionsConfirmed: boolean;
 };
 export type PartyState = {
+  gameSettings?: GameSettings | null;
   activityHistory?: ActivityEntry[];
   activitySequence?: number;
   lastBattleResult?: BattleResult | null;
@@ -60,6 +68,7 @@ export type PartyState = {
   opponent: BattleOpponent | null;
 };
 const initialState: PartyState = {
+  gameSettings: null,
   activityHistory: [],
   activitySequence: 0,
   pokemons: [],
@@ -75,6 +84,17 @@ const partySlice = createSlice({
   name: "party",
   initialState,
   reducers: {
+    configureGame(state, action: PayloadAction<RegionId[]>) {
+      if (!canChooseStarter(state) || !validRegions(action.payload)) return;
+      state.gameSettings = {
+        version: 1,
+        regions: REGION_OPTIONS.map((r) => r.id).filter((id) =>
+          action.payload.includes(id),
+        ),
+        ruleset: "current",
+      };
+      state.opponent = null;
+    },
     executePokemonMove: {
       // Las tiradas pertenecen a la acción, nunca al render ni al reducer.
       prepare(input: ExecuteMoveInput) {
@@ -157,7 +177,20 @@ const partySlice = createSlice({
       },
     },
     setBattleOpponent(state, action: PayloadAction<BattleOpponent | null>) {
-      state.opponent = action.payload;
+      const next = action.payload;
+      const sameEncounter =
+        next &&
+        state.opponent &&
+        next.pokemon.id === state.opponent.pokemon.id &&
+        next.encounterId === state.opponent.encounterId &&
+        next.kind === state.opponent.kind;
+      if (
+        next?.kind === "wild" &&
+        !sameEncounter &&
+        !pokemonAllowed(state, next.pokemon.id)
+      )
+        return;
+      state.opponent = next;
     },
     captureWildOpponent: {
       prepare(encounterId: string) {
@@ -178,6 +211,7 @@ const partySlice = createSlice({
         if (state.pokemons.length >= 6 || canChooseStarter(state)) return;
         if (!isLeveled(opponent.pokemon) || !hasLivingHp(opponent.pokemon))
           return;
+        if (!pokemonAllowed(state, opponent.pokemon.id)) return;
         const moves = opponent.moves ?? [];
         if (moves.length !== 3 || new Set(moves.map((m) => m.id)).size !== 3)
           return;
@@ -204,7 +238,13 @@ const partySlice = createSlice({
     addPokemon: {
       reducer(state, action: PayloadAction<CapturedPokemon>) {
         const { pokemon } = action.payload;
-        if (!canChooseStarter(state) || !isStarterSpecies(pokemon.id)) return;
+        if (
+          !canChooseStarter(state) ||
+          !isStarterSpecies(pokemon.id) ||
+          !state.gameSettings ||
+          !pokemonAllowed(state, pokemon.id)
+        )
+          return;
         if (
           pokemon.learnset?.versionGroup !== MOVE_VERSION_GROUP ||
           !pokemon.learnset.moves.length
@@ -310,6 +350,7 @@ const partySlice = createSlice({
     },
     resetGame() {
       return {
+        gameSettings: null,
         pokemons: [],
         opponent: null,
         starterClaimed: false,
@@ -479,6 +520,8 @@ function withActivityMeta<T extends (...args: never[]) => { type: string }>(
   };
   return Object.assign(wrapped, creator) as T;
 }
+export const configureGame = partySlice.actions.configureGame;
+
 export const executePokemonMove = withActivityMeta(
   partySlice.actions.executePokemonMove,
 );
