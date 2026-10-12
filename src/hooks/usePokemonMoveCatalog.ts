@@ -1,3 +1,4 @@
+import { MOVE_VERSION_GROUP, isGenerationThreeMove } from "@/lib/gameVersion";
 import { useEffect, useState } from "react";
 import { pokeApi } from "@/api/pokeApi";
 import { store } from "@/store/store";
@@ -32,7 +33,10 @@ export function usePokemonMoveCatalog(captureId: string, pokemonId: number) {
         if (!capture) return;
         let learnset = capture.pokemon.learnset;
         // Permite usar TM también en equipos guardados antes de tener movimientos.
-        if (!learnset?.moves.length) {
+        if (
+          !learnset?.moves.length ||
+          learnset.versionGroup !== MOVE_VERSION_GROUP
+        ) {
           const request = store.dispatch(
             pokeApi.endpoints.getPokemon.initiate(String(pokemonId), {
               forceRefetch: true,
@@ -57,7 +61,9 @@ export function usePokemonMoveCatalog(captureId: string, pokemonId: number) {
           throw new Error(
             "No hay movimientos compatibles para esta especie en el catálogo actual.",
           );
-        const ids = [...new Set(learnset.moves.map((m) => m.id))];
+        const ids = [...new Set(learnset.moves.map((m) => m.id))].filter(
+          isGenerationThreeMove,
+        );
         let nextIndex = 0;
         let done = 0;
         let failures = 0;

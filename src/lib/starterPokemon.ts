@@ -75,7 +75,7 @@ export const STARTER_GROUPS = [
     ],
   },
 ] as const;
-export const MOVE_VERSION_GROUP = "scarlet-violet";
+export { MOVE_VERSION_GROUP } from "@/lib/gameVersion";
 const STARTER_IDS: ReadonlySet<number> = new Set(
   STARTER_GROUPS.flatMap((g) => g.pokemons.map((p) => p.id)),
 );

@@ -1,3 +1,4 @@
+import { APP_VERSION, RULESET_LABEL } from "@/lib/gameVersion";
 import {
   REGION_OPTIONS,
   pokemonAllowed,
@@ -186,9 +187,9 @@ export default function AddPokemonDialog() {
                 selección.
               </p>
               <p className="rounded-xl border p-3 text-sm text-muted-foreground">
-                Por ahora se conservan las reglas y el catálogo actuales. La
-                elección de edición, como Ruby/Sapphire, se añadirá en el
-                siguiente paso.
+                Catálogo: {RULESET_LABEL}, basado en Emerald. Solo movimientos
+                de generaciones I–III. Combate con las fórmulas adaptadas del
+                tablero. App v{APP_VERSION}.
               </p>
             </div>
             <DialogFooter className="shrink-0 gap-2 border-t pt-3">

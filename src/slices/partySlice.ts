@@ -1,4 +1,9 @@
 import {
+  GAME_DATA_VERSION,
+  RULESET_ID,
+  isGenerationThreeMove,
+} from "@/lib/gameVersion";
+import {
   pokemonAllowed,
   validRegions,
   REGION_OPTIONS,
@@ -58,6 +63,7 @@ type ExecuteMoveInput = {
   conditionsConfirmed: boolean;
 };
 export type PartyState = {
+  dataVersion?: string;
   gameSettings?: GameSettings | null;
   activityHistory?: ActivityEntry[];
   activitySequence?: number;
@@ -68,6 +74,7 @@ export type PartyState = {
   opponent: BattleOpponent | null;
 };
 const initialState: PartyState = {
+  dataVersion: GAME_DATA_VERSION,
   gameSettings: null,
   activityHistory: [],
   activitySequence: 0,
@@ -91,7 +98,7 @@ const partySlice = createSlice({
         regions: REGION_OPTIONS.map((r) => r.id).filter((id) =>
           action.payload.includes(id),
         ),
-        ruleset: "current",
+        ruleset: RULESET_ID,
       };
       state.opponent = null;
     },
@@ -126,7 +133,8 @@ const partySlice = createSlice({
         const move = (
           actorSide === "opponent" ? opponent?.moves : capture?.moves
         )?.find((m) => m.id === moveId);
-        if (!capture || !opponent || !move) return;
+        if (!capture || !opponent || !move || !isGenerationThreeMove(move.id))
+          return;
         if (battleContextKey(capture, opponent) !== expectedContext) return;
         if (
           getCurrentHp(capture.pokemon) <= 0 ||
@@ -212,8 +220,15 @@ const partySlice = createSlice({
         if (!isLeveled(opponent.pokemon) || !hasLivingHp(opponent.pokemon))
           return;
         if (!pokemonAllowed(state, opponent.pokemon.id)) return;
+        if (opponent.pokemon.learnset?.versionGroup !== MOVE_VERSION_GROUP)
+          return;
         const moves = opponent.moves ?? [];
-        if (moves.length !== 3 || new Set(moves.map((m) => m.id)).size !== 3)
+        if (!moves.every((move) => isGenerationThreeMove(move.id))) return;
+        if (
+          moves.length < 1 ||
+          moves.length > 3 ||
+          new Set(moves.map((m) => m.id)).size !== moves.length
+        )
           return;
         if (
           !moves.every((move) =>
@@ -278,7 +293,13 @@ const partySlice = createSlice({
         (p) => p.captureId === action.payload.captureId,
       );
       if (!capture || capture.pokemon.id !== action.payload.pokemonId) return;
-      if (action.payload.learnset.versionGroup !== MOVE_VERSION_GROUP) return;
+      if (
+        action.payload.learnset.versionGroup !== MOVE_VERSION_GROUP ||
+        !action.payload.learnset.moves.every((move) =>
+          isGenerationThreeMove(move.id),
+        )
+      )
+        return;
       // Solo actualiza el catálogo de compatibilidad, nunca nivel, HP ni movimientos.
       capture.pokemon.learnset = action.payload.learnset;
     },
@@ -291,8 +312,13 @@ const partySlice = createSlice({
       }>,
     ) {
       const { captureId, move, replaceMoveId } = action.payload;
+      if (!isGenerationThreeMove(move.id)) return;
       const capture = state.pokemons.find((p) => p.captureId === captureId);
-      if (!capture) return;
+      if (
+        !capture ||
+        capture.pokemon.learnset?.versionGroup !== MOVE_VERSION_GROUP
+      )
+        return;
       const moves = capture.moves ?? [];
       if (moves.some((m) => m.id === move.id)) return;
       if (
@@ -329,8 +355,14 @@ const partySlice = createSlice({
       action: PayloadAction<{ captureId: string; move: PokemonMove }>,
     ) {
       const { captureId, move } = action.payload;
+      if (!isGenerationThreeMove(move.id)) return;
       const capture = state.pokemons.find((p) => p.captureId === captureId);
-      if (!capture || capture.origin !== "starter") return;
+      if (
+        !capture ||
+        capture.origin !== "starter" ||
+        capture.pokemon.learnset?.versionGroup !== MOVE_VERSION_GROUP
+      )
+        return;
       const moves = capture.moves ?? [];
       const used = Math.max(
         capture.initialMovesChosen ?? 0,
@@ -350,6 +382,7 @@ const partySlice = createSlice({
     },
     resetGame() {
       return {
+        dataVersion: GAME_DATA_VERSION,
         gameSettings: null,
         pokemons: [],
         opponent: null,
@@ -594,6 +627,28 @@ export default function partyReducer(
   state: PartyState | undefined,
   action: UnknownAction,
 ): PartyState {
+  // redux-persist autoMergeLevel1 conserva un slice si cambió durante REHYDRATE.
+  // Reiniciamos solo party: no tokens, nickname, colores ni datos de otras apps.
+  if (action.type === "persist/REHYDRATE" && action.key === "root") {
+    const payload = action.payload;
+    if (payload && typeof payload === "object" && "party" in payload) {
+      const saved = payload.party;
+      if (
+        !saved ||
+        typeof saved !== "object" ||
+        !("dataVersion" in saved) ||
+        saved.dataVersion !== GAME_DATA_VERSION
+      ) {
+        return {
+          ...initialState,
+          pokemons: [],
+          opponent: null,
+          activityHistory: [],
+          resolvedBattleIds: [],
+        };
+      }
+    }
+  }
   const before = state ?? initialState;
   let next = partySlice.reducer(state, action);
   // Reiniciar la partida conserva las últimas acciones, incluso si se usa una acción sin meta.

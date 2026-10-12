@@ -1,3 +1,4 @@
+import { MOVE_VERSION_GROUP, isGenerationThreeMove } from "@/lib/gameVersion";
 import { nanoid } from "@reduxjs/toolkit";
 import {
   createBattleOpponent,
@@ -27,13 +28,15 @@ export function chooseWildMoves(
   const available = [
     ...new Map(
       catalog
-        .filter((move) => compatible.has(move.id))
+        .filter(
+          (move) => compatible.has(move.id) && isGenerationThreeMove(move.id),
+        )
         .map((move) => [move.id, move]),
     ).values(),
   ];
-  if (available.length < 3) {
+  if (!available.length) {
     throw new Error(
-      "Esta especie no tiene tres movimientos compatibles en el catálogo configurado.",
+      "No hay movimientos compatibles de Emerald disponibles para esta especie.",
     );
   }
   const attack = pokemon.stats.find((s) => s.name === "attack")?.value;
@@ -42,28 +45,26 @@ export function chooseWildMoves(
     throw new Error("Faltan los stats ofensivos del Pokémon.");
   const preferred =
     attack > special ? "physical" : special > attack ? "special" : null;
-  const stabMoves = available.filter(
+  const attacks = available.filter(
     (move) =>
-      pokemon.types.includes(move.type) &&
       (move.damageClass === "physical" || move.damageClass === "special") &&
-      (preferred === null || move.damageClass === preferred) &&
       move.power !== null &&
       move.power > 0,
   );
-  if (!stabMoves.length) {
-    throw new Error(
-      "Esta especie no tiene un ataque STAB con potencia definida en su categoría ofensiva más alta. No se generó el encuentro.",
-    );
-  }
-  // Prioriza potencia base >= 40. Si solo hay ataques más débiles, usa el mejor.
-  const competent = stabMoves.filter((move) => move.power! >= 40);
-  const strongestPower = Math.max(...stabMoves.map((move) => move.power!));
-  const guaranteed = shuffle(
-    competent.length
-      ? competent
-      : stabMoves.filter((move) => move.power === strongestPower),
-    random,
-  )[0];
+  const stab = attacks.filter((move) => pokemon.types.includes(move.type));
+  const preferredStab = stab.filter(
+    (move) => preferred === null || move.damageClass === preferred,
+  );
+  // Prioridad: STAB de su mejor categoría, otro STAB, otro ataque, cualquier move.
+  const pool = preferredStab.length
+    ? preferredStab
+    : stab.length
+      ? stab
+      : attacks.length
+        ? attacks
+        : available;
+  const competent = pool.filter((move) => (move.power ?? 0) >= 40);
+  const guaranteed = shuffle(competent.length ? competent : pool, random)[0];
   const otherMoves = shuffle(
     available.filter((move) => move.id !== guaranteed.id),
     random,
@@ -80,13 +81,21 @@ export async function generateWildEncounter(
   signal: AbortSignal,
   onProgress?: (done: number, total: number) => void,
 ): Promise<BattleOpponent> {
+  if (pokemon.learnset?.versionGroup !== MOVE_VERSION_GROUP)
+    throw new Error(
+      "Vuelve a buscar la especie para cargar su catálogo de Emerald.",
+    );
   const opponent = createBattleOpponent(pokemon);
   const ids = [
-    ...new Set(pokemon.learnset?.moves.map((move) => move.id) ?? []),
+    ...new Set(
+      pokemon.learnset?.moves
+        .map((move) => move.id)
+        .filter(isGenerationThreeMove) ?? [],
+    ),
   ];
-  if (ids.length < 3) {
+  if (!ids.length) {
     throw new Error(
-      "No hay suficientes movimientos compatibles en Scarlet/Violet para esta especie.",
+      "No se encontraron movimientos compatibles en Emerald para esta especie.",
     );
   }
   const catalog: PokemonMove[] = new Array(ids.length);

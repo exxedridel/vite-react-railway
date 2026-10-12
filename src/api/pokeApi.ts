@@ -1,3 +1,4 @@
+import { isGenerationThreeMove } from "@/lib/gameVersion";
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 import type { Pokemon } from "@/types/pokemon";
 import type { PokemonMove } from "@/types/moves";
@@ -22,7 +23,8 @@ type PokemonResponse = {
     }[];
   }[];
 };
-type MoveResponse = {
+export type MoveResponse = {
+  generation: NamedResource;
   id: number;
   name: string;
   names: { name: string; language: NamedResource }[];
@@ -42,7 +44,7 @@ type MoveResponse = {
 };
 
 export const pokeApi = createApi({
-  reducerPath: "pokeApi",
+  reducerPath: "pokeApiEmeraldV1_1",
   baseQuery: fetchBaseQuery({
     baseUrl: "https://pokeapi.co/api/v2/",
     timeout: 15000,
@@ -78,7 +80,7 @@ export const pokeApi = createApi({
               id: Number(move.url.match(/\/(\d+)\/?$/)?.[1]),
               name: move.name,
             }))
-            .filter((move) => Number.isSafeInteger(move.id) && move.id > 0)
+            .filter((move) => isGenerationThreeMove(move.id))
             .sort((a, b) => a.name.localeCompare(b.name)),
         },
       }),
@@ -86,6 +88,16 @@ export const pokeApi = createApi({
     getMove: builder.query<PokemonMove, number>({
       query: (id) => `move/${id}`,
       transformResponse: (response: MoveResponse): PokemonMove => {
+        if (
+          !isGenerationThreeMove(response.id) ||
+          !["generation-i", "generation-ii", "generation-iii"].includes(
+            response.generation.name,
+          )
+        ) {
+          throw new Error(
+            "Movimiento no permitido: el catálogo llega hasta la generación III.",
+          );
+        }
         const englishText = response.flavor_text_entries.filter(
           (e) => e.language.name === "en",
         );

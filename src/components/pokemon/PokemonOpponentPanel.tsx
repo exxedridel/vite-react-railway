@@ -124,7 +124,8 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
     partySize < 6 &&
     !needsStarter &&
     !!opponent.encounterId &&
-    opponent.moves?.length === 3;
+    (opponent.moves?.length ?? 0) >= 1 &&
+    (opponent.moves?.length ?? 0) <= 3;
   // Si el rival cae a cero con la confirmación abierta, invalida ese intento.
   useEffect(() => {
     if (
@@ -304,13 +305,13 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
         .party.pokemons.some((p) => p.captureId === action.payload.captureId)
     ) {
       toast.error(
-        "No se pudo registrar la captura. Revisa que el encuentro tenga sus tres movimientos.",
+        "No se pudo registrar la captura. Revisa que el encuentro tenga movimientos compatibles con Emerald.",
       );
       return;
     }
     setCaptureTargetId(null);
     toast.success(`${name} se unió a tu equipo.`, {
-      description: "Conserva su nivel, HP y sus tres movimientos.",
+      description: "Conserva su nivel, HP y sus movimientos.",
     });
   };
   const handleChangeLevel = (amount: number) => {
@@ -447,7 +448,7 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
             <DialogDescription>
               Confirma que tus dados permitieron atrapar a{" "}
               {opponent?.pokemon.name}. Se unirá al equipo con su nivel actual,
-              HP y sus tres movimientos. Sus modificadores temporales de combate
+              HP y sus movimientos. Sus modificadores temporales de combate
               volverán a cero y dejará de aparecer como oponente.
             </DialogDescription>
           </DialogHeader>
@@ -560,9 +561,9 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
           </fieldset>
           {encounterKind === "wild" && (
             <p className="text-xs text-muted-foreground">
-              Regiones permitidas: {allowedRegionsLabel}. Se generarán tres
-              movimientos compatibles: un ataque STAB y dos aleatorios. El
-              cuarto espacio quedará para TM/HM.
+              Regiones permitidas: {allowedRegionsLabel}. Se elegirán hasta tres
+              movimientos de Emerald, priorizando STAB cuando exista. Los
+              espacios restantes podrán completarse con TM/HM.
             </p>
           )}
           <form onSubmit={handleSearch} className="space-y-2">

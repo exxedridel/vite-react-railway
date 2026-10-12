@@ -9,8 +9,7 @@ export type RegionId = (typeof REGION_OPTIONS)[number]["id"];
 export type GameSettings = {
   version: 1;
   regions: RegionId[];
-  // La elección de edición es independiente y se implementará después.
-  ruleset: "current";
+  ruleset: "rse-emerald";
 };
 type SettingsParty = {
   gameSettings?: GameSettings | null;
