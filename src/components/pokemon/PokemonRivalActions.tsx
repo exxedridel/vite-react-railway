@@ -1,3 +1,4 @@
+import { getCuratedMove } from "@/lib/curatedMoveCatalog";
 import { useState, type Dispatch, type SetStateAction } from "react";
 import type { BattleOpponent } from "@/lib/battleOpponent";
 import { getCurrentHp, getMaxHp } from "@/lib/pokemonStats";
@@ -108,7 +109,7 @@ export default function PokemonRivalActions({
                       {move.accuracy ?? "—"}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {move.description}
+                      {getCuratedMove(move).description}
                     </p>
                     <Button
                       className="mt-auto"

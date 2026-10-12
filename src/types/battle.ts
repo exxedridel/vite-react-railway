@@ -6,6 +6,14 @@ export type BattleOutcome =
   | "blocked"
   | "manual";
 export type BattleResult = {
+  hpChanges?: {
+    role: "attacker" | "target";
+    name: string;
+    before: number;
+    after: number;
+  }[];
+  requestedHealing?: number;
+  appliedHealing?: number;
   targetHpBefore?: number;
   targetHpAfter?: number;
   actorSide?: "player" | "opponent";

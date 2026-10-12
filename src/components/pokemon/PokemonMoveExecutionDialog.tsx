@@ -1,3 +1,4 @@
+import { getCuratedMove, CURATED_MOVE_CATALOG } from "@/lib/curatedMoveCatalog";
 import { useRef, useState } from "react";
 import { nanoid } from "@reduxjs/toolkit";
 import { toast } from "sonner";
@@ -41,7 +42,23 @@ export function BattleResultView({ result }: { result: BattleResult }) {
               {result.critical ? "Crítico ×1.5" : "Daño sin crítico"}
             </p>
           </div>
-          {result.wildHpBefore !== null ? (
+          {result.hpChanges ? (
+            <div className="space-y-2 text-sm">
+              {result.hpChanges.map((change) => (
+                <p key={change.role}>
+                  HP de {change.name}: {change.before} → {change.after}.{" "}
+                  {change.role === "target"
+                    ? `Daño real aplicado: ${result.appliedDamage} HP.`
+                    : `Curación aplicada: ${result.appliedHealing ?? 0} HP.`}
+                </p>
+              ))}
+              <p className="text-xs text-muted-foreground">
+                La curación usa el daño real, se redondea hacia abajo (mínimo 1
+                si hubo daño) y se limita al HP máximo. Estos cambios se
+                guardaron en este navegador; no sincronizan otro celular.
+              </p>
+            </div>
+          ) : result.wildHpBefore !== null ? (
             <p className="text-sm">
               HP del salvaje: {result.wildHpBefore} → {result.wildHpAfter}. Se
               descontaron {result.appliedDamage} HP automáticamente.
@@ -134,9 +151,10 @@ export default function PokemonMoveExecutionDialog({
     capture && opponent
       ? battleParticipants(capture, opponent, actorSide)
       : null;
-  const move = (
+  const storedMove = (
     actorSide === "opponent" ? opponent?.moves : capture?.moves
   )?.find((m) => m.id === moveId);
+  const move = storedMove ? getCuratedMove(storedMove) : undefined;
   const needsConditionCheck =
     !!participants && requiresConditionCheck(participants.attacker);
   let manualReason: string | null = move ? getMoveSupportReason(move) : null;
@@ -234,7 +252,7 @@ export default function PokemonMoveExecutionDialog({
               </p>
               {move && (
                 <p className="text-sm text-muted-foreground">
-                  {move.description}
+                  {getCuratedMove(move).description}
                 </p>
               )}
               {(manualReason || hitChance === null) && !reason && (
@@ -280,14 +298,17 @@ export default function PokemonMoveExecutionDialog({
               <p className="text-xs text-muted-foreground">
                 El cálculo contempla tipos, nivel, etapas de stats, quemadura y
                 crítico. No contempla habilidades, objetos, clima ni terreno.
-                Los efectos adicionales y los PP se controlan manualmente.
+                Los efectos del catálogo curado se aplican automáticamente. Los
+                demás efectos y los PP se controlan manualmente.
               </p>
               <p className="text-xs text-muted-foreground">
-                {actorSide === "opponent"
-                  ? "El daño directo se descontará automáticamente del Pokémon abierto en combate, una sola vez."
-                  : opponent?.kind === "wild"
-                    ? "El daño directo se descontará del HP del salvaje una sola vez."
-                    : "El resultado indicará cuánto debe restar el rival en su propio celular."}
+                {move && CURATED_MOVE_CATALOG[move.id]
+                  ? "Si cumple su condición y acierta, se descontará el daño y se recuperarán HP automáticamente en este navegador, una sola vez."
+                  : actorSide === "opponent"
+                    ? "El daño directo se descontará automáticamente del Pokémon abierto en combate, una sola vez."
+                    : opponent?.kind === "wild"
+                      ? "El daño directo se descontará del HP del salvaje una sola vez."
+                      : "El resultado indicará cuánto debe restar el rival en su propio celular."}
               </p>
             </>
           )}

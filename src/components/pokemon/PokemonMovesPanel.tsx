@@ -1,3 +1,4 @@
+import { getCuratedMove } from "@/lib/curatedMoveCatalog";
 import PokemonMoveExecutionDialog, {
   BattleResultView,
 } from "./PokemonMoveExecutionDialog";
@@ -71,6 +72,7 @@ function MoveTypeIcon({ type }: { type: string }) {
   );
 }
 function MoveDetails({ move }: { move: PokemonMove }) {
+  move = getCuratedMove(move);
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
@@ -96,7 +98,7 @@ function MoveDetails({ move }: { move: PokemonMove }) {
         </div>
       </dl>
       <p className="text-xs leading-relaxed text-muted-foreground">
-        {move.description}
+        {getCuratedMove(move).description}
       </p>
     </div>
   );

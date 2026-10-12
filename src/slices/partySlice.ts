@@ -1,3 +1,5 @@
+import { CURATED_MOVE_CATALOG } from "@/lib/curatedMoveCatalog";
+import { applyCuratedMoveEffects } from "@/lib/curatedMoveEffects";
 import {
   GAME_DATA_VERSION,
   RULESET_ID,
@@ -155,26 +157,34 @@ const partySlice = createSlice({
           conditionsConfirmed,
         );
         result.actorSide = actorSide;
-        if (
-          actorSide === "player" &&
-          result.outcome === "hit" &&
-          opponent.kind === "wild"
-        ) {
-          const hp = opponent.pokemon.stats.find((s) => s.name === "hp");
-          if (hp) {
-            result.wildHpBefore = hp.value;
-            result.appliedDamage = Math.min(hp.value, result.damage);
-            hp.value = Math.max(0, hp.value - result.damage);
-            result.wildHpAfter = hp.value;
+        if (result.outcome === "hit" && CURATED_MOVE_CATALOG[move.id]) {
+          applyCuratedMoveEffects(
+            result,
+            actorSide === "player" ? capture.pokemon : opponent.pokemon,
+            actorSide === "player" ? opponent.pokemon : capture.pokemon,
+          );
+        } else {
+          if (
+            actorSide === "player" &&
+            result.outcome === "hit" &&
+            opponent.kind === "wild"
+          ) {
+            const hp = opponent.pokemon.stats.find((s) => s.name === "hp");
+            if (hp) {
+              result.wildHpBefore = hp.value;
+              result.appliedDamage = Math.min(hp.value, result.damage);
+              hp.value = Math.max(0, hp.value - result.damage);
+              result.wildHpAfter = hp.value;
+            }
           }
-        }
-        if (actorSide === "opponent" && result.outcome === "hit") {
-          const hp = capture.pokemon.stats.find((stat) => stat.name === "hp");
-          if (hp) {
-            result.targetHpBefore = hp.value;
-            result.appliedDamage = Math.min(hp.value, result.damage);
-            hp.value = Math.max(0, hp.value - result.damage);
-            result.targetHpAfter = hp.value;
+          if (actorSide === "opponent" && result.outcome === "hit") {
+            const hp = capture.pokemon.stats.find((stat) => stat.name === "hp");
+            if (hp) {
+              result.targetHpBefore = hp.value;
+              result.appliedDamage = Math.min(hp.value, result.damage);
+              hp.value = Math.max(0, hp.value - result.damage);
+              result.targetHpAfter = hp.value;
+            }
           }
         }
         state.lastBattleResult = result;

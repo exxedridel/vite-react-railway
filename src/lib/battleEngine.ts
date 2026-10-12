@@ -4,7 +4,12 @@ import {
   normalizeStages,
 } from "@/lib/battleModifiers";
 import { getCurrentHp, isLeveled } from "@/lib/pokemonStats";
-import { MOVE_COMBAT_RULES } from "@/lib/moveCombatRules";
+import {
+  getCombatRule,
+  getCuratedMove,
+  getMoveRequirementFailure,
+  CURATED_MOVE_CATALOG,
+} from "@/lib/curatedMoveCatalog";
 import { typeEffectiveness } from "@/lib/typeEffectiveness";
 import type { BattleOpponent } from "@/lib/battleOpponent";
 import type { CapturedPokemon } from "@/types/pokemon";
@@ -25,7 +30,8 @@ export function requiresConditionCheck(capture: CapturedPokemon): boolean {
   );
 }
 export function getMoveSupportReason(move: PokemonMove): string | null {
-  const rule = MOVE_COMBAT_RULES[move.id];
+  move = getCuratedMove(move);
+  const rule = getCombatRule(move);
   if (!rule || rule.mode === "manual")
     return (
       rule?.manualReason ??
@@ -45,7 +51,8 @@ export function getMoveSupportReason(move: PokemonMove): string | null {
   return null;
 }
 export function criticalChance(move: PokemonMove): number {
-  const rule = MOVE_COMBAT_RULES[move.id];
+  move = getCuratedMove(move);
+  const rule = getCombatRule(move);
   if (
     move.damageClass === "status" ||
     getMoveSupportReason(move) ||
@@ -61,7 +68,8 @@ export function moveHitChance(
   opponent: BattleOpponent,
   move: PokemonMove,
 ): number | null {
-  const rule = MOVE_COMBAT_RULES[move.id];
+  move = getCuratedMove(move);
+  const rule = getCombatRule(move);
   if (!rule) return null;
   // Los movimientos de uno mismo/campo no consultan la evasión del rival.
   if (["self", "allySide", "foeSide", "all"].includes(rule.target)) return 100;
@@ -100,7 +108,8 @@ export function resolveBattleMove(
   conditionsConfirmed = false,
 ): BattleResult {
   const p = capture.pokemon;
-  const rule = MOVE_COMBAT_RULES[move.id];
+  move = getCuratedMove(move);
+  const rule = getCombatRule(move);
   const r: BattleResult = {
     id,
     captureId: capture.captureId,
@@ -159,6 +168,13 @@ export function resolveBattleMove(
     return stop("Resuelve primero los estados que pueden impedir actuar.");
   if (capture.statuses?.includes("taunted") && move.damageClass === "status")
     return stop("Taunt impide usar movimientos de estado.");
+  if (CURATED_MOVE_CATALOG[move.id] && getCurrentHp(opponent.pokemon) <= 0)
+    return stop("El objetivo está debilitado.");
+  const failedRequirement = getMoveRequirementFailure(
+    move.id,
+    opponent.statuses ?? [],
+  );
+  if (failedRequirement) return stop(failedRequirement, "miss");
   try {
     r.hitChance = moveHitChance(capture, opponent, move);
   } catch (error) {
@@ -269,7 +285,7 @@ export function resolveBattleMove(
     return stop("Daño fuera del rango numérico permitido.");
   r.outcome = "hit";
   r.message = r.critical ? "¡Golpe crítico!" : "El movimiento acertó.";
-  if (rule.hasExtraEffect)
+  if (rule?.hasExtraEffect)
     r.manualEffect = rule.manualEffectNote
       ? `Solo se resolvió el daño directo. ${rule.manualEffectNote}`
       : `Solo se resolvió el daño directo. Efectos adicionales, drenaje, retroceso o cambios de stats se resuelven manualmente: ${move.description}`;
@@ -295,6 +311,7 @@ export function battleParticipants(
     } satisfies CapturedPokemon,
     defender: {
       pokemon: capture.pokemon,
+      statuses: capture.statuses ?? [],
       stages: normalizeStages(capture.pokemon.battleStages),
       kind: "trainer" as const,
     },

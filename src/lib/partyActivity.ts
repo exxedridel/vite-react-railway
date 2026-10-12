@@ -95,7 +95,18 @@ export function describePartyActivity(
         ...(battle.manualEffect
           ? [`Efecto manual: ${battle.manualEffect}`]
           : []),
-        ...(battle.actorSide === "opponent" && battle.outcome === "hit"
+        ...(battle.hpChanges ?? []).map(
+          (change) =>
+            `HP de ${change.name}: ${change.before} → ${change.after} (${change.role === "target" ? "daño aplicado" : "curación"})`,
+        ),
+        ...(battle.appliedHealing !== undefined
+          ? [
+              `Curación: ${battle.appliedHealing} HP (mitad del daño real: ${battle.requestedHealing} HP, limitada por HP máximo).`,
+            ]
+          : []),
+        ...(!battle.hpChanges &&
+        battle.actorSide === "opponent" &&
+        battle.outcome === "hit"
           ? [
               battle.targetHpBefore !== undefined
                 ? `HP de tu Pokémon: ${battle.targetHpBefore} → ${battle.targetHpAfter} (−${battle.appliedDamage})`
