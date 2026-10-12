@@ -1,3 +1,4 @@
+import { getCuratedMove } from "@/lib/curatedMoveCatalog";
 import { isGenerationThreeMove } from "@/lib/gameVersion";
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 import type { Pokemon } from "@/types/pokemon";
@@ -110,7 +111,7 @@ export const pokeApi = createApi({
         const description = (flavor ?? effect ?? "Description not available.")
           .replace(/\$effect_chance/g, String(response.effect_chance ?? "?"))
           .replace(/\s+/g, " ");
-        return {
+        return getCuratedMove({
           id: response.id,
           name: response.name,
           displayName:
@@ -123,7 +124,7 @@ export const pokeApi = createApi({
           pp: response.pp,
           priority: response.priority,
           description,
-        };
+        });
       },
     }),
   }),

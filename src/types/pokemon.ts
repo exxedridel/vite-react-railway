@@ -20,7 +20,7 @@ export const STATUS_OPTIONS = [
     label: "Paralyzed",
     icon: "⚡",
     group: "primary",
-    rule: "Reduce la velocidad y puede impedir que el Pokémon actúe.",
+    rule: "En Gen 3 reduce Speed a 1/4 y tiene 25% de probabilidad de impedir actuar; resuelve el impedimento antes de confirmar el movimiento.",
   },
   {
     id: "asleep",
@@ -48,7 +48,7 @@ export const STATUS_OPTIONS = [
     label: "Confusion",
     icon: "🌀",
     group: "additional",
-    rule: "Al intentar actuar, tiene 1/3 de probabilidad de golpearse a sí mismo en lugar de ejecutar su movimiento. Se elimina al retirarse normalmente del combate.",
+    rule: "En Gen 3, al intentar actuar tiene 1/2 de probabilidad de golpearse a sí mismo en lugar de ejecutar su movimiento. Se elimina al retirarse normalmente del combate.",
   },
   {
     id: "infatuated",
@@ -62,7 +62,7 @@ export const STATUS_OPTIONS = [
     label: "Taunt",
     icon: "😤",
     group: "additional",
-    rule: "Impide utilizar movimientos de categoría Status durante 3 turnos de acción del afectado. Si ya había actuado al recibirlo, el turno de aplicación modifica el cómputo.",
+    rule: "En Gen 3 impide usar movimientos de categoría Status durante 2 turnos. Lleva el contador en el tablero y retira el estado al terminar.",
   },
   {
     id: "flinched",
@@ -76,7 +76,7 @@ export const STATUS_OPTIONS = [
     label: "Bound",
     icon: "🪢",
     group: "additional",
-    rule: "Normalmente impide cambiar o huir y resta 1/8 del HP máximo al final de cada turno durante 4–5 turnos. Objetos y otras excepciones pueden modificarlo.",
+    rule: "En Gen 3 impide cambiar o huir y resta 1/16 del HP máximo al final de cada turno durante 2–5 turnos. El daño residual y el contador se resuelven manualmente.",
   },
   {
     id: "trapped",
@@ -90,14 +90,14 @@ export const STATUS_OPTIONS = [
     label: "Disable",
     icon: "🚫",
     group: "additional",
-    rule: "Impide utilizar el último movimiento usado durante 4 turnos. Se debe identificar qué movimiento quedó desactivado.",
+    rule: "En Gen 3 impide utilizar el último movimiento durante 2–5 turnos. Identifica el movimiento desactivado y cuenta los turnos manualmente.",
   },
   {
     id: "encored",
     label: "Encore",
     icon: "🔁",
     group: "additional",
-    rule: "Obliga a repetir el último movimiento usado durante 3 turnos. Se debe identificar qué movimiento quedó fijado.",
+    rule: "En Gen 3 obliga a repetir el último movimiento durante 3–6 turnos. Identifica el movimiento fijado y cuenta los turnos manualmente.",
   },
   {
     id: "perish-song",

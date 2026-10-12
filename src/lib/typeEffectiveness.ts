@@ -13,6 +13,7 @@ const CHART: Record<string, Record<string, number>> = {
     steel: 0.5,
   },
   dark: {
+    steel: 0.5,
     dark: 0.5,
     fairy: 0.5,
     fighting: 0.5,
@@ -72,6 +73,7 @@ const CHART: Record<string, Record<string, number>> = {
     steel: 0.5,
   },
   ghost: {
+    steel: 0.5,
     dark: 0.5,
     ghost: 2,
     normal: 0,

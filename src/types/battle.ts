@@ -6,6 +6,15 @@ export type BattleOutcome =
   | "blocked"
   | "manual";
 export type BattleResult = {
+  damageType?: string;
+  resolvedMoveId?: number;
+  criticalMultiplier?: number;
+  effectMessages?: string[];
+  weatherMultiplier?: number;
+  hits?: { damage: number; critical: boolean }[];
+  crashDamage?: number;
+  presentHealing?: boolean;
+  executionOptions?: import("@/lib/moveCatalogTypes").MoveExecutionOptions;
   hpChanges?: {
     role: "attacker" | "target";
     name: string;
@@ -45,4 +54,8 @@ export type BattleResult = {
   burn: number;
   manualEffect: string | null;
 };
-export type BattleRolls = { accuracy: number; critical: number };
+export type BattleRolls = {
+  accuracy: number;
+  critical: number;
+  extra?: number[];
+};

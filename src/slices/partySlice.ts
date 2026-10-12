@@ -1,4 +1,4 @@
-import { CURATED_MOVE_CATALOG } from "@/lib/curatedMoveCatalog";
+import type { MoveExecutionOptions } from "@/lib/moveCatalogTypes";
 import { applyCuratedMoveEffects } from "@/lib/curatedMoveEffects";
 import {
   GAME_DATA_VERSION,
@@ -57,6 +57,7 @@ import {
   neutralBattleStages,
 } from "@/lib/pokemonStats";
 type ExecuteMoveInput = {
+  options?: MoveExecutionOptions;
   actorSide?: "player" | "opponent";
   captureId: string;
   moveId: number;
@@ -110,7 +111,11 @@ const partySlice = createSlice({
         return {
           payload: {
             ...input,
-            rolls: { accuracy: Math.random(), critical: Math.random() },
+            rolls: {
+              accuracy: Math.random(),
+              critical: Math.random(),
+              extra: Array.from({ length: 64 }, () => Math.random()),
+            },
           },
         };
       },
@@ -126,6 +131,7 @@ const partySlice = createSlice({
           conditionsConfirmed,
           actorSide = "player",
           rolls,
+          options = {},
         } = action.payload;
         if (!commandId || state.resolvedBattleIds?.includes(commandId)) return;
         const capture = state.pokemons.find((p) => p.captureId === captureId);
@@ -155,37 +161,46 @@ const partySlice = createSlice({
           rolls,
           commandId,
           conditionsConfirmed,
+          options,
         );
         result.actorSide = actorSide;
-        if (result.outcome === "hit" && CURATED_MOVE_CATALOG[move.id]) {
-          applyCuratedMoveEffects(
-            result,
-            actorSide === "player" ? capture.pokemon : opponent.pokemon,
-            actorSide === "player" ? opponent.pokemon : capture.pokemon,
+        const player = {
+          pokemon: capture.pokemon,
+          statuses: [...(capture.statuses ?? [])],
+          stages: normalizeStages(capture.pokemon.battleStages),
+        };
+        const rival = {
+          pokemon: opponent.pokemon,
+          statuses: [...(opponent.statuses ?? [])],
+          stages: normalizeStages(opponent.stages),
+        };
+        applyCuratedMoveEffects(
+          result,
+          actorSide === "player" ? player : rival,
+          actorSide === "player" ? rival : player,
+          rolls,
+        );
+        capture.statuses = player.statuses;
+        capture.pokemon.battleStages = player.stages;
+        opponent.statuses = rival.statuses;
+        opponent.stages = rival.stages;
+        if (
+          [215, 312].includes(result.resolvedMoveId ?? result.moveId) &&
+          result.outcome === "status" &&
+          actorSide === "player"
+        ) {
+          const primary = new Set<PokemonStatus>(
+            STATUS_OPTIONS.filter((option) => option.group === "primary").map(
+              (option) => option.id,
+            ),
           );
-        } else {
-          if (
-            actorSide === "player" &&
-            result.outcome === "hit" &&
-            opponent.kind === "wild"
-          ) {
-            const hp = opponent.pokemon.stats.find((s) => s.name === "hp");
-            if (hp) {
-              result.wildHpBefore = hp.value;
-              result.appliedDamage = Math.min(hp.value, result.damage);
-              hp.value = Math.max(0, hp.value - result.damage);
-              result.wildHpAfter = hp.value;
-            }
-          }
-          if (actorSide === "opponent" && result.outcome === "hit") {
-            const hp = capture.pokemon.stats.find((stat) => stat.name === "hp");
-            if (hp) {
-              result.targetHpBefore = hp.value;
-              result.appliedDamage = Math.min(hp.value, result.damage);
-              hp.value = Math.max(0, hp.value - result.damage);
-              result.targetHpAfter = hp.value;
-            }
-          }
+          for (const member of state.pokemons)
+            member.statuses = (member.statuses ?? []).filter(
+              (status) => !primary.has(status),
+            );
+          result.effectMessages?.push(
+            "Estados principales de todo tu equipo curados.",
+          );
         }
         state.lastBattleResult = result;
         state.resolvedBattleIds = [

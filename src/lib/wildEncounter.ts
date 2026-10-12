@@ -1,3 +1,4 @@
+import { getCuratedMove } from "@/lib/curatedMoveCatalog";
 import { MOVE_VERSION_GROUP, isGenerationThreeMove } from "@/lib/gameVersion";
 import { nanoid } from "@reduxjs/toolkit";
 import {
@@ -28,6 +29,7 @@ export function chooseWildMoves(
   const available = [
     ...new Map(
       catalog
+        .map(getCuratedMove)
         .filter(
           (move) => compatible.has(move.id) && isGenerationThreeMove(move.id),
         )

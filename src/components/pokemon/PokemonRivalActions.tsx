@@ -95,7 +95,7 @@ export default function PokemonRivalActions({
                 directo recibido se descuenta automáticamente.
               </p>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {(opponent.moves ?? []).map((move) => (
+                {(opponent.moves ?? []).map(getCuratedMove).map((move) => (
                   <article
                     key={move.id}
                     className="flex flex-col gap-2 rounded-xl border p-3"

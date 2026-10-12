@@ -1,3 +1,7 @@
+import PokemonMoveExecutionOptions, {
+  optionsProblem,
+} from "./PokemonMoveExecutionOptions";
+import type { MoveExecutionOptions } from "@/lib/moveCatalogTypes";
 import { getCuratedMove, CURATED_MOVE_CATALOG } from "@/lib/curatedMoveCatalog";
 import { useRef, useState } from "react";
 import { nanoid } from "@reduxjs/toolkit";
@@ -39,37 +43,18 @@ export function BattleResultView({ result }: { result: BattleResult }) {
               {result.damage} HP
             </p>
             <p className="text-sm">
-              {result.critical ? "Crítico ×1.5" : "Daño sin crítico"}
+              {result.critical
+                ? `Crítico ×${result.criticalMultiplier ?? 1.5}`
+                : "Daño sin crítico"}
             </p>
           </div>
-          {result.hpChanges ? (
-            <div className="space-y-2 text-sm">
-              {result.hpChanges.map((change) => (
-                <p key={change.role}>
-                  HP de {change.name}: {change.before} → {change.after}.{" "}
-                  {change.role === "target"
-                    ? `Daño real aplicado: ${result.appliedDamage} HP.`
-                    : `Curación aplicada: ${result.appliedHealing ?? 0} HP.`}
-                </p>
-              ))}
-              <p className="text-xs text-muted-foreground">
-                La curación usa el daño real, se redondea hacia abajo (mínimo 1
-                si hubo daño) y se limita al HP máximo. Estos cambios se
-                guardaron en este navegador; no sincronizan otro celular.
-              </p>
-            </div>
-          ) : result.wildHpBefore !== null ? (
+          {!result.hpChanges && (
             <p className="text-sm">
-              HP del salvaje: {result.wildHpBefore} → {result.wildHpAfter}. Se
-              descontaron {result.appliedDamage} HP automáticamente.
-            </p>
-          ) : (
-            <p className="text-sm">
-              {result.actorSide === "opponent"
-                ? result.targetHpBefore !== undefined
-                  ? `HP de ${result.opponentName}: ${result.targetHpBefore} → ${result.targetHpAfter}. Se descontaron ${result.appliedDamage} HP automáticamente.`
-                  : `Registro anterior: resta manualmente ${result.damage} HP a ${result.opponentName}.`
-                : `El otro jugador debe restar ${result.damage} HP en su celular, hasta un mínimo de 0.`}
+              {result.wildHpBefore !== null
+                ? `HP salvaje: ${result.wildHpBefore} → ${result.wildHpAfter}`
+                : result.targetHpBefore !== undefined
+                  ? `HP objetivo: ${result.targetHpBefore} → ${result.targetHpAfter}`
+                  : "Registro anterior: verifica si el daño fue aplicado manualmente."}
             </p>
           )}
           <details className="rounded-xl border p-3 text-xs">
@@ -94,12 +79,49 @@ export function BattleResultView({ result }: { result: BattleResult }) {
               <dt>Efectividad</dt>
               <dd>×{result.effectiveness}</dd>
               <dt>Crítico</dt>
-              <dd>×{result.critical ? 1.5 : 1}</dd>
+              <dd>
+                ×{result.critical ? (result.criticalMultiplier ?? 1.5) : 1}
+              </dd>
               <dt>Quemadura</dt>
               <dd>×{result.burn}</dd>
             </dl>
           </details>
         </>
+      )}
+      {result.hpChanges && (
+        <div className="space-y-2 text-sm">
+          {result.hpChanges.map((change) => (
+            <p key={change.role}>
+              HP de {change.name}: {change.before} → {change.after} (
+              {change.after - change.before >= 0 ? "+" : ""}
+              {change.after - change.before} HP).
+            </p>
+          ))}
+          {result.outcome === "hit" && (
+            <p>Daño real aplicado: {result.appliedDamage} HP.</p>
+          )}
+          {result.appliedHealing !== undefined && (
+            <p>Curación real: {result.appliedHealing} HP.</p>
+          )}
+        </div>
+      )}
+      {!!result.hits?.length && result.hits.length > 1 && (
+        <p className="text-sm">
+          {result.hits.length} golpes:{" "}
+          {result.hits
+            .map(
+              (h, i) =>
+                `${i + 1}: ${h.damage} HP${h.critical ? " (crítico)" : ""}`,
+            )
+            .join(" · ")}
+        </p>
+      )}
+      {!!result.effectMessages?.length && (
+        <ul className="list-disc space-y-1 pl-5 text-sm">
+          {result.effectMessages.map((message, index) => (
+            <li key={index}>{message}</li>
+          ))}
+        </ul>
       )}
       {result.hitChance !== null && (
         <p className="text-xs text-muted-foreground">
@@ -141,6 +163,9 @@ export default function PokemonMoveExecutionDialog({
     capture && opponent ? battleContextKey(capture, opponent) : "",
   );
   const [conditionsConfirmed, setConditionsConfirmed] = useState(false);
+  const [options, setOptions] = useState<MoveExecutionOptions>({
+    weather: "none",
+  });
   const submitted = useRef(false);
   const result = useAppSelector((state) =>
     state.party.lastBattleResult?.id === commandId
@@ -156,7 +181,7 @@ export default function PokemonMoveExecutionDialog({
   )?.find((m) => m.id === moveId);
   const move = storedMove ? getCuratedMove(storedMove) : undefined;
   const needsConditionCheck =
-    !!participants && requiresConditionCheck(participants.attacker);
+    !!participants && requiresConditionCheck(participants.attacker, moveId);
   let manualReason: string | null = move ? getMoveSupportReason(move) : null;
   let reason: string | null = null;
   let hitChance: number | null = null;
@@ -188,6 +213,7 @@ export default function PokemonMoveExecutionDialog({
           participants!.attacker,
           participants!.defender,
           move,
+          options,
         );
       } catch {
         manualReason = "Acierto y efecto pendientes de resolución manual.";
@@ -199,6 +225,7 @@ export default function PokemonMoveExecutionDialog({
       submitted.current ||
       result ||
       reason ||
+      optionsProblem(moveId, options) ||
       !move ||
       (needsConditionCheck && !conditionsConfirmed)
     )
@@ -212,6 +239,7 @@ export default function PokemonMoveExecutionDialog({
         commandId,
         expectedContext,
         conditionsConfirmed,
+        options,
       }),
     );
     if (store.getState().party.lastBattleResult?.id !== commandId) {
@@ -269,14 +297,34 @@ export default function PokemonMoveExecutionDialog({
               ) : (
                 <dl className="grid grid-cols-2 gap-2 rounded-xl bg-muted p-3 text-sm">
                   <dt>Acierto</dt>
-                  <dd>{hitChance === null ? "—" : percent(hitChance)}</dd>
+                  <dd>
+                    {moveId === 214
+                      ? "Depende del movimiento elegido"
+                      : hitChance === null
+                        ? "—"
+                        : percent(hitChance)}
+                  </dd>
                   <dt>Crítico si acierta</dt>
                   <dd>
-                    {move && !manualReason && hitChance !== null
-                      ? percent(criticalChance(move) * 100)
-                      : "Manual / no aplica"}
+                    {moveId === 214
+                      ? "Depende del movimiento elegido"
+                      : move && !manualReason && hitChance !== null
+                        ? percent(criticalChance(move) * 100)
+                        : "Manual / no aplica"}
                   </dd>
                 </dl>
+              )}
+              {move && (
+                <PokemonMoveExecutionOptions
+                  moveId={moveId}
+                  value={options}
+                  onChange={setOptions}
+                />
+              )}
+              {optionsProblem(moveId, options) && (
+                <p className="text-xs text-muted-foreground">
+                  {optionsProblem(moveId, options)}
+                </p>
               )}
               {needsConditionCheck && (
                 <label className="flex items-start gap-2 rounded-xl border p-3 text-sm">
@@ -297,13 +345,14 @@ export default function PokemonMoveExecutionDialog({
               )}
               <p className="text-xs text-muted-foreground">
                 El cálculo contempla tipos, nivel, etapas de stats, quemadura y
-                crítico. No contempla habilidades, objetos, clima ni terreno.
-                Los efectos del catálogo curado se aplican automáticamente. Los
-                demás efectos y los PP se controlan manualmente.
+                crítico de Gen 3. El clima se declara arriba; no contempla
+                habilidades, objetos ni terreno. Los efectos del catálogo curado
+                se aplican automáticamente. Los demás efectos y los PP se
+                controlan manualmente.
               </p>
               <p className="text-xs text-muted-foreground">
                 {move && CURATED_MOVE_CATALOG[move.id]
-                  ? "Si cumple su condición y acierta, se descontará el daño y se recuperarán HP automáticamente en este navegador, una sola vez."
+                  ? "La app aplicará los efectos automatizados en este navegador, una sola vez. Los pasos señalados como manuales se resuelven en el tablero."
                   : actorSide === "opponent"
                     ? "El daño directo se descontará automáticamente del Pokémon abierto en combate, una sola vez."
                     : opponent?.kind === "wild"
@@ -322,7 +371,9 @@ export default function PokemonMoveExecutionDialog({
               type="button"
               onClick={confirm}
               disabled={
-                !!reason || (needsConditionCheck && !conditionsConfirmed)
+                !!reason ||
+                !!optionsProblem(moveId, options) ||
+                (needsConditionCheck && !conditionsConfirmed)
               }
             >
               Confirmar movimiento

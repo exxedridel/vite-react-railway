@@ -88,6 +88,7 @@ export function describePartyActivity(
       details: [
         `Origen: ${battle.actorSide === "opponent" ? "Encuentro salvaje" : "Tu equipo"}`,
         `Objetivo: ${battle.opponentName}`,
+        ...(battle.effectMessages ?? []),
         `${didExecute ? "Resultado" : "No ejecutado"}: ${battle.message}`,
         ...(battle.outcome === "hit"
           ? [`Daño: ${battle.damage} HP${battle.critical ? " · Crítico" : ""}`]
@@ -97,11 +98,11 @@ export function describePartyActivity(
           : []),
         ...(battle.hpChanges ?? []).map(
           (change) =>
-            `HP de ${change.name}: ${change.before} → ${change.after} (${change.role === "target" ? "daño aplicado" : "curación"})`,
+            `HP de ${change.name}: ${change.before} → ${change.after} (${change.after - change.before >= 0 ? "+" : ""}${change.after - change.before} HP)`,
         ),
         ...(battle.appliedHealing !== undefined
           ? [
-              `Curación: ${battle.appliedHealing} HP (mitad del daño real: ${battle.requestedHealing} HP, limitada por HP máximo).`,
+              `Curación: ${battle.appliedHealing} HP (solicitada: ${battle.requestedHealing} HP, limitada por HP máximo).`,
             ]
           : []),
         ...(!battle.hpChanges &&
