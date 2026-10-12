@@ -6,6 +6,7 @@ import { store } from "@/store/store";
 import { executePokemonMove } from "@/slices/partySlice";
 import {
   battleContextKey,
+  battleParticipants,
   criticalChance,
   getMoveSupportReason,
   moveHitChance,
@@ -22,9 +23,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-
 const percent = (value: number) => `${Number(value.toFixed(2))}%`;
-
 export function BattleResultView({ result }: { result: BattleResult }) {
   return (
     <div className="space-y-3" aria-live="polite">
@@ -49,8 +48,11 @@ export function BattleResultView({ result }: { result: BattleResult }) {
             </p>
           ) : (
             <p className="text-sm">
-              El otro jugador debe restar {result.damage} HP en su celular,
-              hasta un mínimo de 0.
+              {result.actorSide === "opponent"
+                ? result.targetHpBefore !== undefined
+                  ? `HP de ${result.opponentName}: ${result.targetHpBefore} → ${result.targetHpAfter}. Se descontaron ${result.appliedDamage} HP automáticamente.`
+                  : `Registro anterior: resta manualmente ${result.damage} HP a ${result.opponentName}.`
+                : `El otro jugador debe restar ${result.damage} HP en su celular, hasta un mínimo de 0.`}
             </p>
           )}
           <details className="rounded-xl border p-3 text-xs">
@@ -101,12 +103,13 @@ export function BattleResultView({ result }: { result: BattleResult }) {
     </div>
   );
 }
-
 export default function PokemonMoveExecutionDialog({
   captureId,
   moveId,
   onClose,
+  actorSide = "player",
 }: {
+  actorSide?: "player" | "opponent";
   captureId: string;
   moveId: number;
   onClose: () => void;
@@ -127,14 +130,23 @@ export default function PokemonMoveExecutionDialog({
       ? state.party.lastBattleResult
       : null,
   );
-  const move = capture?.moves?.find((m) => m.id === moveId);
-  const needsConditionCheck = !!capture && requiresConditionCheck(capture);
+  const participants =
+    capture && opponent
+      ? battleParticipants(capture, opponent, actorSide)
+      : null;
+  const move = (
+    actorSide === "opponent" ? opponent?.moves : capture?.moves
+  )?.find((m) => m.id === moveId);
+  const needsConditionCheck =
+    !!participants && requiresConditionCheck(participants.attacker);
+  let manualReason: string | null = move ? getMoveSupportReason(move) : null;
   let reason: string | null = null;
   let hitChance: number | null = null;
   if (!capture || !opponent || !move)
     reason = "Selecciona un Pokémon, un movimiento aprendido y un oponente.";
   else {
-    reason = getMoveSupportReason(move);
+    if (actorSide === "opponent" && opponent.kind !== "wild")
+      reason = "El encuentro salvaje ya no está disponible.";
     if (!reason && getCurrentHp(capture.pokemon) <= 0)
       reason = "Tu Pokémon está debilitado.";
     if (
@@ -145,7 +157,7 @@ export default function PokemonMoveExecutionDialog({
       reason = "El salvaje está debilitado.";
     if (
       !reason &&
-      capture.statuses?.includes("taunted") &&
+      participants?.attacker.statuses?.includes("taunted") &&
       move.damageClass === "status"
     )
       reason = "Taunt impide usar movimientos de estado.";
@@ -154,10 +166,13 @@ export default function PokemonMoveExecutionDialog({
         "Los datos del combate cambiaron. Cierra esta ventana y vuelve a elegir el movimiento.";
     if (!reason) {
       try {
-        hitChance = moveHitChance(capture, opponent, move);
+        hitChance = moveHitChance(
+          participants!.attacker,
+          participants!.defender,
+          move,
+        );
       } catch {
-        reason =
-          "No se pudo determinar la precisión. Resuelve este movimiento manualmente.";
+        manualReason = "Acierto y efecto pendientes de resolución manual.";
       }
     }
   }
@@ -174,6 +189,7 @@ export default function PokemonMoveExecutionDialog({
     dispatch(
       executePokemonMove({
         captureId,
+        actorSide,
         moveId,
         commandId,
         expectedContext,
@@ -213,11 +229,19 @@ export default function PokemonMoveExecutionDialog({
           ) : (
             <>
               <p className="text-sm capitalize">
-                Oponente: {opponent?.pokemon.name ?? "Sin oponente"}
+                Atacante: {participants?.attacker.pokemon.name ?? "—"} →
+                Objetivo: {participants?.defender.pokemon.name ?? "—"}
               </p>
               {move && (
                 <p className="text-sm text-muted-foreground">
                   {move.description}
+                </p>
+              )}
+              {(manualReason || hitChance === null) && !reason && (
+                <p className="rounded-xl border p-3 text-sm">
+                  {manualReason ?? "Precisión sin automatizar."} Puedes
+                  confirmar para registrar su uso. El efecto se aplica
+                  manualmente.
                 </p>
               )}
               {reason ? (
@@ -229,7 +253,11 @@ export default function PokemonMoveExecutionDialog({
                   <dt>Acierto</dt>
                   <dd>{hitChance === null ? "—" : percent(hitChance)}</dd>
                   <dt>Crítico si acierta</dt>
-                  <dd>{move ? percent(criticalChance(move) * 100) : "—"}</dd>
+                  <dd>
+                    {move && !manualReason && hitChance !== null
+                      ? percent(criticalChance(move) * 100)
+                      : "Manual / no aplica"}
+                  </dd>
                 </dl>
               )}
               {needsConditionCheck && (
@@ -255,9 +283,11 @@ export default function PokemonMoveExecutionDialog({
                 Los efectos adicionales y los PP se controlan manualmente.
               </p>
               <p className="text-xs text-muted-foreground">
-                {opponent?.kind === "wild"
-                  ? "El daño directo se descontará del HP del salvaje una sola vez."
-                  : "El resultado indicará cuánto debe restar el rival en su propio celular."}
+                {actorSide === "opponent"
+                  ? "El daño directo se descontará automáticamente del Pokémon abierto en combate, una sola vez."
+                  : opponent?.kind === "wild"
+                    ? "El daño directo se descontará del HP del salvaje una sola vez."
+                    : "El resultado indicará cuánto debe restar el rival en su propio celular."}
               </p>
             </>
           )}

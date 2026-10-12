@@ -6,6 +6,9 @@ export type BattleOutcome =
   | "blocked"
   | "manual";
 export type BattleResult = {
+  targetHpBefore?: number;
+  targetHpAfter?: number;
+  actorSide?: "player" | "opponent";
   id: string;
   captureId: string;
   attackerName: string;

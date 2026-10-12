@@ -5,13 +5,11 @@ import type { BattleResult } from "@/types/battle";
 import type { ActivityDraft } from "@/types/activity";
 import { getCurrentHp, STAT_LABELS } from "@/lib/pokemonStats";
 import { normalizeStages } from "@/lib/battleModifiers";
-
 type Snapshot = {
   pokemons: CapturedPokemon[];
   opponent: BattleOpponent | null;
   lastBattleResult?: BattleResult | null;
 };
-
 function statsChanges(before: Pokemon, after: Pokemon): string[] {
   return after.stats.flatMap((stat) => {
     const old = before.stats.find((s) => s.name === stat.name)?.value;
@@ -53,7 +51,6 @@ function describeCapture(capture: CapturedPokemon): string[] {
     `Movimientos: ${capture.moves?.map((m) => m.displayName).join(", ") || "Sin movimientos"}`,
   ];
 }
-
 // Compara cambios efectivamente aplicados. No registra clics, renderizados ni consultas.
 export function describePartyActivity(
   actionType: string,
@@ -81,7 +78,7 @@ export function describePartyActivity(
       battle.id === before.lastBattleResult?.id
     )
       return null;
-    const didExecute = ["hit", "miss", "immune", "status"].includes(
+    const didExecute = ["hit", "miss", "immune", "status", "manual"].includes(
       battle.outcome,
     );
     return {
@@ -89,10 +86,21 @@ export function describePartyActivity(
       captureId: battle.captureId,
       title: `${battle.attackerName} · ${battle.moveName}`,
       details: [
-        `Oponente: ${battle.opponentName}`,
+        `Origen: ${battle.actorSide === "opponent" ? "Encuentro salvaje" : "Tu equipo"}`,
+        `Objetivo: ${battle.opponentName}`,
         `${didExecute ? "Resultado" : "No ejecutado"}: ${battle.message}`,
         ...(battle.outcome === "hit"
           ? [`Daño: ${battle.damage} HP${battle.critical ? " · Crítico" : ""}`]
+          : []),
+        ...(battle.manualEffect
+          ? [`Efecto manual: ${battle.manualEffect}`]
+          : []),
+        ...(battle.actorSide === "opponent" && battle.outcome === "hit"
+          ? [
+              battle.targetHpBefore !== undefined
+                ? `HP de tu Pokémon: ${battle.targetHpBefore} → ${battle.targetHpAfter} (−${battle.appliedDamage})`
+                : "Daño pendiente de descontar manualmente en tu Pokémon.",
+            ]
           : []),
         ...(battle.wildHpBefore !== null
           ? [
@@ -132,6 +140,12 @@ export function describePartyActivity(
       };
     }
     const details: string[] = [];
+    const beforeStatuses = (a.statuses ?? []).join(", ");
+    const afterStatuses = (b.statuses ?? []).join(", ");
+    if (beforeStatuses !== afterStatuses)
+      details.push(
+        `Estados: ${beforeStatuses || "Sin estados"} → ${afterStatuses || "Sin estados"}`,
+      );
     if (a.pokemon.level !== b.pokemon.level)
       details.push(
         `Nivel: ${a.pokemon.level ?? 50} → ${b.pokemon.level ?? 50}`,

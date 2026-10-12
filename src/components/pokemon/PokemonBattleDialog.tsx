@@ -1,3 +1,6 @@
+import PokemonRivalActions from "./PokemonRivalActions";
+import PokemonOpponentStatusControl from "./PokemonOpponentStatusControl";
+import { BattleResultView } from "./PokemonMoveExecutionDialog";
 import BattleMusicControl from "./BattleMusicControl";
 import { getBattlePresence } from "@/lib/battlePresence";
 import PokemonMovesPanel from "./PokemonMovesPanel";
@@ -40,6 +43,8 @@ const CRY_BASE =
   "https://raw.githubusercontent.com/PokeAPI/cries/main/cries/pokemon/latest";
 function PokemonBattleDialog({ captureId, onClose }: Props) {
   const dispatch = useAppDispatch();
+  const [manageOpen, setManageOpen] = useState(false);
+  const lastResult = useAppSelector((state) => state.party.lastBattleResult);
   const capturedPokemon = useAppSelector((state) =>
     state.party.pokemons.find((item) => item.captureId === captureId),
   );
@@ -229,57 +234,156 @@ function PokemonBattleDialog({ captureId, onClose }: Props) {
             "
           >
             {/* HP y controles */}
-            <section
-              aria-label="Puntos de salud"
-              className="shrink-0 rounded-2xl border bg-card p-4 text-card-foreground"
-            >
-              <PokemonHpControls
-                currentHp={currentHp}
-                maxHp={originalHp}
-                onChangeHp={handleChangeHp}
-              />
-              {!canEditHp && (
-                <div className="mt-3 text-center">
-                  {isError ? (
-                    <>
-                      <p className="text-xs text-destructive">
-                        No se pudo consultar el HP máximo.
+            {!opponentView && (
+              <section
+                aria-label="Puntos de salud"
+                className="shrink-0 rounded-2xl border bg-card p-4 text-card-foreground"
+              >
+                <PokemonHpControls
+                  currentHp={currentHp}
+                  maxHp={originalHp}
+                  onChangeHp={handleChangeHp}
+                />
+                {!canEditHp && (
+                  <div className="mt-3 text-center">
+                    {isError ? (
+                      <>
+                        <p className="text-xs text-destructive">
+                          No se pudo consultar el HP máximo.
+                        </p>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          disabled={isFetching}
+                          onClick={retry}
+                        >
+                          {isFetching ? "Consultando…" : "Reintentar"}
+                        </Button>
+                      </>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Consultando HP máximo…
                       </p>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        disabled={isFetching}
-                        onClick={retry}
-                      >
-                        {isFetching ? "Consultando…" : "Reintentar"}
-                      </Button>
-                    </>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">
-                      Consultando HP máximo…
-                    </p>
-                  )}
+                    )}
+                  </div>
+                )}
+                <div className="mt-4">
+                  <PokemonHpBar pokemon={pokemon} />
                 </div>
-              )}
-              <div className="mt-4">
-                <PokemonHpBar pokemon={pokemon} />
-              </div>
-            </section>
+              </section>
+            )}
+            {opponentView && opponent && (
+              <PokemonRivalActions
+                key={`hp:${opponent.encounterId ?? opponent.pokemon.id}`}
+                section="hp"
+                opponent={opponent}
+                captureId={capturedPokemon.captureId}
+                onChange={setOpponent}
+              />
+            )}
+            {opponentView && !opponent && (
+              <p className="rounded-xl border p-4 text-sm text-muted-foreground">
+                Selecciona un oponente desde el escenario.
+              </p>
+            )}
             <PokemonBattleArena
               capturedPokemon={capturedPokemon}
               opponent={opponent}
               opponentView={opponentView}
               onTogglePerspective={handleTogglePerspective}
               onPlayCry={handlePlayCry}
+              rivalStatusControl={
+                opponent ? (
+                  <PokemonOpponentStatusControl
+                    key={opponent.encounterId ?? opponent.pokemon.id}
+                    opponent={opponent}
+                    onChange={setOpponent}
+                  />
+                ) : null
+              }
+              manageControl={
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="bg-background/90"
+                  onClick={() => setManageOpen(true)}
+                >
+                  {opponent ? "Encuentro" : "Elegir rival"}
+                </Button>
+              }
             />
-            <PokemonPlayerPanel captureId={capturedPokemon.captureId} />
-            <PokemonOpponentPanel
-              key={captureId}
-              opponent={opponent}
-              onChange={setOpponent}
-            />
-            <PokemonMovesPanel captureId={capturedPokemon.captureId} />
+            {!opponentView ? (
+              <>
+                <details
+                  key={`own-moves:${captureId}`}
+                  className="shrink-0 rounded-2xl border bg-card p-4 text-card-foreground"
+                >
+                  <summary className="cursor-pointer text-sm font-semibold">
+                    Movimientos de tu Pokémon
+                  </summary>
+                  <div className="mt-3 [&>section]:border-0 [&>section]:p-0">
+                    <PokemonMovesPanel
+                      captureId={capturedPokemon.captureId}
+                      showLastResult={false}
+                    />
+                  </div>
+                </details>
+                <PokemonPlayerPanel captureId={capturedPokemon.captureId} />
+              </>
+            ) : (
+              opponent && (
+                <>
+                  <details
+                    key={`rival-moves:${captureId}:${opponent.encounterId ?? opponent.pokemon.id}`}
+                    className="shrink-0 rounded-2xl border bg-card p-4 text-card-foreground"
+                  >
+                    <summary className="cursor-pointer text-sm font-semibold">
+                      Movimientos del rival
+                    </summary>
+                    <div className="mt-3 [&>section]:border-0 [&>section]:p-0">
+                      <PokemonRivalActions
+                        key={`moves:${captureId}:${opponent.encounterId ?? opponent.pokemon.id}`}
+                        section="moves"
+                        opponent={opponent}
+                        captureId={capturedPokemon.captureId}
+                        onChange={setOpponent}
+                      />
+                    </div>
+                  </details>
+                  <PokemonRivalActions
+                    section="stats"
+                    opponent={opponent}
+                    captureId={capturedPokemon.captureId}
+                    onChange={setOpponent}
+                  />
+                </>
+              )
+            )}
+            {lastResult && (
+              <details className="shrink-0 rounded-2xl border bg-card p-4 text-card-foreground">
+                <summary className="cursor-pointer text-sm font-semibold">
+                  Último movimiento · {lastResult.moveName}
+                </summary>
+                <div className="mt-3">
+                  <BattleResultView result={lastResult} />
+                </div>
+              </details>
+            )}
+            <Dialog open={manageOpen} onOpenChange={setManageOpen}>
+              <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-[560px]">
+                <DialogTitle>Gestionar encuentro</DialogTitle>
+                <DialogDescription>
+                  Selecciona, cambia, captura o retira al rival y ajusta su
+                  nivel.
+                </DialogDescription>
+                <PokemonOpponentPanel
+                  opponent={opponent}
+                  onChange={setOpponent}
+                />
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
       </DialogContent>

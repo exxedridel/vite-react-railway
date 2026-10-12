@@ -321,8 +321,10 @@ function MovePicker({
 
 export default function PokemonMovesPanel({
   captureId,
+  showLastResult = true,
 }: {
   captureId: string;
+  showLastResult?: boolean;
 }) {
   const capture = useAppSelector((state) =>
     state.party.pokemons.find((p) => p.captureId === captureId),
@@ -418,7 +420,7 @@ export default function PokemonMovesPanel({
           ? "Cada confirmación ejecuta un nuevo movimiento. El último resultado queda guardado."
           : "Selecciona un oponente para usar tus movimientos."}
       </p>
-      {lastResult?.captureId === captureId && (
+      {showLastResult && lastResult?.captureId === captureId && (
         <details className="mt-3 rounded-xl border p-3">
           <summary className="cursor-pointer text-sm font-medium">
             Último resultado · {lastResult.moveName}

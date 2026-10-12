@@ -15,6 +15,7 @@ export const BATTLE_STATS = BATTLE_STAT_OPTIONS;
 export type BattleStat = BattleStageName;
 export type StatStages = BattleStages;
 export type BattleOpponent = {
+  statuses?: import("@/types/pokemon").PokemonStatus[];
   pokemon: Pokemon;
   stages: StatStages;
   // Los rivales guardados antes de esta versión se consideran de entrenador.

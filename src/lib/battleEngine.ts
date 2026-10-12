@@ -10,7 +10,6 @@ import type { BattleOpponent } from "@/lib/battleOpponent";
 import type { CapturedPokemon } from "@/types/pokemon";
 import type { PokemonMove } from "@/types/moves";
 import type { BattleResult, BattleRolls } from "@/types/battle";
-
 export function requiresConditionCheck(capture: CapturedPokemon): boolean {
   return (capture.statuses ?? []).some((status) =>
     [
@@ -47,7 +46,13 @@ export function getMoveSupportReason(move: PokemonMove): string | null {
 }
 export function criticalChance(move: PokemonMove): number {
   const rule = MOVE_COMBAT_RULES[move.id];
-  if (move.damageClass === "status" || !rule || rule.noCrit) return 0;
+  if (
+    move.damageClass === "status" ||
+    getMoveSupportReason(move) ||
+    !rule ||
+    rule.noCrit
+  )
+    return 0;
   if (rule.alwaysCrit) return 1;
   return [1 / 24, 1 / 8, 1 / 2, 1][Math.max(0, Math.min(3, rule.critStage))];
 }
@@ -55,15 +60,14 @@ export function moveHitChance(
   capture: CapturedPokemon,
   opponent: BattleOpponent,
   move: PokemonMove,
-): number {
+): number | null {
   const rule = MOVE_COMBAT_RULES[move.id];
-  if (!rule) throw new Error("Movimiento sin reglas verificadas.");
+  if (!rule) return null;
   // Los movimientos de uno mismo/campo no consultan la evasión del rival.
   if (["self", "allySide", "foeSide", "all"].includes(rule.target)) return 100;
   if (rule.alwaysHit) return 100;
   if (move.id === 92 && capture.pokemon.types.includes("poison")) return 100; // Toxic moderno.
-  if (move.accuracy === null || !Number.isFinite(move.accuracy))
-    throw new Error("Precisión desconocida para este movimiento.");
+  if (move.accuracy === null || !Number.isFinite(move.accuracy)) return null;
   const own = normalizeStages(capture.pokemon.battleStages);
   const foe = normalizeStages(opponent.stages);
   return Math.max(
@@ -101,7 +105,12 @@ export function resolveBattleMove(
     id,
     captureId: capture.captureId,
     attackerName: p.name,
-    opponentName: opponent.pokemon.name,
+    opponentName:
+      rule?.target === "self"
+        ? p.name
+        : ["allySide", "foeSide", "all"].includes(rule?.target ?? "")
+          ? "Campo de batalla"
+          : opponent.pokemon.name,
     moveName: move.displayName,
     moveId: move.id,
     outcome: "blocked",
@@ -145,7 +154,7 @@ export function resolveBattleMove(
   if (opponent.kind === "wild" && getCurrentHp(opponent.pokemon) <= 0)
     return stop("El salvaje está debilitado.");
   const unsupported = getMoveSupportReason(move);
-  if (unsupported) return stop(unsupported, "manual");
+
   if (requiresConditionCheck(capture) && !conditionsConfirmed)
     return stop("Resuelve primero los estados que pueden impedir actuar.");
   if (capture.statuses?.includes("taunted") && move.damageClass === "status")
@@ -161,10 +170,10 @@ export function resolveBattleMove(
     );
   }
   const targetsFoe = !["self", "allySide", "foeSide", "all"].includes(
-    rule.target,
+    rule?.target ?? "normal",
   );
   try {
-    if (move.damageClass !== "status" || rule.typeImmunity)
+    if ((!unsupported && move.damageClass !== "status") || rule?.typeImmunity)
       r.effectiveness = typeEffectiveness(move.type, opponent.pokemon.types);
   } catch (error) {
     return stop(
@@ -175,23 +184,38 @@ export function resolveBattleMove(
   if (
     targetsFoe &&
     (r.effectiveness === 0 ||
-      (rule.powder && opponent.pokemon.types.includes("grass")))
+      (rule?.powder && opponent.pokemon.types.includes("grass")))
   )
     return stop("El oponente es inmune a este movimiento.", "immune");
   if (targetsFoe && move.damageClass === "status") {
     const types = opponent.pokemon.types;
     if (
-      (["psn", "tox"].includes(rule.status ?? "") &&
+      (["psn", "tox"].includes(rule?.status ?? "") &&
         (types.includes("poison") || types.includes("steel"))) ||
-      (rule.status === "brn" && types.includes("fire")) ||
-      (rule.status === "par" && types.includes("electric")) ||
-      (rule.status === "frz" && types.includes("ice"))
+      (rule?.status === "brn" && types.includes("fire")) ||
+      (rule?.status === "par" && types.includes("electric")) ||
+      (rule?.status === "frz" && types.includes("ice"))
     )
       return stop("El tipo del oponente impide aplicar este estado.", "immune");
   }
-  r.accuracyRoll = rolls.accuracy * 100;
-  if (r.accuracyRoll >= r.hitChance)
+  r.accuracyRoll = r.hitChance === null ? null : rolls.accuracy * 100;
+  if (r.hitChance !== null && r.accuracyRoll! >= r.hitChance)
     return stop("El movimiento falló.", "miss");
+  if (unsupported || r.hitChance === null) {
+    r.outcome = "manual";
+    r.message =
+      r.hitChance === null
+        ? "Uso registrado. Resuelve manualmente el acierto y el efecto."
+        : "El movimiento acertó. Efecto pendiente de aplicar manualmente.";
+    r.manualEffect = [
+      unsupported,
+      move.description,
+      "No se modificaron HP ni estados automáticamente.",
+    ]
+      .filter(Boolean)
+      .join(" ");
+    return r;
+  }
   if (move.damageClass === "status") {
     r.outcome = "status";
     r.message =
@@ -250,4 +274,29 @@ export function resolveBattleMove(
       ? `Solo se resolvió el daño directo. ${rule.manualEffectNote}`
       : `Solo se resolvió el daño directo. Efectos adicionales, drenaje, retroceso o cambios de stats se resuelven manualmente: ${move.description}`;
   return r;
+}
+
+/** Invierte atacante/defensor sin modificar los objetos originales de Redux. */
+export function battleParticipants(
+  capture: CapturedPokemon,
+  opponent: BattleOpponent,
+  side: "player" | "opponent" = "player",
+) {
+  if (side === "player") return { attacker: capture, defender: opponent };
+  return {
+    attacker: {
+      captureId: capture.captureId,
+      pokemon: {
+        ...opponent.pokemon,
+        battleStages: normalizeStages(opponent.stages),
+      },
+      statuses: opponent.statuses ?? [],
+      moves: opponent.moves,
+    } satisfies CapturedPokemon,
+    defender: {
+      pokemon: capture.pokemon,
+      stages: normalizeStages(capture.pokemon.battleStages),
+      kind: "trainer" as const,
+    },
+  };
 }

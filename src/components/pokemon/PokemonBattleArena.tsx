@@ -1,5 +1,5 @@
 import { isPokemonFainted } from "@/lib/pokemonCondition";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { SwitchCamera } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import PokemonStatusControl from "./PokemonStatusControl";
@@ -64,6 +64,8 @@ function BattleSprite({
 }
 
 type Props = {
+  rivalStatusControl?: ReactNode;
+  manageControl?: ReactNode;
   capturedPokemon: CapturedPokemon;
   opponent: BattleOpponent | null;
   opponentView: boolean;
@@ -73,6 +75,8 @@ type Props = {
 
 export default function PokemonBattleArena({
   capturedPokemon,
+  rivalStatusControl,
+  manageControl,
   opponent,
   opponentView,
   onTogglePerspective,
@@ -97,16 +101,13 @@ export default function PokemonBattleArena({
       />
 
       <div className="absolute left-3 top-3 z-30 max-w-[60%]">
-        <PokemonStatusControl capturedPokemon={capturedPokemon} />
+        {opponentView ? (
+          rivalStatusControl
+        ) : (
+          <PokemonStatusControl capturedPokemon={capturedPokemon} />
+        )}
       </div>
-      {fainted && (
-        <span
-          role="status"
-          className="absolute right-3 top-3 z-30 rounded-full bg-destructive px-3 py-1 text-xs text-destructive-foreground"
-        >
-          Sin HP
-        </span>
-      )}
+      <div className="absolute right-3 top-3 z-30">{manageControl}</div>
 
       <div
         className={`battle-scene__combatant ${opponentView ? "battle-scene__combatant--far" : "battle-scene__combatant--near"}`}
@@ -119,6 +120,15 @@ export default function PokemonBattleArena({
           aria-hidden="true"
           className="battle-scene__shadow bg-foreground/15"
         />
+        {fainted && (
+          <span
+            role="status"
+            aria-label={`${pokemon.name} debilitado`}
+            className="absolute left-1/2 top-1 z-30 -translate-x-1/2 whitespace-nowrap rounded-full bg-destructive px-2 py-1 text-[10px] font-semibold text-destructive-foreground"
+          >
+            Fainted
+          </span>
+        )}
         <BattleSprite
           key={`own-${capturedPokemon.captureId}-${opponentView}`}
           pokemon={pokemon}

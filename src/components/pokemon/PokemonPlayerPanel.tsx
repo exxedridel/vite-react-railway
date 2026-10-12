@@ -1,3 +1,4 @@
+import { normalizeStages } from "@/lib/battleModifiers";
 import { SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
@@ -38,14 +39,14 @@ export default function PokemonPlayerPanel({
           )}
         </div>
       ) : (
-        <details className="rounded-xl border p-3" >
+        <details className="rounded-xl border p-3">
           <summary className="cursor-pointer text-sm font-medium">
             Stats y cambios durante el combate
           </summary>
           <div className="mt-3">
             <PokemonBattleStatsControls
               pokemon={captured.pokemon}
-              stages={captured.pokemon.battleStages}
+              stages={normalizeStages(captured.pokemon.battleStages)}
               ownerLabel={captured.pokemon.name}
               onChangeStage={(stat, amount) =>
                 dispatch(changePokemonBattleStage({ captureId, stat, amount }))

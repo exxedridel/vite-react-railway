@@ -1,7 +1,11 @@
 import { hasLivingHp } from "@/lib/pokemonCondition";
 import { describePartyActivity } from "@/lib/partyActivity";
 import type { ActivityEntry, ActivityMeta } from "@/types/activity";
-import { battleContextKey, resolveBattleMove } from "@/lib/battleEngine";
+import {
+  battleContextKey,
+  resolveBattleMove,
+  battleParticipants,
+} from "@/lib/battleEngine";
 import type { BattleResult, BattleRolls } from "@/types/battle";
 import {
   canChooseStarter,
@@ -38,8 +42,8 @@ import {
   validBaseStats,
   neutralBattleStages,
 } from "@/lib/pokemonStats";
-
 type ExecuteMoveInput = {
+  actorSide?: "player" | "opponent";
   captureId: string;
   moveId: number;
   commandId: string;
@@ -67,7 +71,6 @@ const initialState: PartyState = {
 const primaryStatuses = new Set<PokemonStatus>(
   STATUS_OPTIONS.filter((s) => s.group === "primary").map((s) => s.id),
 );
-
 const partySlice = createSlice({
   name: "party",
   initialState,
@@ -92,29 +95,58 @@ const partySlice = createSlice({
           commandId,
           expectedContext,
           conditionsConfirmed,
+          actorSide = "player",
           rolls,
         } = action.payload;
         if (!commandId || state.resolvedBattleIds?.includes(commandId)) return;
         const capture = state.pokemons.find((p) => p.captureId === captureId);
         const opponent = state.opponent;
-        const move = capture?.moves?.find((m) => m.id === moveId);
+        if (actorSide !== "player" && actorSide !== "opponent") return;
+        if (actorSide === "opponent" && opponent?.kind !== "wild") return;
+        const move = (
+          actorSide === "opponent" ? opponent?.moves : capture?.moves
+        )?.find((m) => m.id === moveId);
         if (!capture || !opponent || !move) return;
         if (battleContextKey(capture, opponent) !== expectedContext) return;
-        const result = resolveBattleMove(
+        if (
+          getCurrentHp(capture.pokemon) <= 0 ||
+          (opponent.kind === "wild" && !hasLivingHp(opponent.pokemon))
+        )
+          return;
+        const { attacker, defender } = battleParticipants(
           capture,
           opponent,
+          actorSide,
+        );
+        const result = resolveBattleMove(
+          attacker,
+          defender,
           move,
           rolls,
           commandId,
           conditionsConfirmed,
         );
-        if (result.outcome === "hit" && opponent.kind === "wild") {
+        result.actorSide = actorSide;
+        if (
+          actorSide === "player" &&
+          result.outcome === "hit" &&
+          opponent.kind === "wild"
+        ) {
           const hp = opponent.pokemon.stats.find((s) => s.name === "hp");
           if (hp) {
             result.wildHpBefore = hp.value;
             result.appliedDamage = Math.min(hp.value, result.damage);
             hp.value = Math.max(0, hp.value - result.damage);
             result.wildHpAfter = hp.value;
+          }
+        }
+        if (actorSide === "opponent" && result.outcome === "hit") {
+          const hp = capture.pokemon.stats.find((stat) => stat.name === "hp");
+          if (hp) {
+            result.targetHpBefore = hp.value;
+            result.appliedDamage = Math.min(hp.value, result.damage);
+            hp.value = Math.max(0, hp.value - result.damage);
+            result.targetHpAfter = hp.value;
           }
         }
         state.lastBattleResult = result;
@@ -447,7 +479,6 @@ function withActivityMeta<T extends (...args: never[]) => { type: string }>(
   };
   return Object.assign(wrapped, creator) as T;
 }
-
 export const executePokemonMove = withActivityMeta(
   partySlice.actions.executePokemonMove,
 );
@@ -493,7 +524,6 @@ export const changePokemonBattleStage = withActivityMeta(
 export const resetPokemonBattleStages = withActivityMeta(
   partySlice.actions.resetPokemonBattleStages,
 );
-
 function activityMeta(action: UnknownAction): ActivityMeta | null {
   if (
     !action.meta ||
@@ -517,7 +547,6 @@ function activityMeta(action: UnknownAction): ActivityMeta | null {
     return null;
   return { id: value.id, occurredAt: value.occurredAt };
 }
-
 export default function partyReducer(
   state: PartyState | undefined,
   action: UnknownAction,
