@@ -6,7 +6,6 @@ import { getBattleField } from "@/lib/battleField";
 import PokemonRivalActions from "./PokemonRivalActions";
 import PokemonOpponentStatusControl from "./PokemonOpponentStatusControl";
 import { BattleResultView } from "./PokemonMoveExecutionDialog";
-import BattleMusicControl from "./BattleMusicControl";
 import { getBattlePresence } from "@/lib/battlePresence";
 import PokemonMovesPanel from "./PokemonMovesPanel";
 import {
@@ -70,9 +69,11 @@ function PokemonBattleDialog({ captureId, onClose }: Props) {
             <span className="capitalize font-semibold">
               {next.pokemon.name}
             </span>
-            . Se quitarán los estados secundarios del que sale y se consumirá un
-            turno, aplicando el clima y reduciendo los contadores de los
-            combatientes que quedan en campo.
+            . Se quitarán los estados secundarios del que sale y se conservarán
+            sus estados principales. El cambio consume la acción de tu Pokémon:
+            el que entra no podrá atacar este turno. Debes pulsar «Finalizar
+            turno» manualmente cuando corresponda; confirmar aquí no reduce el
+            clima ni los contadores.
           </DialogDescription>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" autoFocus onClick={onClose}>
@@ -280,7 +281,6 @@ function BattleDialogContent({ captureId, onClose }: Props) {
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              <BattleMusicControl compact />
               <DialogClose asChild>
                 <Button
                   type="button"
@@ -348,10 +348,21 @@ function BattleDialogContent({ captureId, onClose }: Props) {
                     Movimientos de tu Pokémon
                   </summary>
                   <div className="mt-3 [&>section]:border-0 [&>section]:p-0">
-                    <PokemonMovesPanel
-                      captureId={capturedPokemon.captureId}
-                      showLastResult={false}
-                    />
+                    {field.playerSwitchedThisTurn ? (
+                      <p
+                        role="status"
+                        className="text-sm text-muted-foreground"
+                      >
+                        El cambio de Pokémon consumió tu acción. Resuelve la
+                        acción del rival y pulsa «Finalizar turno» manualmente
+                        para poder atacar de nuevo.
+                      </p>
+                    ) : (
+                      <PokemonMovesPanel
+                        captureId={capturedPokemon.captureId}
+                        showLastResult={false}
+                      />
+                    )}
                   </div>
                 </details>
                 <PokemonPlayerPanel captureId={capturedPokemon.captureId} />

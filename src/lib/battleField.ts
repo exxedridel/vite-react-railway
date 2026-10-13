@@ -8,6 +8,7 @@ export type BattleField = {
   version: 1;
   turn: number;
   activeCaptureId: string | null;
+  playerSwitchedThisTurn?: boolean;
   weather: { kind: WeatherKind; turnsLeft: number } | null;
   mudSport: FieldSource[] | null;
   waterSport: FieldSource[] | null;

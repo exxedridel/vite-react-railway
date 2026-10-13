@@ -165,6 +165,7 @@ function advanceBattleTurn(
     details,
   };
   field.turn += 1;
+  field.playerSwitchedThisTurn = false;
 }
 const partySlice = createSlice({
   name: "party",
@@ -237,15 +238,16 @@ const partySlice = createSlice({
           return;
         clearSecondaryStatuses(from);
         switchFieldPokemon(state.battleField, toId);
-        advanceBattleTurn(
-          state,
-          toId,
+        state.battleField.playerSwitchedThisTurn = true;
+        state.lastFieldEvent = {
           id,
-          `Cambio: ${from.pokemon.name} → ${to.pokemon.name}`,
-          [
-            "Estados secundarios del Pokémon que sale eliminados. Cambio de Pokémon: consume 1 turno.",
+          title: `Cambio: ${from.pokemon.name} → ${to.pokemon.name}`,
+          details: [
+            "Estados secundarios del Pokémon que sale eliminados; estados principales conservados.",
+            "El cambio consume la acción de tu Pokémon. No puede atacar hasta finalizar este turno manualmente.",
+            "El clima y los contadores no se han reducido. Pulsa Finalizar turno cuando corresponda.",
           ],
-        );
+        };
       },
     },
     setPokemonStatusTurns(
@@ -372,6 +374,8 @@ const partySlice = createSlice({
           state.battleField.activeCaptureId &&
           state.battleField.activeCaptureId !== captureId
         )
+          return;
+        if (actorSide === "player" && state.battleField.playerSwitchedThisTurn)
           return;
         switchFieldPokemon(state.battleField, captureId);
         const { attacker, defender } = battleParticipants(

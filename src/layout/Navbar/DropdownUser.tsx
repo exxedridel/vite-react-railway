@@ -33,7 +33,7 @@ import {
 import { useAppContext } from "@/context/AppContext";
 import { useAppDispatch } from "@/store/hooks";
 import { resetGame } from "@/slices/partySlice";
-import PokemonActivityDialog from "@/components/pokemon/PokemonActivityDialog";
+import FloatingActivityHistory from "@/components/pokemon/FloatingActivityHistory";
 
 const NICKNAME_STORAGE_KEY = "trainer_nickname";
 const getStoredNickname = (): string => {
@@ -43,7 +43,7 @@ const getStoredNickname = (): string => {
     return "";
   }
 };
-type ActiveDialog = "nickname" | "reset" | "history" | null;
+type ActiveDialog = "nickname" | "reset" | null;
 
 export default function DropdownUser() {
   const { user, navigate, setPokemonDialogOpen } = useAppContext();
@@ -51,6 +51,7 @@ export default function DropdownUser() {
   const [nickname, setNickname] = useState(getStoredNickname);
   const [nicknameDraft, setNicknameDraft] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [historyVisible, setHistoryVisible] = useState(false);
   const [activeDialog, setActiveDialog] = useState<ActiveDialog>(null);
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
   const openingDialogRef = useRef(false);
@@ -168,7 +169,13 @@ export default function DropdownUser() {
             </div>
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => openDialog("history")}>
+          <DropdownMenuItem
+            onSelect={() => {
+              openingDialogRef.current = false;
+              setMenuOpen(false);
+              setHistoryVisible(true);
+            }}
+          >
             <History className="mr-2 h-4 w-4" />
             <span>Historial de actividad</span>
           </DropdownMenuItem>
@@ -292,13 +299,9 @@ export default function DropdownUser() {
         </DialogContent>
       </Dialog>
 
-      <PokemonActivityDialog
-        open={activeDialog === "history"}
-        onOpenChange={(open) => {
-          if (!open) closeDialog();
-        }}
-        returnFocusRef={menuTriggerRef}
-      />
+      {historyVisible && (
+        <FloatingActivityHistory onClose={() => setHistoryVisible(false)} />
+      )}
     </>
   );
 }

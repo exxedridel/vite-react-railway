@@ -3,6 +3,7 @@ import { WEATHER_LABELS, type BattleField } from "@/lib/battleField";
 import { Progress } from "@/components/ui/progress";
 import { isPokemonFainted } from "@/lib/pokemonCondition";
 import type { ReactNode } from "react";
+import BattleMusicControl from "./BattleMusicControl";
 import BattleSprite from "./PokemonBattleSprite";
 import { battleSpeed } from "@/lib/battleSpeed";
 import { SwitchCamera, Zap } from "lucide-react";
@@ -59,6 +60,9 @@ export default function PokemonBattleArena({
       data-mud={!!field.mudSport}
       data-water={!!field.waterSport}
     >
+      <div className="battle-scene__audio">
+        <BattleMusicControl compact />
+      </div>
       <div aria-hidden="true" className="battle-scene__sky" />
       <div aria-hidden="true" className="battle-scene__ground" />
 

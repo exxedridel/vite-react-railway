@@ -2,7 +2,9 @@
 .battle-scene {
   position: relative;
   isolation: isolate;
-  height: clamp(350px, 48dvh, 410px);
+  height: 410px;
+  min-height: 410px;
+  flex-shrink: 0;
   overflow: hidden;
   background: hsl(var(--background));
 }
@@ -382,4 +384,12 @@
   .battle-scene__weather {
     animation: none !important;
   }
+}
+
+/* Audio a la izquierda, alineado con el panel superior de HP. */
+.battle-scene__audio {
+  position: absolute;
+  left: 12px;
+  top: 70px;
+  z-index: 35;
 }
