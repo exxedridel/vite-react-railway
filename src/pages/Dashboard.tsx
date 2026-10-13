@@ -90,7 +90,7 @@ const Dashboard = () => {
     setBattleCaptureId(null);
   };
   const handleConfirmRemove = () => {
-    if (!pokemonToRemove || pokemonToRemove.origin === "starter") return;
+    if (!pokemonToRemove) return;
     if (battleCaptureId === pokemonToRemove.captureId) handleCloseBattle();
     dispatch(removePokemon(pokemonToRemove.captureId));
     setPokemonToRemove(null);
@@ -136,8 +136,7 @@ const Dashboard = () => {
               <p className="mt-2 text-sm text-muted-foreground">
                 La elección del inicial ya fue utilizada. Puedes reiniciar el
                 juego desde la barra de navegación para comenzar otra partida.
-                Los siguientes Pokémon se obtendrán mediante encuentros
-                salvajes; ese flujo se habilitará en la siguiente etapa.
+                Los siguientes Pokémon se obtienen mediante encuentros salvajes.
               </p>
             </div>
           )}
@@ -161,18 +160,16 @@ const Dashboard = () => {
                 >
                   <div className="flex items-center gap-2">
                     <PokemonHpBar pokemon={pokemon} />
-                    {capturedPokemon.origin !== "starter" && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 shrink-0"
-                        onClick={() => setPokemonToRemove(capturedPokemon)}
-                        aria-label={`Liberar a ${pokemon.name}`}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    )}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0"
+                      onClick={() => setPokemonToRemove(capturedPokemon)}
+                      aria-label={`Liberar a ${pokemon.name}`}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
                   </div>
                   <button
                     id={`battle-trigger-${captureId}`}

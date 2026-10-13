@@ -692,8 +692,8 @@ const partySlice = createSlice({
       const capture = state.pokemons.find(
         (p) => p.captureId === action.payload,
       );
-      // El inicial solo se elimina cuando se reinicia toda la partida.
-      if (!capture || capture.origin === "starter") return;
+      // Liberar el inicial no habilita una segunda elección gratuita.
+      if (!capture) return;
       if (state.battleField)
         clearFieldSource(state.battleField, {
           side: "player",
