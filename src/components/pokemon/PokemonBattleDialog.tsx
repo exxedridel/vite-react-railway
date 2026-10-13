@@ -1,3 +1,5 @@
+import { pendingBattleSwitch } from "@/lib/battleSwitch";
+import { toast } from "sonner";
 import PokemonBattleHpDialog from "./PokemonBattleHpDialog";
 import PokemonBattleFieldControl from "./PokemonBattleFieldControl";
 import { getBattleField } from "@/lib/battleField";
@@ -32,6 +34,7 @@ import { store } from "@/store/store";
 import PokemonPlayerPanel from "./PokemonPlayerPanel";
 import {
   activateBattlePokemon,
+  confirmBattleSwitch,
   setPokemonLevel,
   setBattleOpponent,
 } from "@/slices/partySlice";
@@ -43,6 +46,74 @@ const CRY_BASE =
   "https://raw.githubusercontent.com/PokeAPI/cries/main/cries/pokemon/latest";
 function PokemonBattleDialog({ captureId, onClose }: Props) {
   const dispatch = useAppDispatch();
+  const party = useAppSelector((state) => state.party);
+  const next = party.pokemons.find((p) => p.captureId === captureId);
+  const pending = pendingBattleSwitch(party, captureId);
+  if (!next) return null;
+  if (pending) {
+    const { previous, expectedContext } = pending;
+    return (
+      <Dialog
+        open
+        onOpenChange={(open) => {
+          if (!open) onClose();
+        }}
+      >
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogTitle>¿Cambiar de Pokémon?</DialogTitle>
+          <DialogDescription>
+            Retirarás a{" "}
+            <span className="capitalize font-semibold">
+              {previous!.pokemon.name}
+            </span>{" "}
+            y entrará{" "}
+            <span className="capitalize font-semibold">
+              {next.pokemon.name}
+            </span>
+            . Se quitarán los estados secundarios del que sale y se consumirá un
+            turno, aplicando el clima y reduciendo los contadores de los
+            combatientes que quedan en campo.
+          </DialogDescription>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" autoFocus onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                dispatch(
+                  confirmBattleSwitch({
+                    fromId: previous!.captureId,
+                    toId: next.captureId,
+                    expectedContext,
+                  }),
+                );
+                if (
+                  store.getState().party.battleField?.activeCaptureId !==
+                  next.captureId
+                )
+                  toast.error(
+                    "El combate cambió. Revisa la selección e intenta de nuevo.",
+                  );
+              }}
+            >
+              Cambiar Pokémon
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+  return (
+    <BattleDialogContent
+      key={captureId}
+      captureId={captureId}
+      onClose={onClose}
+    />
+  );
+}
+function BattleDialogContent({ captureId, onClose }: Props) {
+  const dispatch = useAppDispatch();
   const [manageOpen, setManageOpen] = useState(false);
   const [hpSide, setHpSide] = useState<"player" | "opponent" | null>(null);
   const field = getBattleField(
@@ -51,7 +122,7 @@ function PokemonBattleDialog({ captureId, onClose }: Props) {
   useEffect(() => {
     setHpSide(null);
     if (captureId) dispatch(activateBattlePokemon(captureId));
-  }, [captureId, dispatch]);
+  }, [captureId, dispatch, field.activeCaptureId]);
   const lastResult = useAppSelector((state) => state.party.lastBattleResult);
   const capturedPokemon = useAppSelector((state) =>
     state.party.pokemons.find((item) => item.captureId === captureId),

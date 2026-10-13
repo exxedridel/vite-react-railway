@@ -30,7 +30,7 @@ export default function PokemonBattleFieldControl({
         size="sm"
         variant="outline"
         disabled={getCurrentHp(o.pokemon) <= 0}
-        title="Cuando ambos hayan terminado de actuar: aplica el clima, descuenta un turno y retira Flinch."
+        title="Cuando ambos hayan terminado de actuar: aplica el clima, reduce los contadores de estados, descuenta un turno y retira Flinch."
         onClick={() =>
           dispatch(
             finishBattleTurn({

@@ -1,4 +1,12 @@
 import {
+  assignStatusTurns,
+  clearSecondaryStatuses,
+  tickStatusTurns,
+  withCleanStatusTurns,
+  isTimedStatus,
+  validTurns,
+} from "@/lib/statusTurns";
+import {
   emptyBattleField,
   getBattleField,
   switchFieldPokemon,
@@ -103,6 +111,61 @@ const initialState: PartyState = {
 const primaryStatuses = new Set<PokemonStatus>(
   STATUS_OPTIONS.filter((s) => s.group === "primary").map((s) => s.id),
 );
+
+function advanceBattleTurn(
+  state: PartyState,
+  captureId: string,
+  id: string,
+  title?: string,
+  initialDetails: string[] = [],
+): void {
+  const c = state.pokemons.find((p) => p.captureId === captureId),
+    o = state.opponent;
+  if (!c || !o) return;
+  const field = state.battleField ?? (state.battleField = emptyBattleField());
+  const details: string[] = [...initialDetails];
+  const currentWeather = field.weather;
+  if (currentWeather) {
+    for (const pokemon of [c.pokemon, o.pokemon]) {
+      const amount = weatherResidual(pokemon, currentWeather.kind),
+        hp = pokemon.stats.find((s) => s.name === "hp");
+      if (amount && hp) {
+        const before = hp.value;
+        hp.value -= amount;
+        details.push(
+          `${pokemon.name}: HP ${before} → ${hp.value} (−${amount}, ${WEATHER_LABELS[currentWeather.kind]}).`,
+        );
+      }
+    }
+    currentWeather.turnsLeft -= 1;
+    if (currentWeather.turnsLeft <= 0) {
+      details.push(`${WEATHER_LABELS[currentWeather.kind]} terminó.`);
+      field.weather = null;
+    } else
+      details.push(
+        `${WEATHER_LABELS[currentWeather.kind]}: quedan ${currentWeather.turnsLeft} turnos.`,
+      );
+  }
+  c.statuses = (c.statuses ?? []).filter((status) => status !== "flinched");
+  o.statuses = (o.statuses ?? []).filter((status) => status !== "flinched");
+  details.push(
+    ...tickStatusTurns(c, c.pokemon.name),
+    ...tickStatusTurns(o, o.pokemon.name),
+  );
+  if (getCurrentHp(c.pokemon) <= 0)
+    clearFieldSource(field, { side: "player", captureId: c.captureId });
+  if (getCurrentHp(o.pokemon) <= 0)
+    clearFieldSource(field, { side: "opponent" });
+  details.push(
+    "Flinch retirado. Contadores configurados reducidos en 1; otros daños residuales siguen siendo manuales.",
+  );
+  state.lastFieldEvent = {
+    id,
+    title: title ?? `Fin del turno ${field.turn}`,
+    details,
+  };
+  field.turn += 1;
+}
 const partySlice = createSlice({
   name: "party",
   initialState,
@@ -122,7 +185,82 @@ const partySlice = createSlice({
     activateBattlePokemon(state, action: PayloadAction<string>) {
       if (!state.pokemons.some((p) => p.captureId === action.payload)) return;
       state.battleField ??= emptyBattleField();
+      const active = state.battleField.activeCaptureId;
+      if (
+        active &&
+        active !== action.payload &&
+        state.opponent &&
+        getCurrentHp(state.opponent.pokemon) > 0 &&
+        state.pokemons.some((p) => p.captureId === active)
+      )
+        return;
       switchFieldPokemon(state.battleField, action.payload);
+    },
+    confirmBattleSwitch: {
+      prepare(input: {
+        fromId: string;
+        toId: string;
+        expectedContext: string;
+      }) {
+        return { payload: { ...input, id: nanoid() } };
+      },
+      reducer(
+        state,
+        action: PayloadAction<{
+          fromId: string;
+          toId: string;
+          expectedContext: string;
+          id: string;
+        }>,
+      ) {
+        const { fromId, toId, expectedContext, id } = action.payload;
+        const from = state.pokemons.find((p) => p.captureId === fromId),
+          to = state.pokemons.find((p) => p.captureId === toId),
+          opponent = state.opponent;
+        if (
+          !from ||
+          !to ||
+          fromId === toId ||
+          !opponent ||
+          getCurrentHp(opponent.pokemon) <= 0 ||
+          state.battleField?.activeCaptureId !== fromId
+        )
+          return;
+        if (
+          JSON.stringify([
+            from,
+            to,
+            opponent,
+            getBattleField(state.battleField),
+          ]) !== expectedContext
+        )
+          return;
+        clearSecondaryStatuses(from);
+        switchFieldPokemon(state.battleField, toId);
+        advanceBattleTurn(
+          state,
+          toId,
+          id,
+          `Cambio: ${from.pokemon.name} → ${to.pokemon.name}`,
+          [
+            "Estados secundarios del Pokémon que sale eliminados. Cambio de Pokémon: consume 1 turno.",
+          ],
+        );
+      },
+    },
+    setPokemonStatusTurns(
+      state,
+      action: PayloadAction<{
+        captureId: string;
+        status: PokemonStatus;
+        turns: number;
+      }>,
+    ) {
+      const target = state.pokemons.find(
+        (p) => p.captureId === action.payload.captureId,
+      );
+      if (target)
+        assignStatusTurns(target, action.payload.status, action.payload.turns);
     },
     changeOpponentHp(
       state,
@@ -175,49 +313,10 @@ const partySlice = createSlice({
           battleContextKey(c, o, field) !== action.payload.expectedContext
         )
           return;
+        if (field.activeCaptureId && field.activeCaptureId !== c.captureId)
+          return;
         switchFieldPokemon(field, c.captureId);
-        const details: string[] = [];
-        const currentWeather = field.weather;
-        if (currentWeather) {
-          for (const pokemon of [c.pokemon, o.pokemon]) {
-            const amount = weatherResidual(pokemon, currentWeather.kind),
-              hp = pokemon.stats.find((s) => s.name === "hp");
-            if (amount && hp) {
-              const before = hp.value;
-              hp.value -= amount;
-              details.push(
-                `${pokemon.name}: HP ${before} → ${hp.value} (−${amount}, ${WEATHER_LABELS[currentWeather.kind]}).`,
-              );
-            }
-          }
-          currentWeather.turnsLeft -= 1;
-          if (currentWeather.turnsLeft <= 0) {
-            details.push(`${WEATHER_LABELS[currentWeather.kind]} terminó.`);
-            field.weather = null;
-          } else
-            details.push(
-              `${WEATHER_LABELS[currentWeather.kind]}: quedan ${currentWeather.turnsLeft} turnos.`,
-            );
-        }
-        c.statuses = (c.statuses ?? []).filter(
-          (status) => status !== "flinched",
-        );
-        o.statuses = (o.statuses ?? []).filter(
-          (status) => status !== "flinched",
-        );
-        if (getCurrentHp(c.pokemon) <= 0)
-          clearFieldSource(field, { side: "player", captureId: c.captureId });
-        if (getCurrentHp(o.pokemon) <= 0)
-          clearFieldSource(field, { side: "opponent" });
-        details.push(
-          "Flinch retirado. Otros estados residuales siguen con resolución manual.",
-        );
-        state.lastFieldEvent = {
-          id: action.payload.id,
-          title: `Fin del turno ${field.turn}`,
-          details,
-        };
-        field.turn += 1;
+        advanceBattleTurn(state, c.captureId, action.payload.id);
       },
     },
     executePokemonMove: {
@@ -269,6 +368,11 @@ const partySlice = createSlice({
         )
           return;
         state.battleField ??= emptyBattleField();
+        if (
+          state.battleField.activeCaptureId &&
+          state.battleField.activeCaptureId !== captureId
+        )
+          return;
         switchFieldPokemon(state.battleField, captureId);
         const { attacker, defender } = battleParticipants(
           capture,
@@ -699,12 +803,24 @@ const partySlice = createSlice({
     },
     togglePokemonStatus(
       state,
-      action: PayloadAction<{ captureId: string; status: PokemonStatus }>,
+      action: PayloadAction<{
+        captureId: string;
+        status: PokemonStatus;
+        turns?: number;
+      }>,
     ) {
       const { captureId, status } = action.payload;
       const capture = state.pokemons.find((p) => p.captureId === captureId);
       if (!capture || !STATUS_OPTIONS.some((s) => s.id === status)) return;
       const current = capture.statuses ?? [];
+      if (!current.includes(status) && isTimedStatus(status)) {
+        if (
+          action.payload.turns !== undefined &&
+          validTurns(action.payload.turns)
+        )
+          assignStatusTurns(capture, status, action.payload.turns);
+        return;
+      }
       if (current.includes(status)) {
         capture.statuses = current.filter((s) => s !== status);
         return;
@@ -743,6 +859,12 @@ function withActivityMeta<T extends (...args: never[]) => { type: string }>(
   };
   return Object.assign(wrapped, creator) as T;
 }
+export const confirmBattleSwitch = withActivityMeta(
+  partySlice.actions.confirmBattleSwitch,
+);
+export const setPokemonStatusTurns = withActivityMeta(
+  partySlice.actions.setPokemonStatusTurns,
+);
 export const configureGame = partySlice.actions.configureGame;
 
 export const activateBattlePokemon = withActivityMeta(
@@ -859,6 +981,12 @@ export default function partyReducer(
     };
   }
   if (next === before) return next;
+  // Estados curados, expirados o sustituidos no conservan contadores huérfanos.
+  next = {
+    ...next,
+    pokemons: next.pokemons.map((p) => withCleanStatusTurns(p)),
+    opponent: next.opponent ? withCleanStatusTurns(next.opponent) : null,
+  };
   const meta = activityMeta(action);
   if (!meta) return next;
   const draft = describePartyActivity(action.type, before, next);

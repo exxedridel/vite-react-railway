@@ -150,11 +150,12 @@
   -webkit-tap-highlight-color: transparent;
 }
 .battle-scene__status {
-  flex: 0 0 42px;
+  flex: 0 0 56px;
   min-width: 0;
-  max-width: 58px;
+  max-width: 64px;
 }
 .pokemon-status-trigger {
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;

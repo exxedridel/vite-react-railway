@@ -39,10 +39,18 @@ function hpDetail(before: Pokemon, after: Pokemon): string {
     delta = b - a;
   return `HP: ${a} → ${b} (${delta >= 0 ? "+" : ""}${delta})`;
 }
-function statusNames(capture: CapturedPokemon): string {
+function statusNames(
+  capture: Pick<CapturedPokemon, "statuses" | "statusTurns">,
+): string {
   return (
     (capture.statuses ?? [])
-      .map((id) => STATUS_OPTIONS.find((s) => s.id === id)?.label ?? id)
+      .map(
+        (id) =>
+          (STATUS_OPTIONS.find((s) => s.id === id)?.label ?? id) +
+          (capture.statusTurns?.[id as keyof typeof capture.statusTurns]
+            ? ` (${capture.statusTurns[id as keyof typeof capture.statusTurns]} turnos)`
+            : ""),
+      )
       .join(", ") || "Sin estados"
   );
 }
@@ -59,7 +67,9 @@ export function describePartyActivity(
   after: Snapshot,
 ): ActivityDraft | null {
   if (
-    actionType === "party/finishBattleTurn" &&
+    ["party/finishBattleTurn", "party/confirmBattleSwitch"].includes(
+      actionType,
+    ) &&
     after.lastFieldEvent &&
     after.lastFieldEvent.id !== before.lastFieldEvent?.id
   )
@@ -180,8 +190,8 @@ export function describePartyActivity(
       };
     }
     const details: string[] = [];
-    const beforeStatuses = (a.statuses ?? []).join(", ");
-    const afterStatuses = (b.statuses ?? []).join(", ");
+    const beforeStatuses = statusNames(a);
+    const afterStatuses = statusNames(b);
     if (beforeStatuses !== afterStatuses)
       details.push(
         `Estados: ${beforeStatuses || "Sin estados"} → ${afterStatuses || "Sin estados"}`,
@@ -245,6 +255,7 @@ export function describePartyActivity(
     "changePokemonBattleStage",
     "resetPokemonBattleStages",
     "togglePokemonStatus",
+    "setPokemonStatusTurns",
     "clearPokemonStatuses",
   ];
   if (!tracked.some((name) => actionType === `party/${name}`)) return null;

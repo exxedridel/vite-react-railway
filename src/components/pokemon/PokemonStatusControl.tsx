@@ -1,5 +1,9 @@
 import { useAppDispatch } from "@/store/hooks";
-import { togglePokemonStatus, clearPokemonStatuses } from "@/slices/partySlice";
+import {
+  togglePokemonStatus,
+  clearPokemonStatuses,
+  setPokemonStatusTurns,
+} from "@/slices/partySlice";
 import type { CapturedPokemon } from "@/types/pokemon";
 import PokemonStatusPicker from "./PokemonStatusPicker";
 export default function PokemonStatusControl({
@@ -12,6 +16,16 @@ export default function PokemonStatusControl({
     <PokemonStatusPicker
       name={capturedPokemon.pokemon.name}
       statuses={capturedPokemon.statuses ?? []}
+      statusTurns={capturedPokemon.statusTurns}
+      onSetTurns={(status, turns) =>
+        dispatch(
+          setPokemonStatusTurns({
+            captureId: capturedPokemon.captureId,
+            status,
+            turns,
+          }),
+        )
+      }
       onToggle={(status) =>
         dispatch(
           togglePokemonStatus({ captureId: capturedPokemon.captureId, status }),

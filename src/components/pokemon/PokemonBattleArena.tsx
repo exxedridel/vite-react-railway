@@ -4,7 +4,8 @@ import { Progress } from "@/components/ui/progress";
 import { isPokemonFainted } from "@/lib/pokemonCondition";
 import type { ReactNode } from "react";
 import BattleSprite from "./PokemonBattleSprite";
-import { SwitchCamera } from "lucide-react";
+import { battleSpeed } from "@/lib/battleSpeed";
+import { SwitchCamera, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import PokemonStatusControl from "./PokemonStatusControl";
 import type { CapturedPokemon, Pokemon } from "@/types/pokemon";
@@ -35,6 +36,18 @@ export default function PokemonBattleArena({
   onPlayCry,
 }: Props) {
   const { pokemon } = capturedPokemon;
+  const ownSpeed = battleSpeed(pokemon, capturedPokemon.statuses);
+  const rivalSpeed = opponent
+    ? battleSpeed(opponent.pokemon, opponent.statuses, opponent.stages)
+    : null;
+  const speedLabel = (side: "player" | "opponent") => {
+    if (ownSpeed === null || rivalSpeed === null) return undefined;
+    const a = side === "player" ? ownSpeed : rivalSpeed,
+      b = side === "player" ? rivalSpeed : ownSpeed;
+    return a >= b
+      ? `${a === b ? "Speed empatada" : "Mayor Speed"}: ${a}${a !== b ? ` vs ${b}` : ""}`
+      : undefined;
+  };
   const fainted = isPokemonFainted(pokemon);
   const opponentFainted = isPokemonFainted(opponent?.pokemon);
 
@@ -69,6 +82,7 @@ export default function PokemonBattleArena({
         pokemon={pokemon}
         position={opponentView ? "far" : "near"}
         side="player"
+        speedLabel={speedLabel("player")}
         statusControl={
           <PokemonStatusControl capturedPokemon={capturedPokemon} />
         }
@@ -79,6 +93,7 @@ export default function PokemonBattleArena({
           pokemon={opponent.pokemon}
           position={opponentView ? "near" : "far"}
           side="opponent"
+          speedLabel={speedLabel("opponent")}
           statusControl={rivalStatusControl}
           onClick={() => onOpenHp("opponent")}
         />
@@ -176,12 +191,14 @@ function ArenaHp({
   side,
   onClick,
   statusControl,
+  speedLabel,
 }: {
   pokemon: Pokemon;
   position: "near" | "far";
   side: "player" | "opponent";
   onClick: () => void;
   statusControl?: ReactNode;
+  speedLabel?: string;
 }) {
   const current = getCurrentHp(pokemon),
     max = getMaxHp(pokemon),
@@ -206,9 +223,21 @@ function ArenaHp({
         className="battle-scene__hp border bg-card/95 text-card-foreground shadow-md"
       >
         <span className="flex items-center justify-between gap-1">
-          <strong className="truncate text-xs capitalize">
-            {pokemon.name}
-          </strong>
+          <span className="flex min-w-0 items-center gap-1">
+            <strong className="truncate text-xs capitalize">
+              {pokemon.name}
+            </strong>
+            {speedLabel && (
+              <span
+                className="shrink-0 text-yellow-500"
+                title={speedLabel}
+                aria-label={speedLabel}
+                role="img"
+              >
+                <Zap className="h-3.5 w-3.5" aria-hidden="true" />
+              </span>
+            )}
+          </span>
           <span className="shrink-0 text-[10px] text-muted-foreground">
             Lv. {pokemon.level ?? 50}
           </span>

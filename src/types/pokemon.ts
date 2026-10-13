@@ -157,6 +157,7 @@ export type CapturedPokemon = {
   initialMovesChosen?: number;
   pokemon: Pokemon;
   statuses?: PokemonStatus[];
+  statusTurns?: import("@/lib/statusTurns").StatusTurns;
   // Respaldo de los valores previos a la migración; no interviene en el cálculo.
   legacyStats?: PokemonStat[];
 };
