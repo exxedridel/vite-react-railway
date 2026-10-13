@@ -1,4 +1,11 @@
 import {
+  getBattleField,
+  fieldMoveFailure,
+  fieldPowerMultiplier,
+  type BattleField,
+  type FieldSource,
+} from "@/lib/battleField";
+import {
   getAccuracyMultiplier,
   getEffectiveStat,
   normalizeStages,
@@ -103,8 +110,9 @@ export function moveHitChance(
 export function battleContextKey(
   c: CapturedPokemon,
   o: BattleOpponent,
+  field?: BattleField | null,
 ): string {
-  return JSON.stringify([c, o]);
+  return JSON.stringify([c, o, getBattleField(field)]);
 }
 export function battleParticipants(
   c: CapturedPokemon,
@@ -136,7 +144,11 @@ export function resolveBattleMove(
   conditionsConfirmed = false,
   options: MoveExecutionOptions = {},
   called = false,
+  battleField?: BattleField | null,
+  fieldSource: FieldSource = { side: "player", captureId: c.captureId },
 ): BattleResult {
+  const field = getBattleField(battleField);
+  options = { ...options, weather: field.weather?.kind ?? "none" };
   const move = getCuratedMove(raw),
     e = CURATED_MOVE_CATALOG[move.id],
     p = c.pokemon,
@@ -243,6 +255,8 @@ export function resolveBattleMove(
       conditionsConfirmed,
       options,
       true,
+      field,
+      fieldSource,
     );
     return {
       ...result,
@@ -272,7 +286,9 @@ export function resolveBattleMove(
       "Se declaró la condición para duplicar la potencia.",
     );
   if (options.weather && options.weather !== "none")
-    r.effectMessages!.push(`Clima declarado: ${options.weather}.`);
+    r.effectMessages!.push(`Clima activo: ${options.weather}.`);
+  const fieldFailure = fieldMoveFailure(field, move.id, fieldSource);
+  if (fieldFailure) return stop(fieldFailure, "miss");
   r.manualEffect = e.notes.length ? e.notes.join(" ") : null;
   if (e.automation === "manual") {
     r.outcome = "manual";
@@ -429,6 +445,13 @@ export function resolveBattleMove(
     r.effectiveness = typeEffectiveness(move.type, q.types);
     if (!r.effectiveness)
       return stop("El objetivo es inmune al tipo de Weather Ball.", "immune");
+  }
+  const fieldMultiplier = fieldPowerMultiplier(field, move.type);
+  if (fieldMultiplier !== 1) {
+    power = Math.max(1, Math.floor(power * fieldMultiplier));
+    r.effectMessages!.push(
+      `Efecto de campo: potencia ${move.type} ×${fieldMultiplier}.`,
+    );
   }
   const fixed =
     e.handler === "fixed20"

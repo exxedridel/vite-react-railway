@@ -1,3 +1,13 @@
+import {
+  emptyBattleField,
+  getBattleField,
+  switchFieldPokemon,
+  clearFieldSource,
+  activateMoveField,
+  weatherResidual,
+  WEATHER_LABELS,
+  type BattleField,
+} from "@/lib/battleField";
 import type { MoveExecutionOptions } from "@/lib/moveCatalogTypes";
 import { applyCuratedMoveEffects } from "@/lib/curatedMoveEffects";
 import {
@@ -66,6 +76,8 @@ type ExecuteMoveInput = {
   conditionsConfirmed: boolean;
 };
 export type PartyState = {
+  battleField?: BattleField;
+  lastFieldEvent?: { id: string; title: string; details: string[] };
   dataVersion?: string;
   gameSettings?: GameSettings | null;
   activityHistory?: ActivityEntry[];
@@ -77,6 +89,7 @@ export type PartyState = {
   opponent: BattleOpponent | null;
 };
 const initialState: PartyState = {
+  battleField: emptyBattleField(),
   dataVersion: GAME_DATA_VERSION,
   gameSettings: null,
   activityHistory: [],
@@ -104,6 +117,108 @@ const partySlice = createSlice({
         ruleset: RULESET_ID,
       };
       state.opponent = null;
+      state.battleField = emptyBattleField();
+    },
+    activateBattlePokemon(state, action: PayloadAction<string>) {
+      if (!state.pokemons.some((p) => p.captureId === action.payload)) return;
+      state.battleField ??= emptyBattleField();
+      switchFieldPokemon(state.battleField, action.payload);
+    },
+    changeOpponentHp(
+      state,
+      action: PayloadAction<{ amount: number; expectedOpponent: string }>,
+    ) {
+      const opponent = state.opponent;
+      if (
+        !opponent ||
+        JSON.stringify([
+          opponent.encounterId,
+          opponent.pokemon.id,
+          opponent.kind,
+        ]) !== action.payload.expectedOpponent ||
+        !Number.isSafeInteger(action.payload.amount)
+      )
+        return;
+      const max = getMaxHp(opponent.pokemon);
+      const hp = opponent.pokemon.stats.find((s) => s.name === "hp");
+      if (max === undefined || !hp) return;
+      hp.value = Math.max(0, Math.min(max, hp.value + action.payload.amount));
+      if (hp.value === 0 && state.battleField)
+        clearFieldSource(state.battleField, { side: "opponent" });
+    },
+    finishBattleTurn: {
+      prepare(input: {
+        captureId: string;
+        expectedTurn: number;
+        expectedContext: string;
+      }) {
+        return { payload: { ...input, id: nanoid() } };
+      },
+      reducer(
+        state,
+        action: PayloadAction<{
+          captureId: string;
+          expectedTurn: number;
+          expectedContext: string;
+          id: string;
+        }>,
+      ) {
+        const c = state.pokemons.find(
+            (p) => p.captureId === action.payload.captureId,
+          ),
+          o = state.opponent;
+        if (!c || !o || getCurrentHp(o.pokemon) <= 0) return;
+        state.battleField ??= emptyBattleField();
+        const field = state.battleField;
+        if (
+          field.turn !== action.payload.expectedTurn ||
+          battleContextKey(c, o, field) !== action.payload.expectedContext
+        )
+          return;
+        switchFieldPokemon(field, c.captureId);
+        const details: string[] = [];
+        const currentWeather = field.weather;
+        if (currentWeather) {
+          for (const pokemon of [c.pokemon, o.pokemon]) {
+            const amount = weatherResidual(pokemon, currentWeather.kind),
+              hp = pokemon.stats.find((s) => s.name === "hp");
+            if (amount && hp) {
+              const before = hp.value;
+              hp.value -= amount;
+              details.push(
+                `${pokemon.name}: HP ${before} → ${hp.value} (−${amount}, ${WEATHER_LABELS[currentWeather.kind]}).`,
+              );
+            }
+          }
+          currentWeather.turnsLeft -= 1;
+          if (currentWeather.turnsLeft <= 0) {
+            details.push(`${WEATHER_LABELS[currentWeather.kind]} terminó.`);
+            field.weather = null;
+          } else
+            details.push(
+              `${WEATHER_LABELS[currentWeather.kind]}: quedan ${currentWeather.turnsLeft} turnos.`,
+            );
+        }
+        c.statuses = (c.statuses ?? []).filter(
+          (status) => status !== "flinched",
+        );
+        o.statuses = (o.statuses ?? []).filter(
+          (status) => status !== "flinched",
+        );
+        if (getCurrentHp(c.pokemon) <= 0)
+          clearFieldSource(field, { side: "player", captureId: c.captureId });
+        if (getCurrentHp(o.pokemon) <= 0)
+          clearFieldSource(field, { side: "opponent" });
+        details.push(
+          "Flinch retirado. Otros estados residuales siguen con resolución manual.",
+        );
+        state.lastFieldEvent = {
+          id: action.payload.id,
+          title: `Fin del turno ${field.turn}`,
+          details,
+        };
+        field.turn += 1;
+      },
     },
     executePokemonMove: {
       // Las tiradas pertenecen a la acción, nunca al render ni al reducer.
@@ -143,12 +258,18 @@ const partySlice = createSlice({
         )?.find((m) => m.id === moveId);
         if (!capture || !opponent || !move || !isGenerationThreeMove(move.id))
           return;
-        if (battleContextKey(capture, opponent) !== expectedContext) return;
+        if (
+          battleContextKey(capture, opponent, state.battleField) !==
+          expectedContext
+        )
+          return;
         if (
           getCurrentHp(capture.pokemon) <= 0 ||
           (opponent.kind === "wild" && !hasLivingHp(opponent.pokemon))
         )
           return;
+        state.battleField ??= emptyBattleField();
+        switchFieldPokemon(state.battleField, captureId);
         const { attacker, defender } = battleParticipants(
           capture,
           opponent,
@@ -162,6 +283,11 @@ const partySlice = createSlice({
           commandId,
           conditionsConfirmed,
           options,
+          false,
+          state.battleField,
+          actorSide === "player"
+            ? { side: "player", captureId }
+            : { side: "opponent" },
         );
         result.actorSide = actorSide;
         const player = {
@@ -202,6 +328,20 @@ const partySlice = createSlice({
             "Estados principales de todo tu equipo curados.",
           );
         }
+        if (result.outcome === "status") {
+          const fieldMessage = activateMoveField(
+            state.battleField,
+            result.resolvedMoveId ?? result.moveId,
+            actorSide === "player"
+              ? { side: "player", captureId }
+              : { side: "opponent" },
+          );
+          if (fieldMessage) result.effectMessages?.push(fieldMessage);
+        }
+        if (getCurrentHp(capture.pokemon) <= 0)
+          clearFieldSource(state.battleField, { side: "player", captureId });
+        if (getCurrentHp(opponent.pokemon) <= 0)
+          clearFieldSource(state.battleField, { side: "opponent" });
         state.lastBattleResult = result;
         state.resolvedBattleIds = [
           ...(state.resolvedBattleIds ?? []),
@@ -223,7 +363,13 @@ const partySlice = createSlice({
         !pokemonAllowed(state, next.pokemon.id)
       )
         return;
+      if (!sameEncounter) {
+        state.battleField = emptyBattleField();
+        state.lastFieldEvent = undefined;
+      }
       state.opponent = next;
+      if (next && getCurrentHp(next.pokemon) <= 0 && state.battleField)
+        clearFieldSource(state.battleField, { side: "opponent" });
     },
     captureWildOpponent: {
       prepare(encounterId: string) {
@@ -273,6 +419,7 @@ const partySlice = createSlice({
         state.starterClaimed = true;
         // Captura y retirada del rival ocurren en la misma acción: evita duplicados.
         state.opponent = null;
+        state.battleField = emptyBattleField();
       },
     },
     addPokemon: {
@@ -407,6 +554,7 @@ const partySlice = createSlice({
     },
     resetGame() {
       return {
+        battleField: emptyBattleField(),
         dataVersion: GAME_DATA_VERSION,
         gameSettings: null,
         pokemons: [],
@@ -422,6 +570,11 @@ const partySlice = createSlice({
       );
       // El inicial solo se elimina cuando se reinicia toda la partida.
       if (!capture || capture.origin === "starter") return;
+      if (state.battleField)
+        clearFieldSource(state.battleField, {
+          side: "player",
+          captureId: capture.captureId,
+        });
       state.starterClaimed = true;
       state.pokemons = state.pokemons.filter(
         (p) => p.captureId !== action.payload,
@@ -457,6 +610,8 @@ const partySlice = createSlice({
       const hp = pokemon.stats.find((s) => s.name === "hp");
       if (hp)
         hp.value = Math.max(0, Math.min(getMaxHp(pokemon)!, hp.value + amount));
+      if (hp?.value === 0 && state.battleField)
+        clearFieldSource(state.battleField, { side: "player", captureId });
     },
     setPokemonLevel(
       state,
@@ -473,6 +628,11 @@ const partySlice = createSlice({
         return;
       try {
         capture.pokemon = changeLevel(capture.pokemon, action.payload.level);
+        if (getCurrentHp(capture.pokemon) === 0 && state.battleField)
+          clearFieldSource(state.battleField, {
+            side: "player",
+            captureId: capture.captureId,
+          });
       } catch {
         /* Un nivel fuera del rango numérico no modifica la captura. */
       }
@@ -501,6 +661,11 @@ const partySlice = createSlice({
         return;
       const hp = pokemon.stats.find((s) => s.name === "hp");
       if (hp) hp.value = Math.min(getMaxHp(pokemon)!, values.hp);
+      if (hp?.value === 0 && state.battleField)
+        clearFieldSource(state.battleField, {
+          side: "player",
+          captureId: action.payload.captureId,
+        });
     },
     changePokemonBattleStage(
       state,
@@ -580,6 +745,15 @@ function withActivityMeta<T extends (...args: never[]) => { type: string }>(
 }
 export const configureGame = partySlice.actions.configureGame;
 
+export const activateBattlePokemon = withActivityMeta(
+  partySlice.actions.activateBattlePokemon,
+);
+export const changeOpponentHp = withActivityMeta(
+  partySlice.actions.changeOpponentHp,
+);
+export const finishBattleTurn = withActivityMeta(
+  partySlice.actions.finishBattleTurn,
+);
 export const executePokemonMove = withActivityMeta(
   partySlice.actions.executePokemonMove,
 );

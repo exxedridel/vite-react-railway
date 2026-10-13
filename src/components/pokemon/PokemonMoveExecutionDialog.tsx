@@ -1,3 +1,4 @@
+import { getBattleField, WEATHER_LABELS } from "@/lib/battleField";
 import PokemonMoveExecutionOptions, {
   optionsProblem,
 } from "./PokemonMoveExecutionOptions";
@@ -158,14 +159,19 @@ export default function PokemonMoveExecutionDialog({
     state.party.pokemons.find((p) => p.captureId === captureId),
   );
   const opponent = useAppSelector((state) => state.party.opponent);
+  const field = getBattleField(
+    useAppSelector((state) => state.party.battleField),
+  );
   const [commandId] = useState(() => nanoid());
   const [expectedContext] = useState(() =>
-    capture && opponent ? battleContextKey(capture, opponent) : "",
+    capture && opponent ? battleContextKey(capture, opponent, field) : "",
   );
   const [conditionsConfirmed, setConditionsConfirmed] = useState(false);
-  const [options, setOptions] = useState<MoveExecutionOptions>({
-    weather: "none",
-  });
+  const [declaredOptions, setOptions] = useState<MoveExecutionOptions>({});
+  const options = {
+    ...declaredOptions,
+    weather: field.weather?.kind ?? ("none" as const),
+  };
   const submitted = useRef(false);
   const result = useAppSelector((state) =>
     state.party.lastBattleResult?.id === commandId
@@ -204,7 +210,10 @@ export default function PokemonMoveExecutionDialog({
       move.damageClass === "status"
     )
       reason = "Taunt impide usar movimientos de estado.";
-    if (!reason && battleContextKey(capture, opponent) !== expectedContext)
+    if (
+      !reason &&
+      battleContextKey(capture, opponent, field) !== expectedContext
+    )
       reason =
         "Los datos del combate cambiaron. Cierra esta ventana y vuelve a elegir el movimiento.";
     if (!reason) {
@@ -279,8 +288,25 @@ export default function PokemonMoveExecutionDialog({
                 Objetivo: {participants?.defender.pokemon.name ?? "—"}
               </p>
               {move && (
-                <p className="text-sm text-muted-foreground">
-                  {getCuratedMove(move).description}
+                <details className="text-sm">
+                  <summary className="cursor-pointer text-muted-foreground">
+                    Ver regla de {move.displayName}
+                  </summary>
+                  <p className="mt-2 text-muted-foreground">
+                    {getCuratedMove(move).description}
+                  </p>
+                </details>
+              )}
+              {(field.weather || field.mudSport || field.waterSport) && (
+                <p className="text-xs text-muted-foreground">
+                  {[
+                    field.weather ? WEATHER_LABELS[field.weather.kind] : null,
+                    field.mudSport ? "Mud Sport" : null,
+                    field.waterSport ? "Water Sport" : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}{" "}
+                  · se aplica automáticamente
                 </p>
               )}
               {(manualReason || hitChance === null) && !reason && (
@@ -343,22 +369,16 @@ export default function PokemonMoveExecutionDialog({
                   </span>
                 </label>
               )}
-              <p className="text-xs text-muted-foreground">
-                El cálculo contempla tipos, nivel, etapas de stats, quemadura y
-                crítico de Gen 3. El clima se declara arriba; no contempla
-                habilidades, objetos ni terreno. Los efectos del catálogo curado
-                se aplican automáticamente. Los demás efectos y los PP se
-                controlan manualmente.
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {move && CURATED_MOVE_CATALOG[move.id]
-                  ? "La app aplicará los efectos automatizados en este navegador, una sola vez. Los pasos señalados como manuales se resuelven en el tablero."
-                  : actorSide === "opponent"
-                    ? "El daño directo se descontará automáticamente del Pokémon abierto en combate, una sola vez."
-                    : opponent?.kind === "wild"
-                      ? "El daño directo se descontará del HP del salvaje una sola vez."
-                      : "El resultado indicará cuánto debe restar el rival en su propio celular."}
-              </p>
+              <details className="text-xs text-muted-foreground">
+                <summary className="cursor-pointer">
+                  Alcance del cálculo
+                </summary>
+                <p className="mt-2">
+                  Clima y efectos de campo se leen automáticamente. Habilidades,
+                  objetos y los efectos marcados manuales se resuelven en el
+                  tablero. Los cambios se guardan en este navegador.
+                </p>
+              </details>
             </>
           )}
         </div>

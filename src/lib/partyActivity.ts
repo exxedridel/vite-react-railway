@@ -6,6 +6,7 @@ import type { ActivityDraft } from "@/types/activity";
 import { getCurrentHp, STAT_LABELS } from "@/lib/pokemonStats";
 import { normalizeStages } from "@/lib/battleModifiers";
 type Snapshot = {
+  lastFieldEvent?: { id: string; title: string; details: string[] };
   pokemons: CapturedPokemon[];
   opponent: BattleOpponent | null;
   lastBattleResult?: BattleResult | null;
@@ -57,6 +58,33 @@ export function describePartyActivity(
   before: Snapshot,
   after: Snapshot,
 ): ActivityDraft | null {
+  if (
+    actionType === "party/finishBattleTurn" &&
+    after.lastFieldEvent &&
+    after.lastFieldEvent.id !== before.lastFieldEvent?.id
+  )
+    return {
+      kind: "move",
+      title: after.lastFieldEvent.title,
+      details: after.lastFieldEvent.details,
+    };
+  if (
+    actionType === "party/changeOpponentHp" &&
+    before.opponent &&
+    after.opponent
+  ) {
+    const old = getCurrentHp(before.opponent.pokemon),
+      value = getCurrentHp(after.opponent.pokemon);
+    return old !== value
+      ? {
+          kind: "hp",
+          title: `HP del rival: ${after.opponent.pokemon.name}`,
+          details: [
+            `HP: ${old} → ${value} (${value - old >= 0 ? "+" : ""}${value - old})`,
+          ],
+        }
+      : null;
+  }
   if (actionType === "party/resetGame") {
     return {
       kind: "reset",

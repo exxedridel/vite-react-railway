@@ -78,12 +78,31 @@ function execute(
   roll = 0.5,
   extra: number[] = Array(64).fill(0.99),
 ) {
+  if (options.weather)
+    s = {
+      ...s,
+      battleField: {
+        version: 1,
+        turn: 1,
+        activeCaptureId: null,
+        mudSport: null,
+        waterSport: null,
+        weather:
+          options.weather === "none"
+            ? null
+            : { kind: options.weather, turnsLeft: 5 },
+      },
+    };
   const action = executePokemonMove({
     captureId: "own",
     moveId: id,
     actorSide: side,
     commandId: "test",
-    expectedContext: battleContextKey(s.pokemons[0], s.opponent!),
+    expectedContext: battleContextKey(
+      s.pokemons[0],
+      s.opponent!,
+      s.battleField,
+    ),
     conditionsConfirmed: true,
     options,
   });

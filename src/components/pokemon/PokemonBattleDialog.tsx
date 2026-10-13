@@ -1,3 +1,6 @@
+import PokemonBattleHpDialog from "./PokemonBattleHpDialog";
+import PokemonBattleFieldControl from "./PokemonBattleFieldControl";
+import { getBattleField } from "@/lib/battleField";
 import PokemonRivalActions from "./PokemonRivalActions";
 import PokemonOpponentStatusControl from "./PokemonOpponentStatusControl";
 import { BattleResultView } from "./PokemonMoveExecutionDialog";
@@ -22,16 +25,13 @@ import {
 } from "@/components/ui/dialog";
 import PokemonOpponentPanel from "@/components/pokemon/PokemonOpponentPanel";
 import type { BattleOpponent } from "@/lib/battleOpponent";
-import PokemonHpBar from "@/components/pokemon/PokemonHpBar";
 import PokemonBattleArena from "./PokemonBattleArena";
-import { usePokemonProgression } from "@/hooks/usePokemonProgression";
-import PokemonHpControls from "./PokemonHpControls";
 import PokemonTypeBadges from "./PokemonTypeBadges";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { store } from "@/store/store";
 import PokemonPlayerPanel from "./PokemonPlayerPanel";
 import {
-  changePokemonHp,
+  activateBattlePokemon,
   setPokemonLevel,
   setBattleOpponent,
 } from "@/slices/partySlice";
@@ -44,16 +44,18 @@ const CRY_BASE =
 function PokemonBattleDialog({ captureId, onClose }: Props) {
   const dispatch = useAppDispatch();
   const [manageOpen, setManageOpen] = useState(false);
+  const [hpSide, setHpSide] = useState<"player" | "opponent" | null>(null);
+  const field = getBattleField(
+    useAppSelector((state) => state.party.battleField),
+  );
+  useEffect(() => {
+    setHpSide(null);
+    if (captureId) dispatch(activateBattlePokemon(captureId));
+  }, [captureId, dispatch]);
   const lastResult = useAppSelector((state) => state.party.lastBattleResult);
   const capturedPokemon = useAppSelector((state) =>
     state.party.pokemons.find((item) => item.captureId === captureId),
   );
-  const {
-    maxHp: originalHp,
-    isError,
-    isFetching,
-    retry,
-  } = usePokemonProgression(capturedPokemon?.pokemon);
   const [opponentView, setOpponentView] = useState(false);
   // El mismo rival se comparte entre todos los Pokémon de este navegador.
   // El fallback admite localStorage anterior a esta actualización.
@@ -66,6 +68,9 @@ function PokemonBattleDialog({ captureId, onClose }: Props) {
     // Redux recibe solo el resultado serializable, nunca la función.
     dispatch(setBattleOpponent(next));
   };
+  useEffect(() => {
+    setHpSide(null);
+  }, [opponent?.encounterId, opponent?.pokemon.id]);
   const cryAudioRef = useRef<HTMLAudioElement | null>(null);
   const pokemonId = capturedPokemon?.pokemon.id;
   // Cada apertura comienza en vista propia.
@@ -115,12 +120,6 @@ function PokemonBattleDialog({ captureId, onClose }: Props) {
     const level = (latest.pokemon.level ?? 50) + amount;
     if (!Number.isSafeInteger(level) || level < 1) return;
     dispatch(setPokemonLevel({ captureId: latest.captureId, level }));
-  };
-  const currentHp =
-    pokemon.stats.find((stat) => stat.name === "hp")?.value ?? 0;
-  const canEditHp = originalHp !== undefined;
-  const handleChangeHp = (amount: number) => {
-    dispatch(changePokemonHp({ captureId: capturedPokemon.captureId, amount }));
   };
   return (
     <Dialog
@@ -233,61 +232,9 @@ function PokemonBattleDialog({ captureId, onClose }: Props) {
               px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]
             "
           >
-            {/* HP y controles */}
-            {!opponentView && (
-              <section
-                aria-label="Puntos de salud"
-                className="shrink-0 rounded-2xl border bg-card p-4 text-card-foreground"
-              >
-                <PokemonHpControls
-                  currentHp={currentHp}
-                  maxHp={originalHp}
-                  onChangeHp={handleChangeHp}
-                />
-                {!canEditHp && (
-                  <div className="mt-3 text-center">
-                    {isError ? (
-                      <>
-                        <p className="text-xs text-destructive">
-                          No se pudo consultar el HP máximo.
-                        </p>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          disabled={isFetching}
-                          onClick={retry}
-                        >
-                          {isFetching ? "Consultando…" : "Reintentar"}
-                        </Button>
-                      </>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">
-                        Consultando HP máximo…
-                      </p>
-                    )}
-                  </div>
-                )}
-                <div className="mt-4">
-                  <PokemonHpBar pokemon={pokemon} />
-                </div>
-              </section>
-            )}
-            {opponentView && opponent && (
-              <PokemonRivalActions
-                key={`hp:${opponent.encounterId ?? opponent.pokemon.id}`}
-                section="hp"
-                opponent={opponent}
-                captureId={capturedPokemon.captureId}
-                onChange={setOpponent}
-              />
-            )}
-            {opponentView && !opponent && (
-              <p className="rounded-xl border p-4 text-sm text-muted-foreground">
-                Selecciona un oponente desde el escenario.
-              </p>
-            )}
             <PokemonBattleArena
+              field={field}
+              onOpenHp={setHpSide}
               capturedPokemon={capturedPokemon}
               opponent={opponent}
               opponentView={opponentView}
@@ -313,6 +260,12 @@ function PokemonBattleDialog({ captureId, onClose }: Props) {
                   {opponent ? "Encuentro" : "Elegir rival"}
                 </Button>
               }
+            />
+            <PokemonBattleFieldControl captureId={capturedPokemon.captureId} />
+            <PokemonBattleHpDialog
+              side={hpSide}
+              captureId={capturedPokemon.captureId}
+              onClose={() => setHpSide(null)}
             />
             {!opponentView ? (
               <>

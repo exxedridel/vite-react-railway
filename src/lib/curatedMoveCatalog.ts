@@ -1,9 +1,33 @@
 import type { PokemonMove } from "@/types/moves";
 import type { PokemonStatus } from "@/types/pokemon";
 import { GEN3_MOVE_DATA } from "./gen3MoveData";
-export const CURATED_MOVE_CATALOG = GEN3_MOVE_DATA;
+const FIELD_DESCRIPTIONS: Record<number, string> = {
+  241: "Activa Sunny Day durante 5 turnos. Fire ×1.5, Water ×0.5; Solar Beam sin carga; Thunder 50% base; modifica Weather Ball y la recuperación según clima.",
+  240: "Activa Rain Dance durante 5 turnos. Water ×1.5, Fire ×0.5; Thunder no falla por precisión; modifica Solar Beam, Weather Ball y la recuperación según clima.",
+  201: "Activa Sandstorm durante 5 turnos. Al finalizar cada turno resta 1/16 del HP máximo, salvo tipos Rock, Ground o Steel. En Gen 3 no aumenta Special Defense de Rock.",
+  258: "Activa Hail durante 5 turnos. Al finalizar cada turno resta 1/16 del HP máximo salvo tipos Ice. En Gen 3 no hace que Blizzard acierte siempre.",
+  300: "Activa Mud Sport: reduce a la mitad la potencia Electric de ambos combatientes mientras el usuario siga en combate. Se combina con el clima.",
+  346: "Activa Water Sport: reduce a la mitad la potencia Fire de ambos combatientes mientras el usuario siga en combate. Se combina con el clima.",
+};
+export const CURATED_MOVE_CATALOG: typeof GEN3_MOVE_DATA = {
+  ...GEN3_MOVE_DATA,
+  ...Object.fromEntries(
+    Object.entries(FIELD_DESCRIPTIONS).map(([id, description]) => [
+      id,
+      {
+        ...GEN3_MOVE_DATA[Number(id)],
+        automation: "automatic",
+        handler: "field",
+        effects: [],
+        notes: [],
+        manualReason: undefined,
+        description,
+      },
+    ]),
+  ),
+};
 export function getCuratedMove(move: PokemonMove): PokemonMove {
-  const entry = GEN3_MOVE_DATA[move.id];
+  const entry = CURATED_MOVE_CATALOG[move.id];
   return entry
     ? { ...move, ...entry.parameters, description: entry.description }
     : move;

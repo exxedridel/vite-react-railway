@@ -46,27 +46,15 @@ export default function PokemonMoveExecutionOptions({
   const e = CURATED_MOVE_CATALOG[moveId],
     n = NUMERIC_MOVE_INPUTS[moveId];
   if (!e) return null;
+  const hasFields =
+    (!!e.preparation && !(moveId === 76 && value.weather === "sun")) ||
+    !!e.confirmation ||
+    !!n ||
+    [214, 228, 279].includes(moveId) ||
+    e.effects.some((f) => f.status === "flinched");
+  if (!hasFields) return null;
   return (
     <div className="space-y-3 rounded-xl border p-3 text-sm">
-      <label className="block space-y-1">
-        <span>Clima actual (declarado en el tablero)</span>
-        <select
-          className="w-full rounded-md border bg-background p-2 text-foreground"
-          value={value.weather ?? "none"}
-          onChange={(ev) =>
-            onChange({
-              ...value,
-              weather: ev.target.value as MoveExecutionOptions["weather"],
-            })
-          }
-        >
-          <option value="none">Sin clima</option>
-          <option value="sun">Sunny Day</option>
-          <option value="rain">Rain Dance</option>
-          <option value="sand">Sandstorm</option>
-          <option value="hail">Hail</option>
-        </select>
-      </label>
       {e.preparation && !(moveId === 76 && value.weather === "sun") && (
         <label className="flex items-start gap-2">
           <input
@@ -159,7 +147,7 @@ export default function PokemonMoveExecutionOptions({
             <option value="yes">Sí: Flinch no tendrá efecto</option>
           </select>
           <span className="block text-xs text-muted-foreground">
-            La app no administra turnos. Quita Flinch cuando termine este turno.
+            Finalizar turno retirará Flinch automáticamente.
           </span>
         </label>
       )}

@@ -1,40 +1,59 @@
-/* Estilos exclusivos del escenario. No reemplaces tu global.css. */
+/* Encapsulado: sustituye este archivo, no global.css. */
 .battle-scene {
   position: relative;
   isolation: isolate;
-  height: 240px;
+  height: clamp(370px, 53dvh, 460px);
   overflow: hidden;
+  background: hsl(var(--background));
 }
-
+.battle-scene__sky {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    hsl(var(--brand) / 0.23),
+    hsl(var(--background)) 60%,
+    hsl(var(--muted))
+  );
+  transition: background 0.5s ease;
+}
 .battle-scene__ground {
   position: absolute;
   inset-inline: 0;
   bottom: 0;
-  height: 52%;
+  height: 57%;
+  border-top: 1px solid hsl(var(--brand) / 0.18);
+  background: linear-gradient(
+    180deg,
+    hsl(var(--brand) / 0.12),
+    hsl(var(--brand) / 0.3)
+  );
+  transform: skewY(-3deg);
+  transform-origin: right;
 }
-
 .battle-scene__combatant {
   position: absolute;
   transform: translateX(-50%);
-  transition: left 350ms ease, bottom 350ms ease, width 350ms ease, height 350ms ease;
+  transition:
+    left 350ms ease,
+    bottom 350ms ease,
+    width 350ms ease,
+    height 350ms ease;
 }
-
 .battle-scene__combatant--near {
   z-index: 10;
-  left: 29%;
-  bottom: 38px;
-  width: 144px;
-  height: 144px;
+  left: 28%;
+  bottom: 86px;
+  width: 156px;
+  height: 156px;
 }
-
 .battle-scene__combatant--far {
   z-index: 5;
-  left: 74%;
-  bottom: 102px;
-  width: 104px;
-  height: 104px;
+  left: 75%;
+  bottom: 36%;
+  width: 116px;
+  height: 116px;
 }
-
 .battle-scene__platform {
   position: absolute;
   width: 112%;
@@ -44,7 +63,6 @@
   transform: translateX(-50%);
   border-radius: 50%;
 }
-
 .battle-scene__shadow {
   position: absolute;
   left: 50%;
@@ -55,7 +73,6 @@
   border-radius: 50%;
   filter: blur(4px);
 }
-
 .battle-scene .battle-scene__sprite {
   position: absolute;
   z-index: 1;
@@ -73,12 +90,11 @@
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
-
-.battle-scene__sprite:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: 2px;
+.battle-scene__sprite:focus-visible,
+.battle-scene__hp:focus-visible {
+  outline: 3px solid hsl(var(--ring));
+  outline-offset: 3px;
 }
-
 .battle-scene .battle-scene__sprite img {
   display: block;
   width: 100%;
@@ -89,51 +105,236 @@
   user-select: none;
   transform-origin: center bottom;
 }
-
-@keyframes battle-scene-breathe {
-  0%, 100% { transform: translateY(0) scale(1); }
-  50% { transform: translateY(-3px) scale(1.015, 1.025); }
-}
-
 .battle-scene .battle-scene__sprite img.battle-scene__breathing {
   animation: battle-scene-breathe 2.4s ease-in-out infinite;
 }
-
 .battle-scene__combatant--far img.battle-scene__breathing {
   animation-delay: -1.2s;
 }
-
 .battle-scene__fainted {
   filter: grayscale(1);
   opacity: 0.6;
 }
-
-@media (min-width: 640px) {
-  .battle-scene { height: 264px; }
-  .battle-scene__combatant--near { width: 176px; height: 176px; }
-  .battle-scene__combatant--far { width: 128px; height: 128px; bottom: 112px; }
+.battle-scene__hp {
+  position: absolute;
+  z-index: 30;
+  padding: 9px 11px;
+  width: 48%;
+  max-width: 246px;
+  min-height: 66px;
+  border-radius: 14px;
+  text-align: left;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    left 0.35s,
+    right 0.35s;
 }
-
-@media (prefers-reduced-motion: reduce) {
-  .battle-scene__combatant { transition: none; }
-  .battle-scene .battle-scene__sprite img.battle-scene__breathing { animation: none; }
+.battle-scene__hp--near {
+  left: 12px;
+  bottom: 12px;
 }
-
-/* Acerca los pies de cada Pokémon a su plataforma. */
-.battle-scene .battle-scene__combatant--near .battle-scene__sprite {
-  bottom: -12px;
+.battle-scene__hp--far {
+  right: 12px;
+  top: 61px;
 }
-
-.battle-scene .battle-scene__combatant--far .battle-scene__sprite {
-  bottom: -8px;
+.battle-scene__perspective {
+  position: absolute;
+  right: 12px;
+  bottom: 62px;
+  z-index: 25;
 }
-
-@media (min-width: 640px) {
-  .battle-scene .battle-scene__combatant--near .battle-scene__sprite {
-    bottom: -16px;
+.battle-scene__field-label {
+  position: absolute;
+  z-index: 22;
+  top: 66px;
+  left: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  width: calc(48% - 16px);
+  font-size: 10px;
+  font-weight: 600;
+  pointer-events: none;
+}
+.battle-scene__field-label span {
+  max-width: 100%;
+  border-radius: 8px;
+  padding: 5px 7px;
+  background: hsl(var(--background) / 0.9);
+  color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--border));
+}
+.battle-scene__weather,
+.battle-scene__field-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 16;
+  pointer-events: none;
+}
+.battle-scene[data-weather="sun"] .battle-scene__sky {
+  background: radial-gradient(ellipse at 82% 0%, #ffe6a4a6, transparent 58%),
+    linear-gradient(180deg, #f2b65344, hsl(var(--background)) 70%);
+}
+.battle-scene[data-weather="sun"] .battle-scene__weather {
+  background: conic-gradient(
+    from 210deg at 85% -10%,
+    transparent 0deg,
+    #ffeaaa35 15deg,
+    transparent 35deg,
+    #ffeaaa25 48deg,
+    transparent 70deg
+  );
+  animation: battle-sun 6s ease-in-out infinite;
+}
+.battle-scene[data-weather="rain"] .battle-scene__sky {
+  background: linear-gradient(180deg, #24436c99, hsl(var(--background)) 85%);
+}
+.battle-scene[data-weather="rain"] .battle-scene__weather {
+  inset: -40px;
+  opacity: 0.55;
+  background-image: repeating-linear-gradient(
+    108deg,
+    transparent 0 34px,
+    #addcff99 35px 36px,
+    transparent 37px 69px
+  );
+  background-size: 91px 100px;
+  mask-image: repeating-linear-gradient(
+    0deg,
+    #000 0 12px,
+    transparent 12px 46px
+  );
+  animation: battle-rain 0.65s linear infinite;
+}
+.battle-scene[data-weather="sand"] .battle-scene__sky {
+  background: linear-gradient(150deg, #9d743666, hsl(var(--background)) 80%);
+}
+.battle-scene[data-weather="sand"] .battle-scene__weather {
+  opacity: 0.65;
+  background: repeating-linear-gradient(
+      173deg,
+      transparent 0 23px,
+      #d9b77c25 25px 28px,
+      transparent 30px 59px
+    ),
+    radial-gradient(#e5c48d 1px, transparent 1.7px);
+  background-size:
+    220px 65px,
+    39px 29px;
+  animation: battle-sand 1.5s linear infinite;
+}
+.battle-scene[data-weather="hail"] .battle-scene__sky {
+  background: linear-gradient(160deg, #92bedb66, hsl(var(--background)) 80%);
+}
+.battle-scene[data-weather="hail"] .battle-scene__weather {
+  opacity: 0.8;
+  background-image: radial-gradient(ellipse, #f4fcff 0 2px, transparent 3px),
+    radial-gradient(ellipse, #c5e6ff 0 1.5px, transparent 2.5px);
+  background-size:
+    49px 59px,
+    83px 89px;
+  background-position:
+    0 0,
+    20px 31px;
+  animation: battle-hail 1.3s linear infinite;
+}
+.battle-scene__field-overlay {
+  inset: 48% 0 0;
+  z-index: 3;
+  opacity: 0.6;
+}
+.battle-scene[data-mud="true"] .battle-scene__field-overlay {
+  background: repeating-radial-gradient(
+    ellipse at 10% 90%,
+    #8b633b88 0 8px,
+    transparent 12px 40px
+  );
+}
+.battle-scene[data-water="true"] .battle-scene__field-overlay {
+  box-shadow: inset 0 -90px 90px -50px #65c8f0a6;
+  background-image: repeating-radial-gradient(
+    ellipse at 60% 80%,
+    transparent 0 14px,
+    #6fc8ed55 15px 17px,
+    transparent 19px 43px
+  );
+}
+.battle-scene[data-mud="true"][data-water="true"] .battle-scene__field-overlay {
+  background-image: repeating-radial-gradient(
+      ellipse at 10% 90%,
+      #8b633b77 0 8px,
+      transparent 12px 40px
+    ),
+    repeating-radial-gradient(
+      ellipse at 60% 80%,
+      transparent 0 14px,
+      #6fc8ed55 15px 17px,
+      transparent 19px 43px
+    );
+}
+@keyframes battle-scene-breathe {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
   }
-
-  .battle-scene .battle-scene__combatant--far .battle-scene__sprite {
-    bottom: -12px;
+  50% {
+    transform: translateY(-3px) scale(1.015, 1.025);
+  }
+}
+@keyframes battle-rain {
+  to {
+    background-position: -30px 100px;
+  }
+}
+@keyframes battle-hail {
+  to {
+    background-position:
+      20px 118px,
+      40px 209px;
+  }
+}
+@keyframes battle-sand {
+  to {
+    background-position:
+      220px 0,
+      156px 29px;
+  }
+}
+@keyframes battle-sun {
+  50% {
+    opacity: 0.45;
+  }
+}
+@media (min-width: 640px) {
+  .battle-scene {
+    height: 450px;
+  }
+  .battle-scene__combatant--near {
+    width: 200px;
+    height: 200px;
+    left: 28%;
+  }
+  .battle-scene__combatant--far {
+    width: 152px;
+    height: 152px;
+  }
+  .battle-scene__field-label {
+    font-size: 12px;
+  }
+  .battle-scene__hp {
+    padding: 12px 14px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .battle-scene__combatant,
+  .battle-scene__hp {
+    transition: none;
+  }
+  .battle-scene .battle-scene__sprite img.battle-scene__breathing,
+  .battle-scene__weather {
+    animation: none !important;
   }
 }
