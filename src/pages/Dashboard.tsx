@@ -28,6 +28,14 @@ const Dashboard = () => {
   const { setPokemonDialogOpen, pokemonDialogOpen } = useAppContext();
   const dispatch = useAppDispatch();
   const party = useAppSelector((state) => state.party.pokemons);
+  const activeBattleCaptureId = useAppSelector((state) => {
+    const opponent = state.party.opponent;
+    const opponentHp =
+      opponent?.pokemon.stats.find((stat) => stat.name === "hp")?.value ?? 0;
+    return opponent && opponentHp > 0
+      ? (state.party.battleField?.activeCaptureId ?? null)
+      : null;
+  });
   const [pokemonToRemove, setPokemonToRemove] =
     useState<CapturedPokemon | null>(null);
   const [battleCaptureId, setBattleCaptureId] = useState<string | null>(null);
@@ -172,7 +180,10 @@ const Dashboard = () => {
                     onClick={() => handleOpenBattle(capturedPokemon)}
                     aria-label={`Abrir combate de ${pokemon.name}${isFainted ? ", debilitado" : ""}`}
                     aria-haspopup="dialog"
-                    className="relative my-2 block h-28 w-full rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-36"
+                    data-in-battle={
+                      captureId === activeBattleCaptureId ? "true" : undefined
+                    }
+                    className={`relative my-2 block h-28 w-full rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-36 ${captureId === activeBattleCaptureId ? "ring-2 ring-brand ring-offset-2 ring-offset-card" : ""}`}
                   >
                     {pokemon.image ? (
                       <img
@@ -266,7 +277,16 @@ const Dashboard = () => {
       {/* Visible solo en el dashboard, sin superponerse a sus diálogos. */}
       {battleCaptureId === null &&
         pokemonToRemove === null &&
-        !pokemonDialogOpen && <FloatingOpponent />}
+        !pokemonDialogOpen && (
+          <FloatingOpponent
+            onOpenBattle={(captureId) => {
+              const activePokemon = party.find(
+                (capture) => capture.captureId === captureId,
+              );
+              if (activePokemon) handleOpenBattle(activePokemon);
+            }}
+          />
+        )}
     </div>
   );
 };

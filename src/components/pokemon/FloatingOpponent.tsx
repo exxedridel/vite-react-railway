@@ -5,19 +5,10 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import {
-  ArrowDownLeft,
-  ArrowDownRight,
-  ArrowUpLeft,
-  ArrowUpRight,
-  Trash2,
-} from "lucide-react";
+import { X } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { store } from "@/store/store";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { setBattleOpponent } from "@/slices/partySlice";
 import {
@@ -59,17 +50,17 @@ const TYPE_ICON_BASE =
   "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/types/generation-ix/scarlet-violet/small";
 
 const STORAGE_KEY = "pokemon-opponent-corner";
-const CORNERS = [
-  { value: "top-left", label: "Arriba izquierda", icon: ArrowUpLeft },
-  { value: "top-right", label: "Arriba derecha", icon: ArrowUpRight },
-  { value: "bottom-left", label: "Abajo izquierda", icon: ArrowDownLeft },
-  { value: "bottom-right", label: "Abajo derecha", icon: ArrowDownRight },
-] as const;
+const CORNERS: Corner[] = [
+  "top-left",
+  "top-right",
+  "bottom-left",
+  "bottom-right",
+];
 
 function readCorner(): Corner {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
-    return CORNERS.find((c) => c.value === saved)?.value ?? "bottom-right";
+    return CORNERS.find((c) => c === saved) ?? "bottom-right";
   } catch {
     return "bottom-right";
   }
@@ -108,17 +99,21 @@ function OpponentSprite({ pokemon }: { pokemon: Pokemon }) {
   );
 }
 
-function DraggableOpponent({ pokemon }: { pokemon: Pokemon }) {
+type Props = { onOpenBattle: (captureId: string) => void };
+function DraggableOpponent({
+  pokemon,
+  onOpenBattle,
+}: { pokemon: Pokemon } & Props) {
   const fainted = isPokemonFainted(pokemon);
   const dispatch = useAppDispatch();
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
   const cancelRemoveRef = useRef<HTMLButtonElement>(null);
-  const [corner, setCorner] = useState<Corner>(readCorner);
+  const [corner] = useState<Corner>(readCorner);
   const [position, setPosition] = useState<Point | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
   const areaRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
   const cornerRef = useRef(corner);
   const positionRef = useRef<Point>({ x: 0, y: 0 });
   const limitsRef = useRef<Limits>({ x: 0, y: 0 });
@@ -131,7 +126,6 @@ function DraggableOpponent({ pokemon }: { pokemon: Pokemon }) {
   };
   const dock = (nextCorner: Corner) => {
     cornerRef.current = nextCorner;
-    setCorner(nextCorner);
     moveTo(cornerPoint(nextCorner, limitsRef.current));
     try {
       localStorage.setItem(STORAGE_KEY, nextCorner);
@@ -142,7 +136,7 @@ function DraggableOpponent({ pokemon }: { pokemon: Pokemon }) {
 
   useLayoutEffect(() => {
     const area = areaRef.current;
-    const button = buttonRef.current;
+    const button = frameRef.current;
     if (!area || !button) return;
     const measure = () => {
       limitsRef.current = {
@@ -188,7 +182,6 @@ function DraggableOpponent({ pokemon }: { pokemon: Pokemon }) {
     if (!drag.moved && Math.hypot(dx, dy) < 6) return;
     drag.moved = true;
     suppressClickRef.current = true;
-    setMenuOpen(false);
     setDragging(true);
     event.preventDefault();
     moveTo(
@@ -238,112 +231,88 @@ function DraggableOpponent({ pokemon }: { pokemon: Pokemon }) {
         left: "max(12px, env(safe-area-inset-left))",
       }}
     >
-      <Popover open={menuOpen} onOpenChange={setMenuOpen}>
-        <PopoverTrigger asChild>
-          <button
-            ref={buttonRef}
-            type="button"
-            aria-label={`Rival: ${pokemon.name}${fainted ? ", debilitado" : ""}, nivel ${pokemon.level ?? 50}, tipos ${pokemon.types.join(", ")}. Toca para elegir esquina o arrastra para mover.`}
-            title="Arrastra al rival o toca para elegir esquina"
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            onPointerCancel={cancelDrag}
-            onLostPointerCapture={cancelDrag}
-            onClick={(event) => {
-              if (event.detail !== 0 && suppressClickRef.current) {
-                event.preventDefault();
-                suppressClickRef.current = false;
-              }
-            }}
-            className={`pointer-events-auto absolute left-0 top-0 flex h-[124px] w-[96px] touch-none select-none flex-col items-center justify-center gap-1 rounded-2xl py-1 border-2 border-brand/60 bg-card/95 text-card-foreground shadow-lg backdrop-blur-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${dragging ? "cursor-grabbing" : "cursor-grab transition-transform duration-200 motion-reduce:transition-none"}`}
-            style={{
-              transform: `translate3d(${position?.x ?? 0}px, ${position?.y ?? 0}px, 0)`,
-              visibility: position ? "visible" : "hidden",
-            }}
-          >
-            {fainted && (
-              <span
-                role="status"
-                className="absolute -top-2 left-1/2 -translate-x-1/2 rounded-full bg-destructive px-2 py-0.5 text-[10px] font-semibold text-destructive-foreground"
-              >
-                Fainted
-              </span>
-            )}
-            <OpponentSprite key={pokemon.id} pokemon={pokemon} />
-            <span className="text-[10px] font-semibold">
-              Rival · Lv. {pokemon.level ?? 50}
-            </span>
-            <span className="pointer-events-none flex shrink-0 items-center justify-center gap-1.5">
-              {pokemon.types.map((type) =>
-                TYPE_IDS[type] ? (
-                  <span
-                    key={type}
-                    className="inline-flex h-5 w-5 shrink-0 overflow-hidden rounded-full"
-                    title={type}
-                  >
-                    <img
-                      src={`${TYPE_ICON_BASE}/${TYPE_IDS[type]}.png`}
-                      alt={type}
-                      draggable={false}
-                      className="h-full w-full object-cover"
-                    />
-                  </span>
-                ) : null,
-              )}
-            </span>
-          </button>
-        </PopoverTrigger>
-        <PopoverContent
-          onCloseAutoFocus={(event) => {
-            if (removeDialogOpen) event.preventDefault();
+      <div
+        ref={frameRef}
+        className={`pointer-events-auto absolute left-0 top-0 h-[124px] w-[96px] ${dragging ? "" : "transition-transform duration-200 motion-reduce:transition-none"}`}
+        style={{
+          transform: `translate3d(${position?.x ?? 0}px, ${position?.y ?? 0}px, 0)`,
+          visibility: position ? "visible" : "hidden",
+        }}
+      >
+        <button
+          ref={buttonRef}
+          type="button"
+          aria-label={`Volver al combate contra ${pokemon.name}${fainted ? ", debilitado" : ""}. Arrastra para mover.`}
+          title="Toca para volver al combate; arrastra para mover"
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={cancelDrag}
+          onLostPointerCapture={cancelDrag}
+          onClick={(event) => {
+            if (event.detail !== 0 && suppressClickRef.current) {
+              event.preventDefault();
+              suppressClickRef.current = false;
+              return;
+            }
+            const party = store.getState().party;
+            const active = party.pokemons.find(
+              (capture) =>
+                capture.captureId === party.battleField?.activeCaptureId,
+            );
+            if (!party.opponent) return;
+            if (!active) {
+              toast.info(
+                "Selecciona un Pokémon de tu equipo para iniciar el combate.",
+              );
+              return;
+            }
+            onOpenBattle(active.captureId);
           }}
-          side={corner.startsWith("bottom") ? "top" : "bottom"}
-          align={corner.endsWith("right") ? "end" : "start"}
-          sideOffset={8}
-          collisionPadding={12}
-          className="pointer-events-auto w-64 max-w-[calc(100vw-24px)] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto p-3"
+          className={`relative flex h-full w-full touch-none select-none flex-col items-center justify-center gap-1 rounded-2xl border-2 border-brand/60 bg-card/95 py-1 text-card-foreground shadow-lg backdrop-blur-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${dragging ? "cursor-grabbing" : "cursor-grab"}`}
         >
-          <p className="text-sm font-semibold capitalize">
-            {pokemon.name} · Rival
-          </p>
-          <p className="mb-3 mt-1 text-xs text-muted-foreground">
-            Arrástralo a otra esquina o elige su posición.
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            {CORNERS.map(({ value, label, icon: Icon }) => (
-              <Button
-                key={value}
-                type="button"
-                variant={corner === value ? "secondary" : "outline"}
-                aria-pressed={corner === value}
-                className="h-auto min-h-11 gap-1 whitespace-normal px-2 py-2 text-xs"
-                onClick={() => {
-                  dock(value);
-                  setMenuOpen(false);
-                }}
-              >
-                <Icon className="h-4 w-4 shrink-0" /> {label}
-              </Button>
-            ))}
-          </div>
-          <div className="mt-3 border-t pt-3">
-            <Button
-              type="button"
-              variant="destructive"
-              className="w-full gap-2"
-              aria-haspopup="dialog"
-              onClick={() => {
-                setMenuOpen(false);
-                setRemoveDialogOpen(true);
-              }}
+          {fainted && (
+            <span
+              role="status"
+              className="absolute -bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-destructive px-2 py-0.5 text-[10px] font-semibold text-destructive-foreground"
             >
-              <Trash2 className="h-4 w-4" />
-              Quitar oponente
-            </Button>
-          </div>
-        </PopoverContent>
-      </Popover>
+              Fainted
+            </span>
+          )}
+          <OpponentSprite key={pokemon.id} pokemon={pokemon} />
+          <span className="text-[10px] font-semibold">
+            Rival · Lv. {pokemon.level ?? 50}
+          </span>
+          <span className="pointer-events-none flex shrink-0 items-center justify-center gap-1.5">
+            {pokemon.types.map((type) =>
+              TYPE_IDS[type] ? (
+                <span
+                  key={type}
+                  className="inline-flex h-5 w-5 shrink-0 overflow-hidden rounded-full"
+                  title={type}
+                >
+                  <img
+                    src={`${TYPE_ICON_BASE}/${TYPE_IDS[type]}.png`}
+                    alt={type}
+                    draggable={false}
+                    className="h-full w-full object-cover"
+                  />
+                </span>
+              ) : null,
+            )}
+          </span>
+        </button>
+        <button
+          type="button"
+          aria-label={`Quitar a ${pokemon.name} como oponente`}
+          aria-haspopup="dialog"
+          title="Quitar oponente"
+          className="absolute -left-2 -top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-brand bg-card text-card-foreground shadow-sm hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={() => setRemoveDialogOpen(true)}
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
 
       <Dialog open={removeDialogOpen} onOpenChange={setRemoveDialogOpen}>
         <DialogContent
@@ -392,8 +361,14 @@ function DraggableOpponent({ pokemon }: { pokemon: Pokemon }) {
   );
 }
 
-export default function FloatingOpponent() {
+export default function FloatingOpponent({ onOpenBattle }: Props) {
   const opponent = useAppSelector((state) => state.party.opponent ?? null);
   if (!opponent) return null;
-  return <DraggableOpponent pokemon={opponent.pokemon} />;
+  return (
+    <DraggableOpponent
+      key={`${opponent.kind}:${opponent.encounterId ?? ""}:${opponent.pokemon.id}`}
+      pokemon={opponent.pokemon}
+      onOpenBattle={onOpenBattle}
+    />
+  );
 }
