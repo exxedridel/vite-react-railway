@@ -154,6 +154,7 @@ export function resolveBattleMove(
     p = c.pokemon,
     q = o.pokemon;
   const r: BattleResult = {
+    attackerBurned: c.statuses?.includes("burned") ?? false,
     id,
     captureId: c.captureId,
     attackerName: p.name,
@@ -488,6 +489,8 @@ export function resolveBattleMove(
     move.damageClass === "physical" ? "attack" : "special-attack";
   const defenseName =
     move.damageClass === "physical" ? "defense" : "special-defense";
+  r.attackStat = attackName;
+  r.defenseStat = defenseName;
   const a = p.stats.find((s) => s.name === attackName)?.value,
     d = q.stats.find((s) => s.name === defenseName)?.value;
   if (!a || !d) return stop("Estadísticas ofensivas/defensivas inválidas.");

@@ -19,7 +19,6 @@ import {
   requiresConditionCheck,
 } from "@/lib/battleEngine";
 import { getCurrentHp } from "@/lib/pokemonStats";
-import type { BattleResult } from "@/types/battle";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -30,119 +29,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 const percent = (value: number) => `${Number(value.toFixed(2))}%`;
-export function BattleResultView({ result }: { result: BattleResult }) {
-  return (
-    <div className="space-y-3" aria-live="polite">
-      <p className="text-sm text-muted-foreground capitalize">
-        {result.attackerName} → {result.opponentName} · {result.moveName}
-      </p>
-      <p className="font-semibold">{result.message}</p>
-      {result.outcome === "hit" && (
-        <>
-          <div className="rounded-xl bg-muted p-4 text-center">
-            <p className="text-3xl font-bold tabular-nums">
-              {result.damage} HP
-            </p>
-            <p className="text-sm">
-              {result.critical
-                ? `Crítico ×${result.criticalMultiplier ?? 1.5}`
-                : "Daño sin crítico"}
-            </p>
-          </div>
-          {!result.hpChanges && (
-            <p className="text-sm">
-              {result.wildHpBefore !== null
-                ? `HP salvaje: ${result.wildHpBefore} → ${result.wildHpAfter}`
-                : result.targetHpBefore !== undefined
-                  ? `HP objetivo: ${result.targetHpBefore} → ${result.targetHpAfter}`
-                  : "Registro anterior: verifica si el daño fue aplicado manualmente."}
-            </p>
-          )}
-          <details className="rounded-xl border p-3 text-xs">
-            <summary className="cursor-pointer font-medium">
-              Ver cálculo del daño
-            </summary>
-            <dl className="mt-3 grid grid-cols-2 gap-2">
-              <dt>Nivel</dt>
-              <dd>{result.level}</dd>
-              <dt>Ataque usado · etapa</dt>
-              <dd>
-                {result.attack} · {result.attackStage}
-              </dd>
-              <dt>Defensa usada · etapa</dt>
-              <dd>
-                {result.defense} · {result.defenseStage}
-              </dd>
-              <dt>Daño base</dt>
-              <dd>{result.baseDamage}</dd>
-              <dt>STAB</dt>
-              <dd>×{result.stab}</dd>
-              <dt>Efectividad</dt>
-              <dd>×{result.effectiveness}</dd>
-              <dt>Crítico</dt>
-              <dd>
-                ×{result.critical ? (result.criticalMultiplier ?? 1.5) : 1}
-              </dd>
-              <dt>Quemadura</dt>
-              <dd>×{result.burn}</dd>
-            </dl>
-          </details>
-        </>
-      )}
-      {result.hpChanges && (
-        <div className="space-y-2 text-sm">
-          {result.hpChanges.map((change) => (
-            <p key={change.role}>
-              HP de {change.name}: {change.before} → {change.after} (
-              {change.after - change.before >= 0 ? "+" : ""}
-              {change.after - change.before} HP).
-            </p>
-          ))}
-          {result.outcome === "hit" && (
-            <p>Daño real aplicado: {result.appliedDamage} HP.</p>
-          )}
-          {result.appliedHealing !== undefined && (
-            <p>Curación real: {result.appliedHealing} HP.</p>
-          )}
-        </div>
-      )}
-      {!!result.hits?.length && result.hits.length > 1 && (
-        <p className="text-sm">
-          {result.hits.length} golpes:{" "}
-          {result.hits
-            .map(
-              (h, i) =>
-                `${i + 1}: ${h.damage} HP${h.critical ? " (crítico)" : ""}`,
-            )
-            .join(" · ")}
-        </p>
-      )}
-      {!!result.effectMessages?.length && (
-        <ul className="list-disc space-y-1 pl-5 text-sm">
-          {result.effectMessages.map((message, index) => (
-            <li key={index}>{message}</li>
-          ))}
-        </ul>
-      )}
-      {result.hitChance !== null && (
-        <p className="text-xs text-muted-foreground">
-          Probabilidad de acierto: {percent(result.hitChance)}.
-          {result.accuracyRoll !== null &&
-            ` Tirada: ${percent(result.accuracyRoll)} (acierta si es menor).`}
-        </p>
-      )}
-      {result.criticalRoll !== null && (
-        <p className="text-xs text-muted-foreground">
-          Probabilidad de crítico: {percent(result.criticalChance * 100)}.
-          {` Tirada: ${percent(result.criticalRoll * 100)}.`}
-        </p>
-      )}
-      {result.manualEffect && (
-        <p className="rounded-xl border p-3 text-sm">{result.manualEffect}</p>
-      )}
-    </div>
-  );
-}
+export { default as BattleResultView } from "./BattleResultView";
+import BattleResultView from "./BattleResultView";
 export default function PokemonMoveExecutionDialog({
   captureId,
   moveId,

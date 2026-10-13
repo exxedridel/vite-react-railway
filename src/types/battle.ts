@@ -6,6 +6,26 @@ export type BattleOutcome =
   | "blocked"
   | "manual";
 export type BattleResult = {
+  attackStat?: "attack" | "special-attack";
+  defenseStat?: "defense" | "special-defense";
+  attackerBurned?: boolean;
+  statusChanges?: {
+    role: "attacker" | "target";
+    name: string;
+    status: import("./pokemon").PokemonStatus;
+  }[];
+  effectRolls?: {
+    recipient: "attacker" | "target";
+    name: string;
+    chance: number;
+    roll: number;
+    statuses?: import("./pokemon").PokemonStatus[];
+    stages?: Partial<Record<import("./pokemon").BattleStageName, number>>;
+    selectedStatus?: import("./pokemon").PokemonStatus;
+    hit: number;
+    passed: boolean;
+    applied: boolean;
+  }[];
   damageType?: string;
   resolvedMoveId?: number;
   criticalMultiplier?: number;

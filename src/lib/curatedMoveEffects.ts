@@ -39,6 +39,12 @@ export function applyCuratedMoveEffects(
     q = foe.pokemon;
   const options = r.executionOptions ?? {};
   r.hpChanges = [];
+  r.statusChanges = [];
+  r.effectRolls = [];
+  const statusesBefore = {
+    attacker: [...own.statuses],
+    target: [...foe.statuses],
+  };
   r.effectMessages ??= [];
   const beforeP = getCurrentHp(p),
     beforeQ = getCurrentHp(q);
@@ -90,7 +96,6 @@ export function applyCuratedMoveEffects(
       return;
     }
     c.statuses.push(s);
-    r.effectMessages!.push(`${c.pokemon.name}: ${s} aplicado.`);
   }
   if ([172, 221].includes(id) && own.statuses.includes("frozen")) {
     own.statuses = own.statuses.filter((s) => s !== "frozen");
@@ -209,21 +214,32 @@ export function applyCuratedMoveEffects(
           c = effect.recipient === "attacker" ? own : foe;
         if (getCurrentHp(c.pokemon) <= 0) continue;
         const roll = random(hit * 8 + i * 2) * 100;
-        if (effect.chance < 100)
-          r.effectMessages.push(
-            `Efecto ${effect.status ?? (effect.randomStatus ? "estado aleatorio" : "stats")}: ${effect.chance}%, tirada ${roll.toFixed(2)}%.`,
-          );
-        if (roll >= effect.chance) continue;
+        const record: NonNullable<BattleResult["effectRolls"]>[number] = {
+          recipient: effect.recipient,
+          name: c.pokemon.name,
+          chance: effect.chance,
+          roll,
+          statuses: effect.status ? [effect.status] : effect.randomStatus,
+          stages: effect.stages,
+          hit: hit + 1,
+          passed: roll < effect.chance,
+          applied: false,
+        };
+        // No tirada artificial para efectos garantizados. Se conserva el efecto real.
+        if (effect.chance < 100) r.effectRolls.push(record);
+        if (!record.passed) continue;
+        const beforeStatus = [...c.statuses];
+        const beforeStages = { ...c.stages };
         if (effect.status) status(c, effect.status);
-        if (effect.randomStatus)
-          status(
-            c,
+        if (effect.randomStatus) {
+          record.selectedStatus =
             effect.randomStatus[
               Math.floor(
                 random(hit * 8 + i * 2 + 1) * effect.randomStatus.length,
               )
-            ],
-          );
+            ];
+          status(c, record.selectedStatus);
+        }
         for (const [stat, delta] of Object.entries(effect.stages ?? {})) {
           const key = stat as BattleStageName,
             before = c.stages[key];
@@ -232,6 +248,11 @@ export function applyCuratedMoveEffects(
             `${c.pokemon.name}: ${key} ${before} → ${c.stages[key]}.`,
           );
         }
+        record.applied =
+          c.statuses.some((s) => !beforeStatus.includes(s)) ||
+          Object.entries(c.stages).some(
+            ([key, value]) => value !== beforeStages[key as BattleStageName],
+          );
       }
   }
   if (r.crashDamage) {
@@ -245,6 +266,14 @@ export function applyCuratedMoveEffects(
   ) {
     hp(own, 0);
     r.effectMessages.push("El usuario se debilita por autodestrucción.");
+  }
+  for (const [role, combatant] of [
+    ["attacker", own],
+    ["target", foe],
+  ] as const) {
+    for (const status of combatant.statuses)
+      if (!statusesBefore[role].includes(status))
+        r.statusChanges.push({ role, name: combatant.pokemon.name, status });
   }
   r.hpChanges.push(
     { role: "target", name: q.name, before: beforeQ, after: getCurrentHp(q) },
