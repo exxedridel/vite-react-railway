@@ -2,69 +2,14 @@ import { getCurrentHp, getMaxHp } from "@/lib/pokemonStats";
 import { WEATHER_LABELS, type BattleField } from "@/lib/battleField";
 import { Progress } from "@/components/ui/progress";
 import { isPokemonFainted } from "@/lib/pokemonCondition";
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
+import BattleSprite from "./PokemonBattleSprite";
 import { SwitchCamera } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import PokemonStatusControl from "./PokemonStatusControl";
 import type { CapturedPokemon, Pokemon } from "@/types/pokemon";
 import type { BattleOpponent } from "@/lib/battleOpponent";
 import "./PokemonBattleArena.css";
-
-const SPRITE_BASE =
-  "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon";
-
-type SpriteProps = {
-  pokemon: Pokemon;
-  back: boolean;
-  fainted?: boolean;
-  onPlayCry: (id: number) => void;
-};
-
-// El padre usa key por especie y perspectiva para reiniciar los fallbacks.
-function BattleSprite({
-  pokemon,
-  back,
-  fainted = false,
-  onPlayCry,
-}: SpriteProps) {
-  const [sourceIndex, setSourceIndex] = useState(0);
-  const sources = Array.from(
-    new Set([
-      ...(back ? [`${SPRITE_BASE}/back/${pokemon.id}.png`] : []),
-      `${SPRITE_BASE}/${pokemon.id}.png`,
-      ...(pokemon.image ? [pokemon.image] : []),
-    ]),
-  );
-  const source = sources[sourceIndex];
-
-  return (
-    <button
-      type="button"
-      className="battle-scene__sprite"
-      onClick={() => onPlayCry(pokemon.id)}
-      aria-label={`Escuchar el cry de ${pokemon.name}`}
-      title={`Escuchar a ${pokemon.name}`}
-    >
-      {source ? (
-        <img
-          key={source}
-          src={source}
-          alt={pokemon.name}
-          draggable={false}
-          onError={() => setSourceIndex((current) => current + 1)}
-          className={
-            fainted ? "battle-scene__fainted" : "battle-scene__breathing"
-          }
-        />
-      ) : (
-        <span className="rounded-lg bg-background/90 p-2 text-xs text-muted-foreground">
-          <span className="block capitalize">{pokemon.name}</span>
-          Sprite no disponible
-        </span>
-      )}
-    </button>
-  );
-}
 
 type Props = {
   field: BattleField;
@@ -124,6 +69,9 @@ export default function PokemonBattleArena({
         pokemon={pokemon}
         position={opponentView ? "far" : "near"}
         side="player"
+        statusControl={
+          <PokemonStatusControl capturedPokemon={capturedPokemon} />
+        }
         onClick={() => onOpenHp("player")}
       />
       {opponent && (
@@ -131,16 +79,10 @@ export default function PokemonBattleArena({
           pokemon={opponent.pokemon}
           position={opponentView ? "near" : "far"}
           side="opponent"
+          statusControl={rivalStatusControl}
           onClick={() => onOpenHp("opponent")}
         />
       )}
-      <div className="absolute left-3 top-3 z-30 max-w-[60%]">
-        {opponentView ? (
-          rivalStatusControl
-        ) : (
-          <PokemonStatusControl capturedPokemon={capturedPokemon} />
-        )}
-      </div>
       <div className="absolute right-3 top-3 z-30">{manageControl}</div>
 
       <div
@@ -233,11 +175,13 @@ function ArenaHp({
   position,
   side,
   onClick,
+  statusControl,
 }: {
   pokemon: Pokemon;
   position: "near" | "far";
   side: "player" | "opponent";
   onClick: () => void;
+  statusControl?: ReactNode;
 }) {
   const current = getCurrentHp(pokemon),
     max = getMaxHp(pokemon),
@@ -249,32 +193,40 @@ function ArenaHp({
         ? "[&>div]:bg-yellow-500"
         : "[&>div]:bg-green-500";
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={`Modificar HP de ${pokemon.name}: ${current} de ${max ?? "desconocido"}`}
-      aria-haspopup="dialog"
+    <div
+      className={`battle-scene__hud battle-scene__hud--${position}`}
       data-side={side}
-      className={`battle-scene__hp battle-scene__hp--${position} border bg-card/95 text-card-foreground shadow-md`}
     >
-      <span className="flex items-center justify-between gap-1">
-        <strong className="truncate text-xs capitalize">{pokemon.name}</strong>
-        <span className="shrink-0 text-[10px] text-muted-foreground">
-          Lv. {pokemon.level ?? 50}
+      <button
+        type="button"
+        onClick={onClick}
+        aria-label={`Modificar HP de ${pokemon.name}: ${current} de ${max ?? "desconocido"}`}
+        aria-haspopup="dialog"
+        data-side={side}
+        className="battle-scene__hp border bg-card/95 text-card-foreground shadow-md"
+      >
+        <span className="flex items-center justify-between gap-1">
+          <strong className="truncate text-xs capitalize">
+            {pokemon.name}
+          </strong>
+          <span className="shrink-0 text-[10px] text-muted-foreground">
+            Lv. {pokemon.level ?? 50}
+          </span>
         </span>
-      </span>
-      <span className="mb-1 flex justify-between text-[10px] tabular-nums">
-        <span>HP</span>
-        <span>
-          {current}/{max ?? "—"}
+        <span className="mb-1 flex justify-between text-[10px] tabular-nums">
+          <span>HP</span>
+          <span>
+            {current}/{max ?? "—"}
+          </span>
         </span>
-      </span>
-      <Progress
-        value={percent}
-        className={`h-2 ${color}`}
-        aria-label={`HP de ${pokemon.name}`}
-        aria-valuetext={`${current} de ${max ?? "desconocido"}`}
-      />
-    </button>
+        <Progress
+          value={percent}
+          className={`h-2 ${color}`}
+          aria-label={`HP de ${pokemon.name}`}
+          aria-valuetext={`${current} de ${max ?? "desconocido"}`}
+        />
+      </button>
+      <div className="battle-scene__status">{statusControl}</div>
+    </div>
   );
 }
