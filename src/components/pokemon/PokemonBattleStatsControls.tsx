@@ -13,6 +13,7 @@ type Props = {
   stages: Partial<BattleStages> | undefined;
   ownerLabel: string;
   disabled?: boolean;
+  compact?: boolean;
   onChangeStage: (stat: BattleStageName, amount: number) => void;
   onReset: () => void;
 };
@@ -22,6 +23,7 @@ export default function PokemonBattleStatsControls({
   stages,
   ownerLabel,
   disabled = false,
+  compact = false,
   onChangeStage,
   onReset,
 }: Props) {
@@ -31,7 +33,7 @@ export default function PokemonBattleStatsControls({
       <p className="text-xs text-muted-foreground">
         Cada botón cambia una etapa (−6 a +6). El valor 0 es neutral.
       </p>
-      <div className="space-y-3">
+      <div className={compact ? "grid grid-cols-2 gap-2" : "space-y-3"}>
         {BATTLE_STAT_OPTIONS.map((stat) => {
           const stage = current[stat.name];
           const isAccuracy =
@@ -42,7 +44,11 @@ export default function PokemonBattleStatsControls({
           return (
             <div
               key={stat.name}
-              className="flex flex-wrap items-center justify-between gap-2 border-b pb-2 last:border-0"
+              className={
+                compact
+                  ? "flex min-w-0 flex-col gap-2 rounded-lg border p-2"
+                  : "flex flex-wrap items-center justify-between gap-2 border-b pb-2 last:border-0"
+              }
             >
               <div className="min-w-0">
                 <p className="text-sm font-medium">{stat.label}</p>
@@ -68,12 +74,12 @@ export default function PokemonBattleStatsControls({
                   </p>
                 )}
               </div>
-              <div className="flex shrink-0 items-center gap-1">
+              <div className="flex shrink-0 items-center justify-center gap-1">
                 <Button
                   type="button"
                   variant="outline"
                   size="icon"
-                  className="h-9 w-9"
+                  className={compact ? "h-8 w-8 shrink-0" : "h-9 w-9"}
                   disabled={disabled || stage <= -6}
                   onClick={() => onChangeStage(stat.name, -1)}
                   aria-label={`Bajar una etapa de ${stat.label}: ${ownerLabel}`}
@@ -83,7 +89,7 @@ export default function PokemonBattleStatsControls({
                 <output
                   aria-label={`Etapas de ${stat.label}: ${ownerLabel}`}
                   aria-live="polite"
-                  className={`w-8 text-center text-sm font-semibold tabular-nums ${stage > 0 ? "text-brand" : stage < 0 ? "text-destructive" : ""}`}
+                  className={`${compact ? "w-5" : "w-8"} text-center text-sm font-semibold tabular-nums ${stage > 0 ? "text-brand" : stage < 0 ? "text-destructive" : ""}`}
                 >
                   {stage > 0 ? `+${stage}` : stage}
                 </output>
@@ -91,7 +97,7 @@ export default function PokemonBattleStatsControls({
                   type="button"
                   variant="outline"
                   size="icon"
-                  className="h-9 w-9"
+                  className={compact ? "h-8 w-8 shrink-0" : "h-9 w-9"}
                   disabled={disabled || stage >= 6}
                   onClick={() => onChangeStage(stat.name, 1)}
                   aria-label={`Subir una etapa de ${stat.label}: ${ownerLabel}`}

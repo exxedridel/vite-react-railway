@@ -5,7 +5,7 @@ import PokemonBattleFieldControl from "./PokemonBattleFieldControl";
 import { getBattleField } from "@/lib/battleField";
 import PokemonRivalActions from "./PokemonRivalActions";
 import PokemonOpponentStatusControl from "./PokemonOpponentStatusControl";
-import { BattleResultView } from "./PokemonMoveExecutionDialog";
+import PokemonLastMoveSummary from "./PokemonLastMoveSummary";
 import { getBattlePresence } from "@/lib/battlePresence";
 import PokemonMovesPanel from "./PokemonMovesPanel";
 import {
@@ -30,7 +30,6 @@ import PokemonBattleArena from "./PokemonBattleArena";
 import PokemonTypeBadges from "./PokemonTypeBadges";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { store } from "@/store/store";
-import PokemonPlayerPanel from "./PokemonPlayerPanel";
 import {
   activateBattlePokemon,
   confirmBattleSwitch,
@@ -124,7 +123,6 @@ function BattleDialogContent({ captureId, onClose }: Props) {
     setHpSide(null);
     if (captureId) dispatch(activateBattlePokemon(captureId));
   }, [captureId, dispatch, field.activeCaptureId]);
-  const lastResult = useAppSelector((state) => state.party.lastBattleResult);
   const capturedPokemon = useAppSelector((state) =>
     state.party.pokemons.find((item) => item.captureId === captureId),
   );
@@ -365,7 +363,6 @@ function BattleDialogContent({ captureId, onClose }: Props) {
                     )}
                   </div>
                 </details>
-                <PokemonPlayerPanel captureId={capturedPokemon.captureId} />
               </>
             ) : (
               opponent && (
@@ -387,25 +384,13 @@ function BattleDialogContent({ captureId, onClose }: Props) {
                       />
                     </div>
                   </details>
-                  <PokemonRivalActions
-                    section="stats"
-                    opponent={opponent}
-                    captureId={capturedPokemon.captureId}
-                    onChange={setOpponent}
-                  />
                 </>
               )
             )}
-            {lastResult && (
-              <details className="shrink-0 rounded-2xl border bg-card p-4 text-card-foreground">
-                <summary className="cursor-pointer text-sm font-semibold">
-                  Último movimiento · {lastResult.moveName}
-                </summary>
-                <div className="mt-3">
-                  <BattleResultView result={lastResult} />
-                </div>
-              </details>
-            )}
+            <PokemonLastMoveSummary
+              captureId={captureId}
+              side={opponentView ? "opponent" : "player"}
+            />
             <Dialog open={manageOpen} onOpenChange={setManageOpen}>
               <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-[560px]">
                 <DialogTitle>Gestionar encuentro</DialogTitle>

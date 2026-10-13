@@ -91,6 +91,8 @@ export type PartyState = {
   activityHistory?: ActivityEntry[];
   activitySequence?: number;
   lastBattleResult?: BattleResult | null;
+  lastMovesByPlayer?: Record<string, BattleResult>;
+  lastOpponentMove?: BattleResult | null;
   resolvedBattleIds?: string[];
   pokemons: CapturedPokemon[];
   starterClaimed?: boolean;
@@ -181,6 +183,8 @@ const partySlice = createSlice({
         ruleset: RULESET_ID,
       };
       state.opponent = null;
+      state.lastMovesByPlayer = {};
+      state.lastOpponentMove = null;
       state.battleField = emptyBattleField();
     },
     activateBattlePokemon(state, action: PayloadAction<string>) {
@@ -451,6 +455,12 @@ const partySlice = createSlice({
         if (getCurrentHp(opponent.pokemon) <= 0)
           clearFieldSource(state.battleField, { side: "opponent" });
         state.lastBattleResult = result;
+        if (result.outcome !== "blocked") {
+          if (actorSide === "player") {
+            state.lastMovesByPlayer ??= {};
+            state.lastMovesByPlayer[captureId] = result;
+          } else state.lastOpponentMove = result;
+        }
         state.resolvedBattleIds = [
           ...(state.resolvedBattleIds ?? []),
           commandId,
@@ -472,6 +482,8 @@ const partySlice = createSlice({
       )
         return;
       if (!sameEncounter) {
+        state.lastMovesByPlayer = {};
+        state.lastOpponentMove = null;
         state.battleField = emptyBattleField();
         state.lastFieldEvent = undefined;
       }
@@ -527,6 +539,8 @@ const partySlice = createSlice({
         state.starterClaimed = true;
         // Captura y retirada del rival ocurren en la misma acción: evita duplicados.
         state.opponent = null;
+        state.lastMovesByPlayer = {};
+        state.lastOpponentMove = null;
         state.battleField = emptyBattleField();
       },
     },
@@ -669,6 +683,8 @@ const partySlice = createSlice({
         opponent: null,
         starterClaimed: false,
         lastBattleResult: null,
+        lastMovesByPlayer: {},
+        lastOpponentMove: null,
         resolvedBattleIds: [],
       };
     },
