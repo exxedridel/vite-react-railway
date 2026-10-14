@@ -307,7 +307,7 @@ function DraggableOpponent({
           aria-label={`Quitar a ${pokemon.name} como oponente`}
           aria-haspopup="dialog"
           title="Quitar oponente"
-          className="absolute -left-2 -top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-brand bg-card text-card-foreground shadow-sm hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="absolute -left-2 -top-4 z-10 flex h-7 w-7 items-center justify-center rounded-full border border-brand bg-card text-card-foreground shadow-sm hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           onClick={() => setRemoveDialogOpen(true)}
         >
           <X className="h-4 w-4" />

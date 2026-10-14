@@ -84,11 +84,11 @@ export default function BattleResultView({ result }: { result: BattleResult }) {
           </span>
         )}
         {statusChanges.map((c) => (
-          <span key={`${c.role}:${c.status}`} className="text-foreground">
+          <span key={`${c.role}:${c.status}`} className="text-foreground text-yellow-600 dark:text-yellow-400">
             <span className="capitalize">{c.name}</span> {phrases[c.status]}
           </span>
         ))}
-        {!headline && <span>{hit ? "The move hit." : result.message}</span>}
+        {!headline && <span>{hit ? "A regular hit." : result.message}</span>}
         {headline && !hit && result.outcome !== "status" && (
           <span>{result.message}</span>
         )}

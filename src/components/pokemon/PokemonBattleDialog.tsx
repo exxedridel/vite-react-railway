@@ -323,10 +323,10 @@ function BattleDialogContent({ captureId, onClose }: Props) {
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="bg-background/90"
+                  className="bg-background/90 flex flex-row items-center justify-center gap-0"
                   onClick={() => setManageOpen(true)}
                 >
-                  {opponent ? "Encuentro" : "Elegir rival"}
+                  <img src="/Pokeball-PNG.png" alt="poke-opponent-menu" className="h-4 w-4" />&nbsp;<span>{opponent ? "Oponente" : "Elegir oponente"}</span>
                 </Button>
               }
             />
@@ -343,7 +343,7 @@ function BattleDialogContent({ captureId, onClose }: Props) {
                   className="shrink-0 rounded-2xl border bg-card p-4 text-card-foreground"
                 >
                   <summary className="cursor-pointer text-sm font-semibold">
-                    Movimientos de tu Pokémon
+                    BATTLE MOVES
                   </summary>
                   <div className="mt-3 [&>section]:border-0 [&>section]:p-0">
                     {field.playerSwitchedThisTurn ? (
@@ -372,7 +372,7 @@ function BattleDialogContent({ captureId, onClose }: Props) {
                     className="shrink-0 rounded-2xl border bg-card p-4 text-card-foreground"
                   >
                     <summary className="cursor-pointer text-sm font-semibold">
-                      Movimientos del rival
+                      RIVAL MOVES
                     </summary>
                     <div className="mt-3 [&>section]:border-0 [&>section]:p-0">
                       <PokemonRivalActions

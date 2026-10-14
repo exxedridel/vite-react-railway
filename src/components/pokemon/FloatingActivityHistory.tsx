@@ -23,7 +23,7 @@ export default function FloatingActivityHistory({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const positionRef = useRef(position);
   const limits = useRef<Point>({ x: 0, y: 0 });
-  const corner = useRef<Corner>("bottom-right");
+  const corner = useRef<Corner>("bottom-left");
   const drag = useRef<Drag | null>(null);
   const suppressClick = useRef(false);
 
@@ -206,7 +206,6 @@ export default function FloatingActivityHistory({
                 type="button"
                 aria-label="Abrir historial de actividad. Arrastra para cambiar de esquina."
                 aria-haspopup="dialog"
-                onPointerDown={pointerDown}
                 onPointerMove={pointerMove}
                 onPointerUp={pointerUp}
                 onPointerCancel={cancelDrag}
@@ -220,14 +219,14 @@ export default function FloatingActivityHistory({
                 }}
                 className={`pointer-events-auto flex h-full w-full touch-none select-none items-center justify-center rounded-2xl border-2 border-brand bg-card text-brand shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${dragging ? "cursor-grabbing" : "cursor-grab"}`}
               >
-                <History className="h-8 w-8" />
+                <History className="h-9 w-9 text-foreground/70 " />
               </button>
               <button
                 type="button"
                 onClick={onClose}
                 aria-label="Ocultar botón del historial"
                 title="Ocultar historial"
-                className="pointer-events-auto absolute -right-2 -top-2 flex h-8 w-8 items-center justify-center rounded-full border border-brand bg-card text-card-foreground shadow-sm hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="pointer-events-auto absolute -left-2 -top-4 flex h-7 w-7 items-center justify-center rounded-full border border-brand bg-card text-card-foreground shadow-sm hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <X className="h-4 w-4" />
               </button>

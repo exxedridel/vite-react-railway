@@ -6,7 +6,7 @@ import type {
 } from "@/types/pokemon";
 
 export const INITIAL_LEVEL = 50;
-export const HP_MULTIPLIER = 1.15;
+export const HP_MULTIPLIER = 1.30;
 export const STAT_NAMES = [
   "hp",
   "attack",

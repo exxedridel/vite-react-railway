@@ -54,7 +54,7 @@ export default function PokemonLastMoveSummary({
         </div>
       ) : (
         <p className="mt-1 text-sm text-muted-foreground">
-          Todavía no ha usado movimientos en este encuentro.
+          Ninguno en este combate.
         </p>
       )}
     </section>

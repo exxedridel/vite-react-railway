@@ -179,14 +179,6 @@ export default function DropdownUser() {
             <History className="mr-2 h-4 w-4" />
             <span>Historial de actividad</span>
           </DropdownMenuItem>
-          <DropdownMenuItem disabled>
-            <img
-              src="/ditto.png"
-              alt=""
-              className="h-[16.1px] w-[16.1px] mr-2"
-            />
-            <span>Simular poké-enemigo</span>
-          </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={() => openDialog("reset")}>
             <RotateCcw className="mr-2 h-4 w-4" />
