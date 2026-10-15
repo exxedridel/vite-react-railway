@@ -19,7 +19,7 @@ export default function PokemonStatsPopover({
   const { ready, isError, retry } = usePokemonProgression(pokemon);
   const effective = getEffectiveBattleStats(pokemon);
   const stats = isLeveled(pokemon)
-    ? calculateStats(pokemon.baseStats, pokemon.level)
+    ? calculateStats(pokemon.baseStats, pokemon.level, pokemon.hpMultiplier)
     : [];
   return (
     <Popover modal>

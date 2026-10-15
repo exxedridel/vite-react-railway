@@ -5,8 +5,8 @@ import type {
   PokemonStat,
 } from "@/types/pokemon";
 
-export const INITIAL_LEVEL = 50;
-export const HP_MULTIPLIER = 1.30;
+export const INITIAL_LEVEL = 5;
+export const HP_MULTIPLIER = 1.3;
 export const STAT_NAMES = [
   "hp",
   "attack",
@@ -50,7 +50,10 @@ export function validBaseStats(
 export function calculateStats(
   baseStats: ReadonlyArray<Readonly<PokemonStat>>,
   level: number,
+  hpMultiplier = HP_MULTIPLIER,
 ): PokemonStat[] {
+  if (!Number.isFinite(hpMultiplier) || hpMultiplier < 1 || hpMultiplier > 2)
+    throw new Error("Multiplicador de HP inválido.");
   if (!Number.isSafeInteger(level) || level < 1 || !validBaseStats(baseStats)) {
     throw new Error("Nivel o estadísticas base inválidos.");
   }
@@ -58,11 +61,8 @@ export function calculateStats(
     const base = baseStats.find((s) => s.name === name)!.value;
     const calculated =
       Math.floor((base * level) / 50) + (name === "hp" ? level + 10 : 5);
-
     const value =
-      name === "hp"
-        ? Math.floor(calculated * HP_MULTIPLIER)
-        : calculated;
+      name === "hp" ? Math.floor(calculated * hpMultiplier) : calculated;
     if (!Number.isSafeInteger(value) || value < 1)
       throw new Error("Estadística fuera de rango.");
     return { name, value };
@@ -73,9 +73,9 @@ export function isLeveled(
 ): pokemon is LeveledPokemon {
   return Boolean(
     pokemon?.progressionVersion === 1 &&
-    pokemon.baseStats &&
-    pokemon.level &&
-    pokemon.battleStages,
+      pokemon.baseStats &&
+      pokemon.level &&
+      pokemon.battleStages,
   );
 }
 export function getCurrentHp(pokemon: Pokemon): number {
@@ -83,9 +83,11 @@ export function getCurrentHp(pokemon: Pokemon): number {
 }
 export function getMaxHp(pokemon: Pokemon | undefined): number | undefined {
   if (!isLeveled(pokemon)) return undefined;
-  return calculateStats(pokemon.baseStats, pokemon.level).find(
-    (s) => s.name === "hp",
-  )!.value;
+  return calculateStats(
+    pokemon.baseStats,
+    pokemon.level,
+    pokemon.hpMultiplier ?? HP_MULTIPLIER,
+  ).find((s) => s.name === "hp")!.value;
 }
 // Mantiene la proporción hasta la precisión posible con puntos enteros.
 export function preserveHpRatio(
@@ -100,6 +102,7 @@ export function createLeveledPokemon(
   source: Pokemon,
   bases = source.baseStats ?? source.stats,
   level = INITIAL_LEVEL,
+  hpMultiplier = source.hpMultiplier ?? HP_MULTIPLIER,
 ): LeveledPokemon {
   const baseStats = STAT_NAMES.map((name) => {
     const stat = bases.find((s) => s.name === name);
@@ -112,8 +115,9 @@ export function createLeveledPokemon(
     baseStats,
     progressionVersion: 1,
     level,
+    hpMultiplier,
     battleStages: neutralBattleStages(),
-    stats: calculateStats(baseStats, level),
+    stats: calculateStats(baseStats, level, hpMultiplier),
   };
 }
 export function changeLevel(
@@ -121,7 +125,11 @@ export function changeLevel(
   level: number,
 ): LeveledPokemon {
   const oldMax = getMaxHp(pokemon)!;
-  const stats = calculateStats(pokemon.baseStats, level);
+  const stats = calculateStats(
+    pokemon.baseStats,
+    level,
+    pokemon.hpMultiplier ?? HP_MULTIPLIER,
+  );
   const hp = stats.find((s) => s.name === "hp")!;
   hp.value = preserveHpRatio(getCurrentHp(pokemon), oldMax, hp.value);
   return { ...pokemon, level, stats };

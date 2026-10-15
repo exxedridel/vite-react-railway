@@ -129,6 +129,7 @@ export function replaceEvolvedPokemon(
     source,
     source.baseStats ?? source.stats,
     capture.pokemon.level,
+    capture.pokemon.hpMultiplier,
   );
   const oldMax = getMaxHp(capture.pokemon)!;
   const newMax = getMaxHp(evolved)!;

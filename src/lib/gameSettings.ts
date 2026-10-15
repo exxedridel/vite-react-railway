@@ -1,3 +1,4 @@
+import { INITIAL_LEVEL, HP_MULTIPLIER } from "./pokemonStats";
 import type { CapturedPokemon } from "@/types/pokemon";
 
 export const REGION_OPTIONS = [
@@ -10,6 +11,8 @@ export type GameSettings = {
   version: 1;
   regions: RegionId[];
   ruleset: "rse-emerald";
+  startingLevel?: number;
+  hpMultiplier?: number;
 };
 type SettingsParty = {
   gameSettings?: GameSettings | null;
@@ -57,4 +60,31 @@ export function encounterSpeciesIds(party: SettingsParty): number[] {
   ).flatMap((r) =>
     Array.from({ length: r.last - r.first + 1 }, (_, i) => r.first + i),
   );
+}
+
+export type GameConfiguration = {
+  regions: RegionId[];
+  startingLevel: number;
+  hpMultiplier: number;
+};
+export function validStartingLevel(value: number): boolean {
+  return Number.isSafeInteger(value) && value >= 1 && value <= 100;
+}
+export function validHpMultiplier(value: number): boolean {
+  return (
+    Number.isFinite(value) &&
+    value >= 1 &&
+    value <= 2 &&
+    Math.abs(value * 10 - Math.round(value * 10)) < 1e-8
+  );
+}
+export function gameBalance(settings?: GameSettings | null) {
+  return {
+    startingLevel: validStartingLevel(settings?.startingLevel ?? NaN)
+      ? settings!.startingLevel!
+      : INITIAL_LEVEL,
+    hpMultiplier: validHpMultiplier(settings?.hpMultiplier ?? NaN)
+      ? settings!.hpMultiplier!
+      : HP_MULTIPLIER,
+  };
 }

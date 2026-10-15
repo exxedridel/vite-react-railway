@@ -139,6 +139,7 @@ export type Pokemon = {
   // Opcionales únicamente para admitir respuestas de API y capturas antiguas.
   progressionVersion?: 1;
   level?: number;
+  hpMultiplier?: number;
   baseStats?: PokemonStat[];
   battleStages?: BattleStages;
 };

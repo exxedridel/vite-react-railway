@@ -34,6 +34,10 @@ import {
 } from "@/lib/gameVersion";
 import {
   pokemonAllowed,
+  gameBalance,
+  validStartingLevel,
+  validHpMultiplier,
+  type GameConfiguration,
   validRegions,
   REGION_OPTIONS,
   type GameSettings,
@@ -179,14 +183,28 @@ const partySlice = createSlice({
   name: "party",
   initialState,
   reducers: {
-    configureGame(state, action: PayloadAction<RegionId[]>) {
-      if (!canChooseStarter(state) || !validRegions(action.payload)) return;
+    configureGame(
+      state,
+      action: PayloadAction<GameConfiguration | RegionId[]>,
+    ) {
+      const config = Array.isArray(action.payload)
+        ? { regions: action.payload, ...gameBalance(null) }
+        : action.payload;
+      if (
+        !canChooseStarter(state) ||
+        !validRegions(config.regions) ||
+        !validStartingLevel(config.startingLevel) ||
+        !validHpMultiplier(config.hpMultiplier)
+      )
+        return;
       state.gameSettings = {
         version: 1,
         regions: REGION_OPTIONS.map((r) => r.id).filter((id) =>
-          action.payload.includes(id),
+          config.regions.includes(id),
         ),
         ruleset: RULESET_ID,
+        startingLevel: config.startingLevel,
+        hpMultiplier: config.hpMultiplier,
       };
       state.opponent = null;
       state.lastMovesByPlayer = {};
@@ -633,14 +651,23 @@ const partySlice = createSlice({
           !pokemon.learnset.moves.length
         )
           return;
-        state.pokemons.push(action.payload);
+        const balance = gameBalance(state.gameSettings);
+        state.pokemons.push({
+          ...action.payload,
+          pokemon: createLeveledPokemon(
+            pokemon,
+            pokemon.baseStats ?? pokemon.stats,
+            balance.startingLevel,
+            balance.hpMultiplier,
+          ),
+        });
         state.starterClaimed = true;
       },
       prepare(pokemon: Pokemon) {
         return {
           payload: {
             captureId: nanoid(),
-            pokemon: createLeveledPokemon(pokemon),
+            pokemon,
             statuses: [],
             origin: "starter",
             moves: [],
@@ -862,7 +889,13 @@ const partySlice = createSlice({
         if (capture.pokemon.id !== source.id || isLeveled(capture.pokemon))
           continue;
         const old = capture.pokemon;
-        const next = createLeveledPokemon(old, bases);
+        const balance = gameBalance(state.gameSettings);
+        const next = createLeveledPokemon(
+          old,
+          bases,
+          old.level ?? balance.startingLevel,
+          old.hpMultiplier ?? balance.hpMultiplier,
+        );
         const hp = next.stats.find((s) => s.name === "hp")!;
         hp.value = preserveHpRatio(getCurrentHp(old), oldMax, hp.value);
         capture.legacyStats = old.stats.map((s) => ({ ...s }));

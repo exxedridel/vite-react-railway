@@ -1,6 +1,7 @@
 import type { LearnedMove } from "@/types/moves";
 import {
   createLeveledPokemon,
+  INITIAL_LEVEL,
   neutralBattleStages,
   changeLevel,
   isLeveled,
@@ -33,7 +34,7 @@ export function createBattleOpponent(pokemon: Pokemon): BattleOpponent {
     pokemon: createLeveledPokemon(
       pokemon,
       pokemon.baseStats ?? pokemon.stats,
-      pokemon.level ?? 50,
+      pokemon.level ?? INITIAL_LEVEL,
     ),
     stages: createNeutralStages(),
   };

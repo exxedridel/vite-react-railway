@@ -1,4 +1,4 @@
-import { pokemonAllowed, regionSummary } from "@/lib/gameSettings";
+import { pokemonAllowed, regionSummary, gameBalance } from "@/lib/gameSettings";
 import { hasLivingHp, isPokemonFainted } from "@/lib/pokemonCondition";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { store } from "@/store/store";
@@ -91,6 +91,8 @@ function OpponentSummary({
 }
 export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
   const dispatch = useAppDispatch();
+  const settings = useAppSelector((state) => state.party.gameSettings);
+  const balance = gameBalance(settings);
   const allowedRegionsLabel = useAppSelector((state) =>
     regionSummary(state.party),
   );
@@ -194,7 +196,15 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
         toast.error("El Pokémon no tiene todas las estadísticas necesarias.");
         return;
       }
-      setCandidate(createLeveledPokemon(result));
+      const balance = gameBalance(store.getState().party.gameSettings);
+      setCandidate(
+        createLeveledPokemon(
+          result,
+          result.baseStats ?? result.stats,
+          balance.startingLevel,
+          balance.hpMultiplier,
+        ),
+      );
     } catch (error: unknown) {
       if (version !== requestVersion.current) return;
       const status =
@@ -355,14 +365,14 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
               className="mr-1 text-sm font-semibold tabular-nums"
               aria-live="polite"
             >
-              Lv. {opponent.pokemon.level ?? 50}
+              Lv. {opponent.pokemon.level ?? balance.startingLevel}
             </span>
             <Button
               type="button"
               variant="outline"
               size="icon"
               className="h-8 w-8"
-              disabled={(opponent.pokemon.level ?? 50) <= 1}
+              disabled={(opponent.pokemon.level ?? balance.startingLevel) <= 1}
               onClick={() => handleChangeLevel(-1)}
               aria-label="Bajar un nivel del oponente"
             >
@@ -374,7 +384,9 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
               size="icon"
               className="h-8 w-8"
               disabled={
-                !Number.isSafeInteger((opponent.pokemon.level ?? 50) + 1)
+                !Number.isSafeInteger(
+                  (opponent.pokemon.level ?? balance.startingLevel) + 1,
+                )
               }
               onClick={() => handleChangeLevel(1)}
               aria-label="Subir un nivel del oponente"
@@ -531,7 +543,8 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
             <DialogTitle>Preparar oponente</DialogTitle>
             <DialogDescription>
               Busca por nombre en inglés o número. El rival se carga con sus
-              estadísticas calculadas a nivel 50.
+              estadísticas calculadas a nivel {balance.startingLevel} y HP ×
+              {balance.hpMultiplier.toFixed(1)}.
             </DialogDescription>
           </DialogHeader>
           <fieldset disabled={searching || building} className="space-y-2">

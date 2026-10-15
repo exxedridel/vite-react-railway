@@ -1,6 +1,7 @@
 import { APP_VERSION, RULESET_LABEL } from "@/lib/gameVersion";
 import {
   REGION_OPTIONS,
+  gameBalance,
   pokemonAllowed,
   type RegionId,
 } from "@/lib/gameSettings";
@@ -30,6 +31,12 @@ export default function AddPokemonDialog() {
   const settings = useAppSelector((state) => state.party.gameSettings);
   const [editingSettings, setEditingSettings] = useState(false);
   const [regions, setRegions] = useState<RegionId[]>(["kanto"]);
+  const [settingsPage, setSettingsPage] = useState<"regions" | "balance">(
+    "regions",
+  );
+  const [startingLevel, setStartingLevel] = useState(5);
+  const [hpMultiplier, setHpMultiplier] = useState(1.3);
+  const savedBalance = gameBalance(settings);
   const configurationStep = !settings || editingSettings;
   const groups = STARTER_GROUPS.filter((group) =>
     REGION_OPTIONS.some(
@@ -55,6 +62,15 @@ export default function AddPokemonDialog() {
     cancelRequest();
     setPokemonDialogOpen(false);
   }
+  useEffect(() => {
+    if (pokemonDialogOpen) {
+      const balance = gameBalance(settings);
+      setRegions(settings?.regions ?? ["kanto"]);
+      setStartingLevel(balance.startingLevel);
+      setHpMultiplier(balance.hpMultiplier);
+      setSettingsPage("regions");
+    }
+  }, [pokemonDialogOpen, settings]);
   useEffect(() => {
     if (!pokemonDialogOpen) {
       requestRef.current?.abort();
@@ -143,49 +159,141 @@ export default function AddPokemonDialog() {
         <DialogHeader className="shrink-0">
           <DialogTitle>
             {configurationStep
-              ? "Configura tu partida"
+              ? settingsPage === "regions"
+                ? "1 · Pokémon permitidos"
+                : "2 · Nivel y HP"
               : "Elige tu Pokémon inicial"}
           </DialogTitle>
           <DialogDescription>
             {configurationStep
-              ? "Elige una o varias regiones para tus iniciales y encuentros salvajes."
-              : "Comenzará en nivel 50. Puedes elegir uno por partida y enseñarle hasta dos movimientos gratuitos."}
+              ? settingsPage === "regions"
+                ? "Elige una o varias regiones para tus iniciales y encuentros salvajes."
+                : "Estas reglas se aplicarán al inicial y a los nuevos encuentros de esta partida."
+              : `Comenzará en nivel ${savedBalance.startingLevel} con HP ×${savedBalance.hpMultiplier.toFixed(1)}. Puedes elegir uno por partida y enseñarle hasta dos movimientos gratuitos.`}
           </DialogDescription>
         </DialogHeader>
         {configurationStep ? (
           <>
             <div className="min-h-0 flex-1 space-y-3 overflow-y-auto py-2">
-              {REGION_OPTIONS.map((region) => (
-                <label
-                  key={region.id}
-                  className={`flex cursor-pointer items-center gap-3 rounded-xl border p-4 ${regions.includes(region.id) ? "border-brand bg-muted" : "bg-card"}`}
-                >
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4"
-                    checked={regions.includes(region.id)}
-                    onChange={() =>
-                      setRegions((current) =>
-                        current.includes(region.id)
-                          ? current.filter((id) => id !== region.id)
-                          : [...current, region.id],
-                      )
-                    }
-                  />
-                  <span>
-                    <span className="block font-semibold">{region.name}</span>
-                    <span className="text-xs text-muted-foreground">
-                      Especies #{region.first}–#{region.last} ·{" "}
-                      {region.last - region.first + 1} Pokémon
-                    </span>
-                  </span>
-                </label>
-              ))}
-              <p className="text-xs text-muted-foreground">
-                Puedes combinar las tres regiones. Las formas regionales y
-                variantes de generaciones posteriores quedan fuera de esta
-                selección.
-              </p>
+              {settingsPage === "regions" ? (
+                <>
+                  {REGION_OPTIONS.map((region) => (
+                    <label
+                      key={region.id}
+                      className={`flex cursor-pointer items-center gap-3 rounded-xl border p-4 ${regions.includes(region.id) ? "border-brand bg-muted" : "bg-card"}`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4"
+                        checked={regions.includes(region.id)}
+                        onChange={() =>
+                          setRegions((current) =>
+                            current.includes(region.id)
+                              ? current.filter((id) => id !== region.id)
+                              : [...current, region.id],
+                          )
+                        }
+                      />
+                      <span>
+                        <span className="block font-semibold">
+                          {region.name}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          Especies #{region.first}–#{region.last} ·{" "}
+                          {region.last - region.first + 1} Pokémon
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                  <p className="text-xs text-muted-foreground">
+                    Puedes combinar las tres regiones. Las formas regionales y
+                    variantes de generaciones posteriores quedan fuera de esta
+                    selección.
+                  </p>
+                </>
+              ) : (
+                <div className="space-y-5">
+                  <div className="space-y-2">
+                    <label
+                      htmlFor="game-starting-level"
+                      className="block text-sm font-semibold"
+                    >
+                      Nivel de aparición
+                    </label>
+                    <select
+                      id="game-starting-level"
+                      value={startingLevel}
+                      onChange={(event) =>
+                        setStartingLevel(Number(event.target.value))
+                      }
+                      className="h-11 w-full rounded-md border border-input bg-background px-3 text-foreground"
+                    >
+                      {Array.from({ length: 100 }, (_, index) => index + 1).map(
+                        (level) => (
+                          <option key={level} value={level}>
+                            Nivel {level}
+                            {level === 5 ? " · recomendado para empezar" : ""}
+                          </option>
+                        ),
+                      )}
+                    </select>
+                    <div className="flex gap-2">
+                      {[5, 50].map((level) => (
+                        <Button
+                          key={level}
+                          type="button"
+                          size="sm"
+                          variant={
+                            startingLevel === level ? "default" : "outline"
+                          }
+                          onClick={() => setStartingLevel(level)}
+                        >
+                          Nivel {level}
+                        </Button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      El inicial y los nuevos rivales aparecerán a este nivel.
+                      Después podrás subir o bajar su nivel con los controles de
+                      combate.
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <label
+                      htmlFor="game-hp-multiplier"
+                      className="block text-sm font-semibold"
+                    >
+                      Multiplicador de HP
+                    </label>
+                    <select
+                      id="game-hp-multiplier"
+                      value={hpMultiplier}
+                      onChange={(event) =>
+                        setHpMultiplier(Number(event.target.value))
+                      }
+                      className="h-11 w-full rounded-md border border-input bg-background px-3 text-foreground"
+                    >
+                      {Array.from(
+                        { length: 11 },
+                        (_, index) => (10 + index) / 10,
+                      ).map((rate) => (
+                        <option key={rate} value={rate}>
+                          ×{rate.toFixed(1)}
+                          {rate === 1.3 ? " · valor actual" : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-muted-foreground">
+                      ×1.0 usa el HP calculado normal; ×2.0 lo duplica. Solo
+                      modifica el HP, no el ataque, la defensa ni la velocidad.
+                    </p>
+                  </div>
+                  <p className="rounded-xl border border-brand bg-muted p-3 text-sm">
+                    Inicial y encuentros: <strong>nivel {startingLevel}</strong>{" "}
+                    · HP <strong>×{hpMultiplier.toFixed(1)}</strong>.
+                  </p>
+                </div>
+              )}
               <p className="rounded-xl border p-3 text-sm text-muted-foreground">
                 Catálogo: {RULESET_LABEL}, basado en Emerald. Solo movimientos
                 de generaciones I–III. Combate con las fórmulas adaptadas del
@@ -193,19 +301,35 @@ export default function AddPokemonDialog() {
               </p>
             </div>
             <DialogFooter className="shrink-0 gap-2 border-t pt-3">
-              <Button type="button" variant="outline" onClick={close}>
-                Cancelar
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() =>
+                  settingsPage === "balance"
+                    ? setSettingsPage("regions")
+                    : close()
+                }
+              >
+                {settingsPage === "balance" ? "Volver a regiones" : "Cancelar"}
               </Button>
               <Button
                 type="button"
                 disabled={!regions.length}
                 onClick={() => {
-                  dispatch(configureGame(regions));
+                  if (settingsPage === "regions") {
+                    setSettingsPage("balance");
+                    return;
+                  }
+                  dispatch(
+                    configureGame({ regions, startingLevel, hpMultiplier }),
+                  );
                   setSelectedId(null);
                   setEditingSettings(false);
                 }}
               >
-                Continuar al inicial
+                {settingsPage === "regions"
+                  ? "Continuar a nivel y HP"
+                  : "Continuar al inicial"}
               </Button>
             </DialogFooter>
           </>
@@ -248,11 +372,14 @@ export default function AddPokemonDialog() {
                 disabled={busy}
                 onClick={() => {
                   setRegions(settings?.regions ?? ["kanto"]);
+                  setStartingLevel(savedBalance.startingLevel);
+                  setHpMultiplier(savedBalance.hpMultiplier);
+                  setSettingsPage("regions");
                   setEditingSettings(true);
                   setSelectedId(null);
                 }}
               >
-                Cambiar regiones
+                Cambiar configuración
               </Button>
               <Button
                 type="button"
