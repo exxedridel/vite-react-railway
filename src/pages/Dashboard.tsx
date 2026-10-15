@@ -1,3 +1,5 @@
+import { toast } from "sonner";
+import { store } from "@/store/store";
 import { canChooseStarter } from "@/lib/starterPokemon";
 import { useEffect, useRef, useState } from "react";
 import { Plus, X } from "lucide-react";
@@ -91,6 +93,13 @@ const Dashboard = () => {
   };
   const handleConfirmRemove = () => {
     if (!pokemonToRemove) return;
+    if (store.getState().party.pokemons.length <= 1) {
+      toast.error(
+        "No puedes quedarte sin ningún Pokémon. Agrega otro antes de liberar este.",
+      );
+      setPokemonToRemove(null);
+      return;
+    }
     if (battleCaptureId === pokemonToRemove.captureId) handleCloseBattle();
     dispatch(removePokemon(pokemonToRemove.captureId));
     setPokemonToRemove(null);
@@ -165,7 +174,15 @@ const Dashboard = () => {
                       variant="ghost"
                       size="icon"
                       className="h-8 w-8 shrink-0"
-                      onClick={() => setPokemonToRemove(capturedPokemon)}
+                      onClick={() => {
+                        if (store.getState().party.pokemons.length <= 1) {
+                          toast.error(
+                            "No puedes quedarte sin ningún Pokémon. Agrega otro antes de liberar este.",
+                          );
+                          return;
+                        }
+                        setPokemonToRemove(capturedPokemon);
+                      }}
                       aria-label={`Liberar a ${pokemon.name}`}
                     >
                       <X className="h-4 w-4" />

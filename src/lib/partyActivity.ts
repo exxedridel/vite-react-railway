@@ -95,6 +95,36 @@ export function describePartyActivity(
         }
       : null;
   }
+  if (actionType === "party/evolvePokemon") {
+    const evolved = after.pokemons.find((p) =>
+      before.pokemons.some(
+        (old) =>
+          old.captureId === p.captureId && old.pokemon.id !== p.pokemon.id,
+      ),
+    );
+    if (!evolved) return null;
+    const old = before.pokemons.find((p) => p.captureId === evolved.captureId)!;
+    const extra = after.pokemons.find(
+      (p) => !before.pokemons.some((old) => old.captureId === p.captureId),
+    );
+    return {
+      kind: "evolution",
+      captureId: evolved.captureId,
+      title: `Evolución: ${old.pokemon.name} → ${evolved.pokemon.name}`,
+      details: [
+        "Requisitos de evolución confirmados por el jugador · reglas Emerald / Gen 3.",
+        ...describeCapture(evolved),
+        hpDetail(old.pokemon, evolved.pokemon),
+        `Estados conservados: ${statusNames(evolved)}`,
+        "Se conservaron la posición, movimientos, nivel, modificadores de combate y contadores de estados.",
+        ...(extra
+          ? [
+              `También apareció ${extra.pokemon.name} en el hueco libre del equipo.`,
+            ]
+          : []),
+      ],
+    };
+  }
   if (actionType === "party/resetGame") {
     return {
       kind: "reset",

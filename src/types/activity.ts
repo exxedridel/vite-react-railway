@@ -1,6 +1,7 @@
 import type { BattleResult } from "@/types/battle";
 
 export type ActivityKind =
+  | "evolution"
   | "starter"
   | "capture"
   | "release"

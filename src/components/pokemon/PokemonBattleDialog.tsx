@@ -1,3 +1,4 @@
+import PokemonEvolutionControl from "./PokemonEvolutionControl";
 import { pendingBattleSwitch } from "@/lib/battleSwitch";
 import { toast } from "sonner";
 import PokemonBattleHpDialog from "./PokemonBattleHpDialog";
@@ -153,7 +154,7 @@ function BattleDialogContent({ captureId, onClose }: Props) {
       cryAudioRef.current?.pause();
       cryAudioRef.current = null;
     };
-  }, [captureId, opponent?.pokemon.id]);
+  }, [captureId, pokemonId, opponent?.pokemon.id]);
   const stopPokemonCry = () => {
     const audio = cryAudioRef.current;
     if (audio) {
@@ -177,7 +178,7 @@ function BattleDialogContent({ captureId, onClose }: Props) {
     setOpponentView((current) => !current);
   };
   // Todos los hooks se ejecutan antes de este retorno.
-  if (!capturedPokemon) return null;
+  if (!capturedPokemon || !captureId) return null;
   const { pokemon } = capturedPokemon;
   const presence = getBattlePresence(opponent);
   const currentLevel = pokemon.level ?? 50;
@@ -274,7 +275,11 @@ function BattleDialogContent({ captureId, onClose }: Props) {
               <DialogDescription className="sr-only">
                 Combate de {pokemon.name}.
               </DialogDescription>
-              <div className="mt-2">
+              <div className="mt-2 flex items-center gap-2">
+                <PokemonEvolutionControl
+                  key={pokemon.id}
+                  captureId={captureId}
+                />
                 <PokemonTypeBadges types={pokemon.types} />
               </div>
             </div>
@@ -323,10 +328,10 @@ function BattleDialogContent({ captureId, onClose }: Props) {
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="bg-background/90 flex flex-row items-center justify-center gap-0"
+                  className="bg-background/90"
                   onClick={() => setManageOpen(true)}
                 >
-                  <img src="/Pokeball-PNG.png" alt="poke-opponent-menu" className="h-4 w-4" />&nbsp;<span>{opponent ? "Oponente" : "Elegir oponente"}</span>
+                  {opponent ? "Encuentro" : "Elegir rival"}
                 </Button>
               }
             />
@@ -343,7 +348,7 @@ function BattleDialogContent({ captureId, onClose }: Props) {
                   className="shrink-0 rounded-2xl border bg-card p-4 text-card-foreground"
                 >
                   <summary className="cursor-pointer text-sm font-semibold">
-                    BATTLE MOVES
+                    Movimientos de tu Pokémon
                   </summary>
                   <div className="mt-3 [&>section]:border-0 [&>section]:p-0">
                     {field.playerSwitchedThisTurn ? (
@@ -372,7 +377,7 @@ function BattleDialogContent({ captureId, onClose }: Props) {
                     className="shrink-0 rounded-2xl border bg-card p-4 text-card-foreground"
                   >
                     <summary className="cursor-pointer text-sm font-semibold">
-                      RIVAL MOVES
+                      Movimientos del rival
                     </summary>
                     <div className="mt-3 [&>section]:border-0 [&>section]:p-0">
                       <PokemonRivalActions

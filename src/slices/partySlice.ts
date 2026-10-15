@@ -1,3 +1,9 @@
+import { findEvolution } from "@/lib/gen3Evolutions";
+import {
+  evolutionBattleActive,
+  evolutionLevelError,
+  replaceEvolvedPokemon,
+} from "@/lib/pokemonEvolution";
 import {
   assignStatusTurns,
   clearSecondaryStatuses,
@@ -688,12 +694,86 @@ const partySlice = createSlice({
         resolvedBattleIds: [],
       };
     },
+    evolvePokemon: {
+      prepare(input: {
+        captureId: string;
+        expectedCapture: string;
+        evolution: Pokemon;
+        requirementsConfirmed: boolean;
+        shedinja?: Pokemon;
+      }) {
+        return { payload: { ...input, bonusCaptureId: nanoid() } };
+      },
+      reducer(
+        state,
+        action: PayloadAction<{
+          captureId: string;
+          expectedCapture: string;
+          evolution: Pokemon;
+          requirementsConfirmed: boolean;
+          shedinja?: Pokemon;
+          bonusCaptureId: string;
+        }>,
+      ) {
+        const {
+          captureId,
+          expectedCapture,
+          evolution,
+          requirementsConfirmed,
+          shedinja,
+          bonusCaptureId,
+        } = action.payload;
+        const index = state.pokemons.findIndex(
+          (p) => p.captureId === captureId,
+        );
+        const current = state.pokemons[index];
+        if (
+          !current ||
+          !requirementsConfirmed ||
+          evolutionBattleActive(state.opponent) ||
+          JSON.stringify(current) !== expectedCapture
+        )
+          return;
+        const rule = findEvolution(current.pokemon.id, evolution.id);
+        if (
+          !rule ||
+          evolution.name !== rule.name ||
+          evolutionLevelError(current, rule)
+        )
+          return;
+        const bonus =
+          rule.method === "level_ninjask" && state.pokemons.length < 6;
+        if (
+          bonus &&
+          (!shedinja || shedinja.id !== 292 || shedinja.name !== "shedinja")
+        )
+          return;
+        try {
+          // Preparar ambos resultados antes de modificar el equipo: operación atómica.
+          const evolved = replaceEvolvedPokemon(current, evolution);
+          const extra =
+            bonus && shedinja ? replaceEvolvedPokemon(current, shedinja) : null;
+          state.pokemons[index] = evolved;
+          if (extra)
+            state.pokemons.push({
+              ...extra,
+              captureId: bonusCaptureId,
+              origin: "wild",
+              initialMovesChosen: undefined,
+            });
+          if (state.lastMovesByPlayer)
+            delete state.lastMovesByPlayer[captureId];
+        } catch {
+          // Una respuesta incompleta no debe borrar la captura actual.
+        }
+      },
+    },
     removePokemon(state, action: PayloadAction<string>) {
       const capture = state.pokemons.find(
         (p) => p.captureId === action.payload,
       );
       // Liberar el inicial no habilita una segunda elección gratuita.
-      if (!capture) return;
+      if (!capture || state.pokemons.length <= 1) return;
       if (state.battleField)
         clearFieldSource(state.battleField, {
           side: "player",
@@ -879,6 +959,7 @@ function withActivityMeta<T extends (...args: never[]) => { type: string }>(
   };
   return Object.assign(wrapped, creator) as T;
 }
+export const evolvePokemon = withActivityMeta(partySlice.actions.evolvePokemon);
 export const confirmBattleSwitch = withActivityMeta(
   partySlice.actions.confirmBattleSwitch,
 );

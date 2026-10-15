@@ -206,6 +206,7 @@ export default function FloatingActivityHistory({
                 type="button"
                 aria-label="Abrir historial de actividad. Arrastra para cambiar de esquina."
                 aria-haspopup="dialog"
+                onPointerDown={pointerDown}
                 onPointerMove={pointerMove}
                 onPointerUp={pointerUp}
                 onPointerCancel={cancelDrag}
