@@ -2,7 +2,6 @@ import PokemonEvolutionControl from "./PokemonEvolutionControl";
 import { pendingBattleSwitch } from "@/lib/battleSwitch";
 import { toast } from "sonner";
 import PokemonBattleHpDialog from "./PokemonBattleHpDialog";
-import PokemonBattleFieldControl from "./PokemonBattleFieldControl";
 import { getBattleField } from "@/lib/battleField";
 import PokemonRivalActions from "./PokemonRivalActions";
 import PokemonOpponentStatusControl from "./PokemonOpponentStatusControl";
@@ -335,7 +334,6 @@ function BattleDialogContent({ captureId, onClose }: Props) {
                 </Button>
               }
             />
-            <PokemonBattleFieldControl captureId={capturedPokemon.captureId} />
             <PokemonBattleHpDialog
               side={hpSide}
               captureId={capturedPokemon.captureId}

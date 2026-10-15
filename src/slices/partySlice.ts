@@ -382,6 +382,47 @@ const partySlice = createSlice({
         };
       },
     },
+    adjustBattleTurn: {
+      prepare(input: {
+        captureId: string;
+        expectedContext: string;
+        amount: number;
+      }) {
+        return { payload: { ...input, id: nanoid() } };
+      },
+      reducer(
+        state,
+        action: PayloadAction<{
+          captureId: string;
+          expectedContext: string;
+          amount: number;
+          id: string;
+        }>,
+      ) {
+        const { captureId, expectedContext, amount, id } = action.payload;
+        const capture = state.pokemons.find((p) => p.captureId === captureId);
+        const opponent = state.opponent;
+        if (!capture || !opponent || (amount !== 1 && amount !== -1)) return;
+        const field = getBattleField(state.battleField);
+        if (field.activeCaptureId && field.activeCaptureId !== captureId)
+          return;
+        if (battleContextKey(capture, opponent, field) !== expectedContext)
+          return;
+        const next = field.turn + amount;
+        if (!Number.isSafeInteger(next) || next < 1) return;
+        state.battleField ??= emptyBattleField();
+        const previous = state.battleField.turn;
+        state.battleField.turn = next;
+        state.lastFieldEvent = {
+          id,
+          title: "Contador de turno corregido",
+          details: [
+            `Turno ${previous} → ${next}.`,
+            "Corrección manual del número: no aplica ni revierte HP, clima, estados o acciones consumidas.",
+          ],
+        };
+      },
+    },
     finishBattleTurn: {
       prepare(input: {
         captureId: string;
@@ -1077,6 +1118,9 @@ export const changeOpponentHp = withActivityMeta(
 );
 export const setBattleWeather = withActivityMeta(
   partySlice.actions.setBattleWeather,
+);
+export const adjustBattleTurn = withActivityMeta(
+  partySlice.actions.adjustBattleTurn,
 );
 export const finishBattleTurn = withActivityMeta(
   partySlice.actions.finishBattleTurn,

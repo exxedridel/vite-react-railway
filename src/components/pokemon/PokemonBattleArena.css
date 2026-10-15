@@ -393,3 +393,42 @@
   top: 70px;
   z-index: 35;
 }
+
+/* Clima — turno — rival, en una sola fila dentro del escenario. */
+.battle-scene__toolbar {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  z-index: 30;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 6px;
+  align-items: start;
+}
+.battle-scene__toolbar .battle-scene__field-label {
+  position: static;
+  width: auto;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.battle-scene__toolbar .battle-scene__field-label > button {
+  min-width: 0;
+  max-width: 100%;
+}
+.battle-scene__toolbar .battle-scene__field-label > button > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.battle-scene__manage {
+  min-width: 0;
+  justify-self: end;
+}
+.battle-scene__manage > button {
+  max-width: 100%;
+  padding-left: 8px;
+  padding-right: 8px;
+  font-size: 11px;
+}

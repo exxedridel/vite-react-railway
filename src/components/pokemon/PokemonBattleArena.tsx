@@ -1,3 +1,4 @@
+import PokemonBattleFieldControl from "./PokemonBattleFieldControl";
 import { getCurrentHp, getMaxHp } from "@/lib/pokemonStats";
 import PokemonWeatherControl from "./PokemonWeatherControl";
 import { type BattleField } from "@/lib/battleField";
@@ -69,10 +70,14 @@ export default function PokemonBattleArena({
 
       <div aria-hidden="true" className="battle-scene__weather" />
       <div aria-hidden="true" className="battle-scene__field-overlay" />
-      <div className="battle-scene__field-label" aria-live="polite">
-        <PokemonWeatherControl captureId={capturedPokemon.captureId} />
-        {field.mudSport && <span>🟤 Mud Sport</span>}
-        {field.waterSport && <span>💧 Water Sport</span>}
+      <div className="battle-scene__toolbar">
+        <div className="battle-scene__field-label" aria-live="polite">
+          <PokemonWeatherControl captureId={capturedPokemon.captureId} />
+          {field.mudSport && <span>🟤 Mud Sport</span>}
+          {field.waterSport && <span>💧 Water Sport</span>}
+        </div>
+        <PokemonBattleFieldControl captureId={capturedPokemon.captureId} />
+        <div className="battle-scene__manage">{manageControl}</div>
       </div>
       <ArenaHp
         pokemon={pokemon}
@@ -94,7 +99,6 @@ export default function PokemonBattleArena({
           onClick={() => onOpenHp("opponent")}
         />
       )}
-      <div className="absolute right-3 top-3 z-30">{manageControl}</div>
 
       <div
         className={`battle-scene__combatant ${opponentView ? "battle-scene__combatant--far" : "battle-scene__combatant--near"}`}

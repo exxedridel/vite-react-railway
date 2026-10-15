@@ -69,6 +69,7 @@ export function describePartyActivity(
   if (
     [
       "party/finishBattleTurn",
+      "party/adjustBattleTurn",
       "party/confirmBattleSwitch",
       "party/setBattleWeather",
     ].includes(actionType) &&
