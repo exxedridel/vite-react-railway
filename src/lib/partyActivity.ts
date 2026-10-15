@@ -67,9 +67,11 @@ export function describePartyActivity(
   after: Snapshot,
 ): ActivityDraft | null {
   if (
-    ["party/finishBattleTurn", "party/confirmBattleSwitch"].includes(
-      actionType,
-    ) &&
+    [
+      "party/finishBattleTurn",
+      "party/confirmBattleSwitch",
+      "party/setBattleWeather",
+    ].includes(actionType) &&
     after.lastFieldEvent &&
     after.lastFieldEvent.id !== before.lastFieldEvent?.id
   )

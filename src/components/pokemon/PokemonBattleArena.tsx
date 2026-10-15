@@ -1,5 +1,6 @@
 import { getCurrentHp, getMaxHp } from "@/lib/pokemonStats";
-import { WEATHER_LABELS, type BattleField } from "@/lib/battleField";
+import PokemonWeatherControl from "./PokemonWeatherControl";
+import { type BattleField } from "@/lib/battleField";
 import { Progress } from "@/components/ui/progress";
 import { isPokemonFainted } from "@/lib/pokemonCondition";
 import type { ReactNode } from "react";
@@ -69,16 +70,7 @@ export default function PokemonBattleArena({
       <div aria-hidden="true" className="battle-scene__weather" />
       <div aria-hidden="true" className="battle-scene__field-overlay" />
       <div className="battle-scene__field-label" aria-live="polite">
-        {field.weather && (
-          <span>
-            {
-              ({ sun: "☀️", rain: "🌧️", sand: "🌪️", hail: "❄️" } as const)[
-                field.weather.kind
-              ]
-            }{" "}
-            {WEATHER_LABELS[field.weather.kind]} · {field.weather.turnsLeft}
-          </span>
-        )}
+        <PokemonWeatherControl captureId={capturedPokemon.captureId} />
         {field.mudSport && <span>🟤 Mud Sport</span>}
         {field.waterSport && <span>💧 Water Sport</span>}
       </div>

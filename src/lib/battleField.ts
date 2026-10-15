@@ -9,7 +9,7 @@ export type BattleField = {
   turn: number;
   activeCaptureId: string | null;
   playerSwitchedThisTurn?: boolean;
-  weather: { kind: WeatherKind; turnsLeft: number } | null;
+  weather: { kind: WeatherKind; turnsLeft: number; permanent?: boolean } | null;
   mudSport: FieldSource[] | null;
   waterSport: FieldSource[] | null;
 };
@@ -134,4 +134,31 @@ export function weatherResidual(
         ? pokemon.types.includes("ice")
         : true;
   return immune ? 0 : Math.min(current, Math.max(1, Math.floor(max / 16)));
+}
+
+/** El mismo formato se usa en el escenario, selector e historial. */
+export function weatherSummary(weather: BattleField["weather"]): string {
+  if (!weather) return "Sin clima";
+  return `${WEATHER_LABELS[weather.kind]} · ${weather.permanent ? "sin límite de turnos" : `${weather.turnsLeft} turno${weather.turnsLeft === 1 ? "" : "s"}`}`;
+}
+export function validWeatherSelection(
+  kind: unknown,
+  turns: unknown,
+  permanent: unknown,
+): boolean {
+  if (kind === null) return true;
+  if (
+    typeof kind !== "string" ||
+    !Object.prototype.hasOwnProperty.call(WEATHER_LABELS, kind)
+  )
+    return false;
+  if (typeof permanent !== "boolean") return false;
+  // En Gen 3 solo lluvia, sol y arena pueden permanecer por habilidades.
+  if (permanent) return kind !== "hail";
+  return (
+    typeof turns === "number" &&
+    Number.isSafeInteger(turns) &&
+    turns >= 1 &&
+    turns <= 5
+  );
 }

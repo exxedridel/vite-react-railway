@@ -20,6 +20,9 @@ import {
   activateMoveField,
   weatherResidual,
   WEATHER_LABELS,
+  weatherSummary,
+  validWeatherSelection,
+  type WeatherKind,
   type BattleField,
 } from "@/lib/battleField";
 import type { MoveExecutionOptions } from "@/lib/moveCatalogTypes";
@@ -145,14 +148,11 @@ function advanceBattleTurn(
         );
       }
     }
-    currentWeather.turnsLeft -= 1;
-    if (currentWeather.turnsLeft <= 0) {
+    if (!currentWeather.permanent) currentWeather.turnsLeft -= 1;
+    if (!currentWeather.permanent && currentWeather.turnsLeft <= 0) {
       details.push(`${WEATHER_LABELS[currentWeather.kind]} terminó.`);
       field.weather = null;
-    } else
-      details.push(
-        `${WEATHER_LABELS[currentWeather.kind]}: quedan ${currentWeather.turnsLeft} turnos.`,
-      );
+    } else details.push(`${weatherSummary(currentWeather)}.`);
   }
   c.statuses = (c.statuses ?? []).filter((status) => status !== "flinched");
   o.statuses = (o.statuses ?? []).filter((status) => status !== "flinched");
@@ -295,6 +295,74 @@ const partySlice = createSlice({
       hp.value = Math.max(0, Math.min(max, hp.value + action.payload.amount));
       if (hp.value === 0 && state.battleField)
         clearFieldSource(state.battleField, { side: "opponent" });
+    },
+    setBattleWeather: {
+      prepare(input: {
+        captureId: string;
+        expectedContext: string;
+        kind: WeatherKind | null;
+        turnsLeft: number;
+        permanent: boolean;
+      }) {
+        return { payload: { ...input, id: nanoid() } };
+      },
+      reducer(
+        state,
+        action: PayloadAction<{
+          captureId: string;
+          expectedContext: string;
+          kind: WeatherKind | null;
+          turnsLeft: number;
+          permanent: boolean;
+          id: string;
+        }>,
+      ) {
+        const { captureId, expectedContext, kind, turnsLeft, permanent, id } =
+          action.payload;
+        const capture = state.pokemons.find((p) => p.captureId === captureId);
+        const opponent = state.opponent;
+        if (!capture || !opponent || getCurrentHp(opponent.pokemon) <= 0)
+          return;
+        if (!validWeatherSelection(kind, turnsLeft, permanent)) return;
+        if (
+          battleContextKey(capture, opponent, state.battleField) !==
+          expectedContext
+        )
+          return;
+        const field =
+          state.battleField ?? (state.battleField = emptyBattleField());
+        if (field.activeCaptureId && field.activeCaptureId !== captureId)
+          return;
+        const previous = field.weather;
+        const next =
+          kind === null
+            ? null
+            : {
+                kind,
+                turnsLeft: permanent ? 5 : turnsLeft,
+                ...(permanent ? { permanent: true } : {}),
+              };
+        // Una pulsación repetida no reinicia la duración ni duplica el historial.
+        if (
+          previous?.kind === next?.kind &&
+          Boolean(previous?.permanent) === Boolean(next?.permanent) &&
+          (next?.permanent || previous?.turnsLeft === next?.turnsLeft)
+        )
+          return;
+        const before = weatherSummary(previous);
+        field.weather = next;
+        state.lastFieldEvent = {
+          id,
+          title: next
+            ? "Clima actualizado manualmente"
+            : "Clima retirado manualmente",
+          details: [
+            `${before} → ${weatherSummary(next)}.`,
+            "Cambio declarado por el jugador. Se aplica a ambos Pokémon y al cálculo de movimientos.",
+            "No consume turno ni aplica daño residual al seleccionarlo. La duración y el daño residual se resuelven al finalizar turno.",
+          ],
+        };
+      },
     },
     finishBattleTurn: {
       prepare(input: {
@@ -973,6 +1041,9 @@ export const activateBattlePokemon = withActivityMeta(
 );
 export const changeOpponentHp = withActivityMeta(
   partySlice.actions.changeOpponentHp,
+);
+export const setBattleWeather = withActivityMeta(
+  partySlice.actions.setBattleWeather,
 );
 export const finishBattleTurn = withActivityMeta(
   partySlice.actions.finishBattleTurn,
