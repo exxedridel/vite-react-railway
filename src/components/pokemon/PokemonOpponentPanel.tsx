@@ -1,3 +1,13 @@
+import PokemonCaptureRequirements from "./PokemonCaptureRequirements";
+import {
+  CATCH_TIERS,
+  encounterPool,
+  pickEncounter,
+  captureRequirements,
+  captureSpecies,
+  tierForSpecies,
+  type CatchTierColor,
+} from "@/lib/captureRates";
 import { pokemonAllowed, regionSummary, gameBalance } from "@/lib/gameSettings";
 import { hasLivingHp, isPokemonFainted } from "@/lib/pokemonCondition";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
@@ -6,7 +16,12 @@ import { captureWildOpponent } from "@/slices/partySlice";
 import { canChooseStarter } from "@/lib/starterPokemon";
 import { generateWildEncounter } from "@/lib/wildEncounter";
 import PokemonTypeBadges from "./PokemonTypeBadges";
-import { createLeveledPokemon, STAT_NAMES } from "@/lib/pokemonStats";
+import {
+  createLeveledPokemon,
+  changeLevel,
+  isLeveled,
+  STAT_NAMES,
+} from "@/lib/pokemonStats";
 import {
   useEffect,
   useRef,
@@ -99,9 +114,19 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
   const partySize = useAppSelector((state) => state.party.pokemons.length);
   const needsStarter = useAppSelector((state) => canChooseStarter(state.party));
   const [captureTargetId, setCaptureTargetId] = useState<string | null>(null);
-  const [encounterKind, setEncounterKind] = useState<"wild" | "trainer">(
-    "wild",
+  const [encounterKind, setEncounterKind] = useState<
+    "wild" | "trainer" | "random"
+  >("wild");
+  const party = useAppSelector((state) => state.party);
+  const [tierColor, setTierColor] = useState<CatchTierColor>("pink");
+  const pool = encounterPool(party, tierColor);
+  const [candidateLevel, setCandidateLevel] = useState("");
+  const [opponentLevel, setOpponentLevel] = useState(
+    String(opponent?.pokemon.level ?? balance.startingLevel),
   );
+  useEffect(() => {
+    setOpponentLevel(String(opponent?.pokemon.level ?? balance.startingLevel));
+  }, [opponent?.pokemon.id, opponent?.pokemon.level, balance.startingLevel]);
   const [building, setBuilding] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const generationRef = useRef<AbortController | null>(null);
@@ -119,8 +144,12 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
   const searchingRef = useRef(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const opponentFainted = isPokemonFainted(opponent?.pokemon);
+  const captureInfo = opponent
+    ? captureRequirements(opponent.pokemon, opponent.statuses)
+    : null;
   const canCapture =
     !!opponent &&
+    !!captureInfo &&
     opponent.kind === "wild" &&
     hasLivingHp(opponent.pokemon) &&
     partySize < 6 &&
@@ -160,7 +189,15 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
   const handleSearch = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (searchingRef.current || generationRef.current) return;
-    const raw = search.trim().toLowerCase();
+    let raw = search.trim().toLowerCase();
+    if (encounterKind === "random") {
+      const available = encounterPool(store.getState().party, tierColor);
+      if (!available.length) {
+        toast.error("No hay especies de ese color en las regiones elegidas.");
+        return;
+      }
+      raw = String(pickEncounter(available).id);
+    }
     if (!raw) {
       toast.error("Escribe el nombre o número del rival.");
       return;
@@ -174,7 +211,7 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
       const result = await getPokemon(query, false).unwrap();
       if (version !== requestVersion.current) return;
       if (
-        encounterKind === "wild" &&
+        encounterKind !== "trainer" &&
         !pokemonAllowed(store.getState().party, result.id)
       ) {
         toast.error(
@@ -197,6 +234,7 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
         return;
       }
       const balance = gameBalance(store.getState().party.gameSettings);
+      setCandidateLevel(String(balance.startingLevel));
       setCandidate(
         createLeveledPokemon(
           result,
@@ -224,7 +262,27 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
     }
   };
   const handleConfirm = async () => {
-    if (!candidate || searching || generationRef.current) return;
+    if (
+      !candidate ||
+      searching ||
+      generationRef.current ||
+      !Number.isSafeInteger(Number(candidateLevel)) ||
+      Number(candidateLevel) < 1 ||
+      Number(candidateLevel) > 100 ||
+      candidate.level !== Number(candidateLevel)
+    )
+      return;
+    if (
+      encounterKind === "random" &&
+      !encounterPool(store.getState().party, tierColor).some(
+        (species) => species.id === candidate.id,
+      )
+    ) {
+      toast.error(
+        "El color o las regiones cambiaron. Genera el encuentro nuevamente.",
+      );
+      return;
+    }
     if (encounterKind === "trainer") {
       onChange(createBattleOpponent(candidate));
       handleOpenChange(false);
@@ -361,12 +419,41 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
             aria-label="Nivel del oponente"
             className="flex items-center gap-2"
           >
-            <span
-              className="mr-1 text-sm font-semibold tabular-nums"
-              aria-live="polite"
+            <label
+              htmlFor="active-opponent-level"
+              className="text-sm font-semibold"
             >
-              Lv. {opponent.pokemon.level ?? balance.startingLevel}
-            </span>
+              Lv.
+            </label>
+            <Input
+              id="active-opponent-level"
+              type="number"
+              inputMode="numeric"
+              min={1}
+              step={1}
+              value={opponentLevel}
+              className="h-8 w-20 text-center"
+              onChange={(event) => {
+                const value = event.target.value;
+                setOpponentLevel(value);
+                const level = Number(value);
+                if (value && Number.isSafeInteger(level) && level >= 1)
+                  onChange((current) =>
+                    current
+                      ? changeOpponentLevel(
+                          current,
+                          level -
+                            (current.pokemon.level ?? balance.startingLevel),
+                        )
+                      : null,
+                  );
+              }}
+              onBlur={() =>
+                setOpponentLevel(
+                  String(opponent.pokemon.level ?? balance.startingLevel),
+                )
+              }
+            />
             <Button
               type="button"
               variant="outline"
@@ -404,7 +491,7 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
                 onClick={() => setCaptureTargetId(opponent.encounterId ?? null)}
               >
                 <img src="/Pokeball-PNG.png" alt="" className="h-5 w-5" />{" "}
-                Captura conseguida
+                Lanzar pokebola
               </Button>
               <p className="text-xs text-muted-foreground">
                 {opponentFainted
@@ -413,7 +500,7 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
                     ? "Equipo lleno (6/6). El salvaje seguirá guardado hasta que liberes un espacio."
                     : needsStarter
                       ? "Primero debes elegir tu Pokémon inicial."
-                      : "Usa este botón solo si la tirada de dados del tablero permitió capturarlo."}
+                      : "Consulta el mínimo de tu D20 según la pokebola que lanzarás."}
               </p>
             </div>
           )}
@@ -456,14 +543,14 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
           }}
         >
           <DialogHeader>
-            <DialogTitle>¿Captura conseguida?</DialogTitle>
+            <DialogTitle>Lanzar pokebola</DialogTitle>
             <DialogDescription>
-              Confirma que tus dados permitieron atrapar a{" "}
-              {opponent?.pokemon.name}. Se unirá al equipo con su nivel actual,
-              HP y sus movimientos. Sus modificadores temporales de combate
-              volverán a cero y dejará de aparecer como oponente.
+              Consulta el mínimo para atrapar a {opponent?.pokemon.name}, tira
+              tu D20 físico y confirma solo si lo conseguiste. Se conservarán su
+              nivel, HP y movimientos.
             </DialogDescription>
           </DialogHeader>
+          {opponent && <PokemonCaptureRequirements opponent={opponent} />}
           <DialogFooter className="gap-2">
             <Button
               type="button"
@@ -478,7 +565,7 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
               disabled={!canCapture}
               onClick={handleCapture}
             >
-              Sí, agregar al equipo
+              Captura conseguida
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -506,7 +593,8 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
                 {opponent?.pokemon.name}
               </span>{" "}
               y se descartarán su nivel y sus modificadores guardados. Tu equipo
-              no cambiará.
+              conservará sus estados principales; se limpiarán los estados
+              secundarios del equipo.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">
@@ -556,7 +644,10 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
                   name="encounter-kind"
                   value="wild"
                   checked={encounterKind === "wild"}
-                  onChange={() => setEncounterKind("wild")}
+                  onChange={() => {
+                    setEncounterKind("wild");
+                    setCandidate(null);
+                  }}
                 />{" "}
                 Salvaje
               </label>
@@ -566,54 +657,205 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
                   name="encounter-kind"
                   value="trainer"
                   checked={encounterKind === "trainer"}
-                  onChange={() => setEncounterKind("trainer")}
+                  onChange={() => {
+                    setEncounterKind("trainer");
+                    setCandidate(null);
+                  }}
                 />{" "}
                 De otro entrenador
               </label>
+              <label className="flex cursor-pointer items-center gap-2">
+                <input
+                  type="radio"
+                  name="encounter-kind"
+                  value="random"
+                  checked={encounterKind === "random"}
+                  onChange={() => {
+                    setEncounterKind("random");
+                    setCandidate(null);
+                  }}
+                />
+                Aleatorio por casilla
+              </label>
             </div>
           </fieldset>
-          {encounterKind === "wild" && (
+          {encounterKind !== "trainer" && (
             <p className="text-xs text-muted-foreground">
               Regiones permitidas: {allowedRegionsLabel}. Se elegirán hasta tres
               movimientos de Emerald, priorizando STAB cuando exista. Los
               espacios restantes podrán completarse con TM/HM.
             </p>
           )}
-          <form onSubmit={handleSearch} className="space-y-2">
-            <label htmlFor="opponent-search" className="text-sm font-medium">
-              Nombre o número
-            </label>
-            <div className="flex gap-2">
-              <Input
-                id="opponent-search"
-                value={search}
-                onChange={(event) => {
-                  setSearch(event.target.value);
-                  setCandidate(null);
-                }}
-                disabled={searching || building}
-                placeholder="charizard o 6"
-                autoComplete="off"
-                autoCapitalize="none"
-                spellCheck={false}
-                className="min-w-0 flex-1"
-              />
+          {encounterKind === "random" ? (
+            <form onSubmit={handleSearch} className="space-y-3">
+              <fieldset disabled={searching || building}>
+                <legend className="mb-2 text-sm font-medium">
+                  Color de la casilla
+                </legend>
+                <div className="grid grid-cols-3 gap-2">
+                  {Object.values(CATCH_TIERS).map((tier) => (
+                    <label
+                      key={tier.color}
+                      className={`cursor-pointer rounded-lg border p-2 text-sm ${tierColor === tier.color ? "border-brand ring-1 ring-brand bg-muted" : "bg-card"}`}
+                    >
+                      <input
+                        type="radio"
+                        name="encounter-tier"
+                        value={tier.color}
+                        checked={tierColor === tier.color}
+                        onChange={() => {
+                          setTierColor(tier.color);
+                          setCandidate(null);
+                        }}
+                        className="mr-1"
+                      />
+                      <span
+                        aria-hidden="true"
+                        className="mr-1 inline-block h-3 w-3 rounded-full"
+                        style={{ backgroundColor: tier.hexColor }}
+                      />
+                      {tier.name}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+              <p className="text-xs text-muted-foreground">
+                {CATCH_TIERS[tierColor].description}. {pool.length} especies
+                posibles en {allowedRegionsLabel}.
+              </p>
               <Button
                 type="submit"
-                disabled={searching || building || !search.trim()}
-                aria-label="Buscar oponente"
+                disabled={searching || building || pool.length === 0}
+                className="w-full"
               >
                 {searching ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Buscando encuentro…
+                  </>
                 ) : (
-                  <Search className="h-4 w-4" />
+                  "Generar encuentro"
                 )}
               </Button>
-            </div>
-          </form>
+            </form>
+          ) : (
+            <form onSubmit={handleSearch} className="space-y-2">
+              <label htmlFor="opponent-search" className="text-sm font-medium">
+                Nombre o número
+              </label>
+              <div className="flex gap-2">
+                <Input
+                  id="opponent-search"
+                  value={search}
+                  onChange={(event) => {
+                    setSearch(event.target.value);
+                    setCandidate(null);
+                  }}
+                  disabled={searching || building}
+                  placeholder="charizard o 6"
+                  autoComplete="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  className="min-w-0 flex-1"
+                />
+                <Button
+                  type="submit"
+                  disabled={searching || building || !search.trim()}
+                  aria-label="Buscar oponente"
+                >
+                  {searching ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Search className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+            </form>
+          )}
           {candidate && (
             <div className="space-y-3 rounded-xl border p-3">
               <OpponentSummary key={candidate.id} pokemon={candidate} />
+              {encounterKind !== "trainer" && captureSpecies(candidate.id) && (
+                <p className="text-xs text-muted-foreground">
+                  Categoría:{" "}
+                  {tierForSpecies(captureSpecies(candidate.id)!).name} ·
+                  objetivo base D20{" "}
+                  {tierForSpecies(captureSpecies(candidate.id)!).targetD20}
+                </p>
+              )}
+              <div className="space-y-2">
+                <label
+                  htmlFor="candidate-level"
+                  className="text-sm font-medium"
+                >
+                  Nivel del encuentro
+                </label>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    disabled={building || (candidate.level ?? 1) <= 1}
+                    aria-label="Bajar nivel del encuentro"
+                    onClick={() => {
+                      if (!isLeveled(candidate)) return;
+                      const level = candidate.level - 1;
+                      setCandidate(changeLevel(candidate, level));
+                      setCandidateLevel(String(level));
+                    }}
+                  >
+                    <Minus className="h-4 w-4" />
+                  </Button>
+                  <Input
+                    id="candidate-level"
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={100}
+                    step={1}
+                    value={candidateLevel}
+                    disabled={building}
+                    className="min-w-0 flex-1 text-center"
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setCandidateLevel(value);
+                      const level = Number(value);
+                      if (
+                        value &&
+                        Number.isSafeInteger(level) &&
+                        level >= 1 &&
+                        level <= 100 &&
+                        isLeveled(candidate)
+                      )
+                        setCandidate(changeLevel(candidate, level));
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    disabled={building || (candidate.level ?? 100) >= 100}
+                    aria-label="Subir nivel del encuentro"
+                    onClick={() => {
+                      if (!isLeveled(candidate)) return;
+                      const level = candidate.level + 1;
+                      setCandidate(changeLevel(candidate, level));
+                      setCandidateLevel(String(level));
+                    }}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+                {(!candidateLevel ||
+                  !Number.isSafeInteger(Number(candidateLevel)) ||
+                  Number(candidateLevel) < 1 ||
+                  Number(candidateLevel) > 100) && (
+                  <p role="alert" className="text-xs text-destructive">
+                    Escribe un nivel entero entre 1 y 100.
+                  </p>
+                )}
+              </div>
+
               <dl className="grid grid-cols-2 gap-2 text-xs">
                 {candidate.stats.map((stat) => (
                   <div
@@ -655,12 +897,21 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
             </Button>
             <Button
               type="button"
-              disabled={!candidate || searching || building}
+              disabled={
+                !candidate ||
+                searching ||
+                building ||
+                !candidateLevel ||
+                !Number.isSafeInteger(Number(candidateLevel)) ||
+                Number(candidateLevel) < 1 ||
+                Number(candidateLevel) > 100 ||
+                candidate.level !== Number(candidateLevel)
+              }
               onClick={handleConfirm}
             >
               {building
                 ? "Preparando encuentro…"
-                : encounterKind === "wild"
+                : encounterKind !== "trainer"
                   ? "Iniciar encuentro salvaje"
                   : "Usar este oponente"}
             </Button>

@@ -1,54 +1,46 @@
-import { STATUS_OPTIONS } from "@/types/pokemon";
-import type { CapturedPokemon } from "@/types/pokemon";
-
-type Props = {
-  capturedPokemon: CapturedPokemon;
-};
+import { STATUS_OPTIONS, type CapturedPokemon } from "@/types/pokemon";
+import { getCurrentHp } from "@/lib/pokemonStats";
+import { isTimedStatus } from "@/lib/statusTurns";
 
 export default function PokemonConditionBadges({
   capturedPokemon,
-}: Props) {
-  const { pokemon, statuses = [] } = capturedPokemon;
-
-  const isFainted =
-    pokemon.stats.find((stat) => stat.name === "hp")?.value === 0;
-
-  const activeStatuses = STATUS_OPTIONS.filter((status) =>
-    statuses.includes(status.id),
+}: {
+  capturedPokemon: CapturedPokemon;
+}) {
+  const fainted = getCurrentHp(capturedPokemon.pokemon) <= 0;
+  const statuses = STATUS_OPTIONS.filter((option) =>
+    capturedPokemon.statuses?.includes(option.id),
   );
-
-  if (!isFainted && activeStatuses.length === 0) {
-    return null;
-  }
+  if (!fainted && statuses.length === 0) return null;
 
   return (
-    <div
-      className="
-        pointer-events-none absolute inset-x-1 top-1 z-10
-        flex flex-wrap gap-1
-      "
-    >
-      {isFainted && (
-        <span className="inline-flex items-center gap-1 rounded-md bg-destructive px-1.5 py-0.5 text-[10px] font-semibold text-destructive-foreground shadow-sm">
-          <span aria-hidden="true">💫</span>
-          Debilitado
+    <span className="pointer-events-none absolute inset-x-1 top-1 z-10 flex flex-wrap justify-center gap-1">
+      {fainted && (
+        <span className="rounded-md border bg-background/90 px-2 py-0.5 text-xs font-semibold text-muted-foreground shadow-sm">
+          Fainted
         </span>
       )}
-
-      {activeStatuses.map((status) => (
-        <span
-          key={status.id}
-          className="
-            inline-flex items-center gap-1 rounded-md
-            border border-brand/30 bg-background/90
-            px-1.5 py-0.5 text-[10px] font-medium
-            shadow-sm backdrop-blur-sm
-          "
-        >
-          <span aria-hidden="true">{status.icon}</span>
-          {status.label}
-        </span>
-      ))}
-    </div>
+      {statuses.map((status) => {
+        const turns = isTimedStatus(status.id)
+          ? capturedPokemon.statusTurns?.[status.id]
+          : undefined;
+        const label = `${status.label}${turns !== undefined ? ` · ${turns}` : ""}`;
+        return (
+          <span
+            key={status.id}
+            title={label}
+            aria-label={label}
+            className="inline-flex items-center gap-0.5 rounded-md border bg-background/90 px-1.5 py-0.5 text-xs shadow-sm"
+          >
+            <span aria-hidden="true">{status.icon}</span>
+            {turns !== undefined && (
+              <span aria-hidden="true" className="font-semibold tabular-nums">
+                {turns}
+              </span>
+            )}
+          </span>
+        );
+      })}
+    </span>
   );
 }

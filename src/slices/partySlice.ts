@@ -670,7 +670,9 @@ const partySlice = createSlice({
           origin: "wild",
           // Conserva nivel y HP. Solo se limpian los modificadores temporales.
           pokemon: { ...opponent.pokemon, battleStages: neutralBattleStages() },
-          statuses: [],
+          // La limpieza de secundarios se aplica abajo, también a esta captura.
+          statuses: [...(opponent.statuses ?? [])],
+          statusTurns: { ...opponent.statusTurns },
           moves: moves.map((move) => ({ ...move, source: "wild" })),
           initialMovesChosen: 0,
         });
