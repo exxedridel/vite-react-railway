@@ -60,6 +60,22 @@ function describeCapture(capture: CapturedPokemon): string[] {
     `Movimientos: ${capture.moves?.map((m) => m.displayName).join(", ") || "Sin movimientos"}`,
   ];
 }
+function clearedSecondaryDetails(before: Snapshot, after: Snapshot): string[] {
+  return before.pokemons.flatMap((old) => {
+    const next = after.pokemons.find((p) => p.captureId === old.captureId);
+    if (!next) return [];
+    const removed = (old.statuses ?? []).filter(
+      (status) =>
+        STATUS_OPTIONS.find((option) => option.id === status)?.group ===
+          "additional" && !next.statuses?.includes(status),
+    );
+    return removed.length
+      ? [
+          `${old.pokemon.name}: estados secundarios retirados (${removed.map((status) => STATUS_OPTIONS.find((option) => option.id === status)?.label ?? status).join(", ")}); sus contadores también se limpiaron.`,
+        ]
+      : [];
+  });
+}
 // Compara cambios efectivamente aplicados. No registra clics, renderizados ni consultas.
 export function describePartyActivity(
   actionType: string,
@@ -202,7 +218,7 @@ export function describePartyActivity(
       return {
         kind: "opponent",
         title: `Oponente retirado: ${a!.pokemon.name}`,
-        details: [],
+        details: clearedSecondaryDetails(before, after),
       };
     if (
       !a ||
@@ -262,7 +278,10 @@ export function describePartyActivity(
       kind: added.origin === "starter" ? "starter" : "capture",
       captureId: added.captureId,
       title: `${added.origin === "starter" ? "Inicial elegido" : "Pokémon capturado"}: ${added.pokemon.name}`,
-      details: describeCapture(added),
+      details: [
+        ...describeCapture(added),
+        ...clearedSecondaryDetails(before, after),
+      ],
     };
   }
   if (actionType === "party/removePokemon") {

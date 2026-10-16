@@ -65,6 +65,13 @@ export const STATUS_OPTIONS = [
     rule: "En Gen 3 impide usar movimientos de categoría Status durante 2 turnos. Lleva el contador en el tablero y retira el estado al terminar.",
   },
   {
+    id: "tormented",
+    label: "Torment",
+    icon: "😖",
+    group: "additional",
+    rule: "Impide escoger el mismo movimiento usado por este Pokémon en su acción anterior, excepto Struggle. No tiene un contador fijo: se elimina al retirar al Pokémon o terminar el combate. Comprueba manualmente el último movimiento antes de actuar.",
+  },
+  {
     id: "flinched",
     label: "Flinch",
     icon: "💥",

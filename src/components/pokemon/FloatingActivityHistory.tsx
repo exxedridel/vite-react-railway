@@ -218,7 +218,7 @@ export default function FloatingActivityHistory({
                   }
                   setOpen(true);
                 }}
-                className={`pointer-events-auto flex h-full w-full touch-none select-none items-center justify-center rounded-2xl border-2 border-brand bg-card text-brand shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${dragging ? "cursor-grabbing" : "cursor-grab"}`}
+                className={`pointer-events-auto flex h-full w-full touch-none select-none items-center justify-center rounded-2xl border-2 bg-card shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${dragging ? "cursor-grabbing" : "cursor-grab"}`}
               >
                 <History className="h-9 w-9 text-foreground/70 " />
               </button>

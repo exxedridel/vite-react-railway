@@ -620,6 +620,11 @@ const partySlice = createSlice({
         state.battleField = emptyBattleField();
         state.lastFieldEvent = undefined;
       }
+      // Retirar al rival termina el combate para todo el equipo.
+      // Conserva estados principales (incluido Sleep y su contador).
+      if (state.opponent && next === null) {
+        for (const member of state.pokemons) clearSecondaryStatuses(member);
+      }
       state.opponent = next;
       if (next && getCurrentHp(next.pokemon) <= 0 && state.battleField)
         clearFieldSource(state.battleField, { side: "opponent" });
@@ -670,6 +675,8 @@ const partySlice = createSlice({
           initialMovesChosen: 0,
         });
         state.starterClaimed = true;
+        // Capturarlo también termina el combate: limpia al equipo completo.
+        for (const member of state.pokemons) clearSecondaryStatuses(member);
         // Captura y retirada del rival ocurren en la misma acción: evita duplicados.
         state.opponent = null;
         state.lastMovesByPlayer = {};
