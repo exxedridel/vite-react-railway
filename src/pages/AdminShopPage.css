@@ -1,0 +1,131 @@
+.admin-shop-page {
+  width: min(100%, 1120px);
+  margin: 0 auto;
+  padding: 16px 12px 40px;
+}
+.admin-shop-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.admin-setup {
+  max-width: 680px;
+  margin: 24px auto;
+  border: 1px solid hsl(var(--border));
+  border-radius: 18px;
+  padding: clamp(16px, 4vw, 32px);
+  background: hsl(var(--card));
+  color: hsl(var(--card-foreground));
+}
+.admin-mart-scene {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  padding: clamp(80px, 14vw, 150px) clamp(12px, 7vw, 88px)
+    clamp(40px, 8vw, 88px);
+  background: #8ab9bb url("/admin-shop/pokemart-emerald.png") center top / cover
+    no-repeat;
+  image-rendering: pixelated;
+  border: 4px solid #365e72;
+  border-radius: 16px;
+  box-shadow: 0 8px 0 hsl(var(--foreground) / 0.08);
+}
+.admin-mart-menu {
+  position: relative;
+  border: 4px solid #365e72;
+  outline: 3px solid #d4efee;
+  border-radius: 10px;
+  background: hsl(var(--background) / 0.97);
+  color: hsl(var(--foreground));
+  box-shadow: 5px 6px 0 #223a4c66;
+}
+.admin-mart-menu__title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 12px 16px;
+  border-bottom: 2px solid hsl(var(--border));
+}
+.admin-mart-menu__title h2 {
+  font-size: clamp(22px, 4vw, 34px);
+  font-weight: 800;
+  line-height: 1.2;
+}
+.admin-mart-menu__title span {
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+}
+.admin-mart-items {
+  display: grid;
+  grid-template-columns: 1fr;
+  list-style: none;
+  margin: 0;
+  padding: 4px 12px;
+}
+.admin-mart-item {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 0;
+  border-bottom: 1px solid hsl(var(--border));
+}
+.admin-mart-item:last-child {
+  border-bottom: 0;
+}
+.admin-mart-item img {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+.admin-mart-item__name {
+  font-size: clamp(15px, 2.4vw, 22px);
+  font-weight: 600;
+}
+.admin-mart-item strong {
+  font-size: clamp(18px, 2.8vw, 26px);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.admin-player-card {
+  min-width: 0;
+  border: 1px solid hsl(var(--border));
+  border-top: 5px solid hsl(var(--player-color));
+  padding: 16px;
+  border-radius: 12px;
+  background: hsl(var(--card));
+  color: hsl(var(--card-foreground));
+}
+.admin-player-card__heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.admin-player-dot {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: hsl(var(--player-color));
+  border: 1px solid hsl(var(--foreground) / 0.18);
+}
+@media (min-width: 768px) {
+  .admin-shop-page {
+    padding: 24px 24px 48px;
+  }
+  .admin-mart-items {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 28px;
+    padding: 8px 20px;
+  }
+  .admin-mart-item:nth-last-child(2) {
+    border-bottom: 0;
+  }
+}

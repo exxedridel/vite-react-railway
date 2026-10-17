@@ -1,6 +1,8 @@
 import type { BattleResult } from "@/types/battle";
 
 export type ActivityKind =
+  | "money"
+  | "badge"
   | "evolution"
   | "starter"
   | "capture"

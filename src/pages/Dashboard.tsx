@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import PokemonStatsPopover from "@/components/pokemon/PokemonStatsPopover";
+import PokemonBagDialog from "@/components/pokemon/PokemonBagDialog";
 import PokemonHpBar from "@/components/pokemon/PokemonHpBar";
 import PokemonBattleDialog from "@/components/pokemon/PokemonBattleDialog";
 import PokemonTypeBadges from "@/components/pokemon/PokemonTypeBadges";
@@ -41,6 +42,7 @@ const Dashboard = () => {
   const [pokemonToRemove, setPokemonToRemove] =
     useState<CapturedPokemon | null>(null);
   const [battleCaptureId, setBattleCaptureId] = useState<string | null>(null);
+  const [bagOpen, setBagOpen] = useState(false);
   const cryAudioRef = useRef<HTMLAudioElement | null>(null);
   const hasPokemon = party.length > 0;
   const eligible = useAppSelector((state) => canChooseStarter(state.party));
@@ -55,6 +57,7 @@ const Dashboard = () => {
 
   // Si se reinicia la partida, limpia también los diálogos y el audio locales.
   useEffect(() => {
+    if (party.length === 0) setBagOpen(false);
     if (
       battleCaptureId &&
       !party.some((p) => p.captureId === battleCaptureId)
@@ -136,7 +139,7 @@ const Dashboard = () => {
                 <span>Elige tu Pokémon inicial</span>
               </span>
               <span className="block">
-                Comienza en nivel 50 y elige hasta dos movimientos.
+                Configura tu partida y elige hasta dos movimientos.
               </span>
             </button>
           ) : (
@@ -154,9 +157,12 @@ const Dashboard = () => {
 
       {hasPokemon && (
         <div className="w-full max-w-[800px]">
-          <h2 className="mb-4 ml-2 text-lg font-bold">
-            Party · {party.length}/6 pokémon
-          </h2>
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <h2 className="ml-2 text-lg font-bold">
+              Party · {party.length}/6 pokémon
+            </h2>
+            <PokemonBagDialog open={bagOpen} onOpenChange={setBagOpen} />
+          </div>
           <div className="grid grid-cols-2 gap-1 md:grid-cols-3">
             {party.map((capturedPokemon) => {
               const { captureId, pokemon } = capturedPokemon;
@@ -290,6 +296,7 @@ const Dashboard = () => {
 
       {/* Visible solo en el dashboard, sin superponerse a sus diálogos. */}
       {battleCaptureId === null &&
+        !bagOpen &&
         pokemonToRemove === null &&
         !pokemonDialogOpen && (
           <FloatingOpponent

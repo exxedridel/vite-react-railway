@@ -1,9 +1,8 @@
-// src/App.tsx
 import { Route, Routes } from "react-router-dom";
 import ProtectedRoutes from "./components/Navigation/ProtectedRoutes";
 import IdleTimer from "@/components/Navigation/IdleTimer";
 import Login from "./pages/Login";
-import Layout from "./layout/Layout";
+import AppExperience from "@/components/admin/AppExperience";
 import AppRoutes from "./components/Navigation/AppRoutes";
 import Logout from "./components/Navigation/Logout";
 import NotFound from "./pages/NotFound";
@@ -12,7 +11,6 @@ function App() {
   return (
     <Routes>
       <Route index element={<Login />} />
-
       {AppRoutes.map((route, index) => (
         <Route
           key={index}
@@ -20,9 +18,9 @@ function App() {
           element={
             <ProtectedRoutes>
               <IdleTimer>
-                <Layout>
+                <AppExperience>
                   <route.component />
-                </Layout>
+                </AppExperience>
               </IdleTimer>
             </ProtectedRoutes>
           }
@@ -47,5 +45,4 @@ function App() {
     </Routes>
   );
 }
-
 export default App;

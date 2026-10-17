@@ -1,4 +1,9 @@
 import type { CapturedPokemon, Pokemon, BattleStages } from "@/types/pokemon";
+import {
+  KANTO_BADGES,
+  formatBagMoney,
+  type TrainerBag,
+} from "@/lib/trainerBag";
 import { STATUS_OPTIONS } from "@/types/pokemon";
 import type { BattleOpponent } from "@/lib/battleOpponent";
 import type { BattleResult } from "@/types/battle";
@@ -6,6 +11,7 @@ import type { ActivityDraft } from "@/types/activity";
 import { getCurrentHp, STAT_LABELS } from "@/lib/pokemonStats";
 import { normalizeStages } from "@/lib/battleModifiers";
 type Snapshot = {
+  bag?: TrainerBag;
   lastFieldEvent?: { id: string; title: string; details: string[] };
   pokemons: CapturedPokemon[];
   opponent: BattleOpponent | null;
@@ -82,6 +88,38 @@ export function describePartyActivity(
   before: Snapshot,
   after: Snapshot,
 ): ActivityDraft | null {
+  if (actionType === "party/changeBagMoney") {
+    const old = before.bag?.money ?? 0,
+      balance = after.bag?.money ?? 0;
+    if (old === balance) return null;
+    const delta = balance - old;
+    return {
+      kind: "money",
+      title:
+        delta > 0 ? "Dinero agregado a la Bag" : "Dinero restado de la Bag",
+      details: [
+        `Monto: ${delta > 0 ? "+" : "−"}$${formatBagMoney(Math.abs(delta))}.`,
+        `Saldo: $${formatBagMoney(old)} → $${formatBagMoney(balance)}.`,
+      ],
+    };
+  }
+  if (actionType === "party/toggleGymBadge") {
+    const old = before.bag?.badges ?? [],
+      current = after.bag?.badges ?? [];
+    const changed = KANTO_BADGES.find(
+      (badge) => old.includes(badge.id) !== current.includes(badge.id),
+    );
+    if (!changed) return null;
+    const earned = current.includes(changed.id);
+    return {
+      kind: "badge",
+      title: `${earned ? "Medalla obtenida" : "Medalla retirada"}: ${changed.name}`,
+      details: [
+        `Gimnasio de ${changed.leader} · Kanto.`,
+        `Medallas: ${current.length}/8.`,
+      ],
+    };
+  }
   if (
     [
       "party/finishBattleTurn",
@@ -150,6 +188,7 @@ export function describePartyActivity(
       title: "Partida reiniciada",
       details: [
         `Se retiraron ${before.pokemons.length} Pokémon del equipo.`,
+        `Bag reiniciada: $${formatBagMoney(before.bag?.money ?? 0)} → $0; ${before.bag?.badges.length ?? 0} medallas → 0.`,
         before.opponent
           ? `Oponente retirado: ${before.opponent.pokemon.name}.`
           : "No había oponente seleccionado.",

@@ -1,5 +1,13 @@
 import { findEvolution } from "@/lib/gen3Evolutions";
 import {
+  emptyTrainerBag,
+  KANTO_BADGES,
+  moneyAfterChange,
+  type TrainerBag,
+  type GymBadgeId,
+  type MoneyDirection,
+} from "@/lib/trainerBag";
+import {
   evolutionBattleActive,
   evolutionLevelError,
   replaceEvolvedPokemon,
@@ -97,6 +105,7 @@ type ExecuteMoveInput = {
   conditionsConfirmed: boolean;
 };
 export type PartyState = {
+  bag?: TrainerBag;
   battleField?: BattleField;
   lastFieldEvent?: { id: string; title: string; details: string[] };
   dataVersion?: string;
@@ -112,6 +121,7 @@ export type PartyState = {
   opponent: BattleOpponent | null;
 };
 const initialState: PartyState = {
+  bag: emptyTrainerBag(),
   battleField: emptyBattleField(),
   dataVersion: GAME_DATA_VERSION,
   gameSettings: null,
@@ -827,6 +837,7 @@ const partySlice = createSlice({
     },
     resetGame() {
       return {
+        bag: emptyTrainerBag(),
         battleField: emptyBattleField(),
         dataVersion: GAME_DATA_VERSION,
         gameSettings: null,
@@ -1083,6 +1094,24 @@ const partySlice = createSlice({
         status,
       ];
     },
+    changeBagMoney(
+      state,
+      action: PayloadAction<{ amount: number; direction: MoneyDirection }>,
+    ) {
+      const { amount, direction } = action.payload;
+      const next = moneyAfterChange(state.bag?.money ?? 0, amount, direction);
+      if (next === null) return;
+      state.bag ??= emptyTrainerBag();
+      state.bag.money = next;
+    },
+    toggleGymBadge(state, action: PayloadAction<GymBadgeId>) {
+      if (!KANTO_BADGES.some((badge) => badge.id === action.payload)) return;
+      state.bag ??= emptyTrainerBag();
+      const badges = state.bag.badges;
+      state.bag.badges = badges.includes(action.payload)
+        ? badges.filter((id) => id !== action.payload)
+        : [...badges, action.payload];
+    },
     clearPokemonStatuses(state, action: PayloadAction<string>) {
       const capture = state.pokemons.find(
         (p) => p.captureId === action.payload,
@@ -1111,6 +1140,12 @@ function withActivityMeta<T extends (...args: never[]) => { type: string }>(
   return Object.assign(wrapped, creator) as T;
 }
 export const evolvePokemon = withActivityMeta(partySlice.actions.evolvePokemon);
+export const changeBagMoney = withActivityMeta(
+  partySlice.actions.changeBagMoney,
+);
+export const toggleGymBadge = withActivityMeta(
+  partySlice.actions.toggleGymBadge,
+);
 export const confirmBattleSwitch = withActivityMeta(
   partySlice.actions.confirmBattleSwitch,
 );
