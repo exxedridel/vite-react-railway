@@ -6,6 +6,8 @@ export type BattleOutcome =
   | "blocked"
   | "manual";
 export type BattleResult = {
+  engine?: "emerald";
+  protocol?: string[];
   attackStat?: "attack" | "special-attack";
   defenseStat?: "defense" | "special-defense";
   attackerBurned?: boolean;

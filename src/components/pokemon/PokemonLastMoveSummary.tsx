@@ -2,6 +2,12 @@ import { useAppSelector } from "@/store/hooks";
 import type { BattleResult } from "@/types/battle";
 
 function outcomeLabel(result: BattleResult): string {
+  if (
+    result.engine === "emerald" &&
+    result.message === "Preparando movimiento"
+  ) {
+    return "Cargando · ataque en el siguiente turno";
+  }
   switch (result.outcome) {
     case "hit":
       return "Acertó";

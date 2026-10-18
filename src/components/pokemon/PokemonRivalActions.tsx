@@ -1,4 +1,4 @@
-import { getCuratedMove } from "@/lib/curatedMoveCatalog";
+import { getWildMove } from "@/lib/emerald/moveInfo";
 import { useState, type Dispatch, type SetStateAction } from "react";
 import type { BattleOpponent } from "@/lib/battleOpponent";
 import { getCurrentHp, getMaxHp } from "@/lib/pokemonStats";
@@ -23,6 +23,7 @@ export default function PokemonRivalActions({
   onChange: Dispatch<SetStateAction<BattleOpponent | null>>;
   section: "hp" | "moves" | "stats";
 }) {
+  const runtime = useAppSelector((s) => s.party.emerald);
   const [moveId, setMoveId] = useState<number | null>(null);
   const capture = useAppSelector((state) =>
     state.party.pokemons.find((p) => p.captureId === captureId),
@@ -91,41 +92,49 @@ export default function PokemonRivalActions({
           {opponent.kind === "wild" ? (
             <>
               <p className="text-xs text-muted-foreground capitalize">
-                Frente a {capture?.pokemon.name ?? "tu Pokémon"}. El daño
-                directo recibido se descuenta automáticamente.
+                Frente a {capture?.pokemon.name ?? "tu Pokémon"}. Ambas acciones
+                se resuelven juntas y actualizan los HP automáticamente.
               </p>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {(opponent.moves ?? []).map(getCuratedMove).map((move) => (
-                  <article
-                    key={move.id}
-                    className="flex flex-col gap-2 rounded-xl border p-3"
-                  >
-                    <h3 className="text-sm font-semibold">
-                      {move.displayName}
-                    </h3>
-                    <PokemonTypeBadges types={[move.type]} />
-                    <p className="text-xs text-muted-foreground">
-                      {move.damageClass} · Power {move.power ?? "—"} · Accuracy{" "}
-                      {move.accuracy ?? "—"}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {getCuratedMove(move).description}
-                    </p>
-                    <Button
-                      className="mt-auto"
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={
-                        !hasLivingHp(opponent.pokemon) ||
-                        !hasLivingHp(capture?.pokemon)
-                      }
-                      onClick={() => setMoveId(move.id)}
+                {(opponent.moves ?? [])
+                  .map((move) => getWildMove(move, true))
+                  .map((move) => (
+                    <article
+                      key={move.id}
+                      className="flex flex-col gap-2 rounded-xl border p-3"
                     >
-                      Usar movimiento
-                    </Button>
-                  </article>
-                ))}
+                      <h3 className="text-sm font-semibold">
+                        {move.displayName}
+                      </h3>
+                      <PokemonTypeBadges types={[move.type]} />
+                      <p className="text-xs text-muted-foreground">
+                        {move.damageClass} · Power {move.power ?? "—"} ·
+                        Accuracy {move.accuracy ?? "—"}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {move.description}
+                      </p>
+                      <Button
+                        className="mt-auto"
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={
+                          !!runtime?.pending.opponent ||
+                          !!runtime?.ended ||
+                          (!!runtime &&
+                            !runtime.requests.opponent.moves.some(
+                              (m) => m.id === move.id && !m.disabled,
+                            )) ||
+                          !hasLivingHp(opponent.pokemon) ||
+                          !hasLivingHp(capture?.pokemon)
+                        }
+                        onClick={() => setMoveId(move.id)}
+                      >
+                        Usar movimiento
+                      </Button>
+                    </article>
+                  ))}
               </div>
             </>
           ) : (

@@ -1,3 +1,8 @@
+import {
+  combatKey,
+  type EmeraldRuntime,
+  type EmeraldUpdate,
+} from "@/lib/emerald/types";
 import { findEvolution } from "@/lib/gen3Evolutions";
 import {
   emptyTrainerBag,
@@ -105,6 +110,8 @@ type ExecuteMoveInput = {
   conditionsConfirmed: boolean;
 };
 export type PartyState = {
+  emerald?: EmeraldRuntime;
+  lastEmeraldBatch?: { id: string; results: BattleResult[]; events: string[] };
   bag?: TrainerBag;
   battleField?: BattleField;
   lastFieldEvent?: { id: string; title: string; details: string[] };
@@ -193,6 +200,43 @@ const partySlice = createSlice({
   name: "party",
   initialState,
   reducers: {
+    commitEmeraldAction(
+      state,
+      action: PayloadAction<{
+        expected: string;
+        update: EmeraldUpdate;
+        id: string;
+      }>,
+    ) {
+      if (combatKey(state) !== action.payload.expected) return;
+      const { update, id } = action.payload;
+      state.pokemons = update.pokemons;
+      state.opponent = update.opponent;
+      state.battleField = update.battleField;
+      state.emerald = update.emerald;
+      state.lastEmeraldBatch = {
+        id,
+        results: update.results,
+        events: update.events,
+      };
+      state.lastFieldEvent = {
+        id,
+        title: update.completed
+          ? "Turno resuelto · Emerald"
+          : "Acción de combate",
+        details: update.events,
+      };
+      for (const result of update.results) {
+        state.lastBattleResult = result;
+        if (result.actorSide === "player") {
+          state.lastMovesByPlayer ??= {};
+          state.lastMovesByPlayer[result.captureId] = result;
+        } else state.lastOpponentMove = result;
+      }
+      state.resolvedBattleIds = [...(state.resolvedBattleIds ?? []), id].slice(
+        -100,
+      );
+    },
     configureGame(
       state,
       action: PayloadAction<GameConfiguration | RegionId[]>,
@@ -217,6 +261,7 @@ const partySlice = createSlice({
         hpMultiplier: config.hpMultiplier,
       };
       state.opponent = null;
+      state.emerald = undefined;
       state.lastMovesByPlayer = {};
       state.lastOpponentMove = null;
       state.battleField = emptyBattleField();
@@ -274,6 +319,7 @@ const partySlice = createSlice({
           ]) !== expectedContext
         )
           return;
+        if (state.emerald) return; // Switching is now an engine choice, including traps and Baton Pass.
         clearSecondaryStatuses(from);
         switchFieldPokemon(state.battleField, toId);
         state.battleField.playerSwitchedThisTurn = true;
@@ -465,6 +511,7 @@ const partySlice = createSlice({
         if (field.activeCaptureId && field.activeCaptureId !== c.captureId)
           return;
         switchFieldPokemon(field, c.captureId);
+        if (state.emerald) return; // New UI resolves both actions with the Gen III engine.
         advanceBattleTurn(state, c.captureId, action.payload.id);
       },
     },
@@ -496,6 +543,7 @@ const partySlice = createSlice({
           rolls,
           options = {},
         } = action.payload;
+        if (state.emerald) return;
         if (!commandId || state.resolvedBattleIds?.includes(commandId)) return;
         const capture = state.pokemons.find((p) => p.captureId === captureId);
         const opponent = state.opponent;
@@ -625,6 +673,7 @@ const partySlice = createSlice({
       )
         return;
       if (!sameEncounter) {
+        state.emerald = undefined;
         state.lastMovesByPlayer = {};
         state.lastOpponentMove = null;
         state.battleField = emptyBattleField();
@@ -691,6 +740,7 @@ const partySlice = createSlice({
         for (const member of state.pokemons) clearSecondaryStatuses(member);
         // Captura y retirada del rival ocurren en la misma acción: evita duplicados.
         state.opponent = null;
+        state.emerald = undefined;
         state.lastMovesByPlayer = {};
         state.lastOpponentMove = null;
         state.battleField = emptyBattleField();
@@ -1181,6 +1231,9 @@ export const setPokemonLearnset = withActivityMeta(
 export const captureWildOpponent = withActivityMeta(
   partySlice.actions.captureWildOpponent,
 );
+export const commitEmeraldAction = withActivityMeta(
+  partySlice.actions.commitEmeraldAction,
+);
 export const resetGame = withActivityMeta(partySlice.actions.resetGame);
 export const setBattleOpponent = withActivityMeta(
   partySlice.actions.setBattleOpponent,
@@ -1282,6 +1335,39 @@ export default function partyReducer(
   };
   const meta = activityMeta(action);
   if (!meta) return next;
+  if (
+    action.type === "party/commitEmeraldAction" &&
+    next.lastEmeraldBatch?.id !== before.lastEmeraldBatch?.id
+  ) {
+    const batch = next.lastEmeraldBatch!;
+    let sequence = before.activitySequence ?? 0;
+    const entries: ActivityEntry[] = batch.results.map((battle) => ({
+      id: `${meta.id}:${++sequence}`,
+      sequence,
+      occurredAt: meta.occurredAt,
+      kind: "move",
+      captureId: battle.captureId,
+      title: `${battle.attackerName} · ${battle.moveName}`,
+      details: [battle.message],
+      battle,
+    }));
+    entries.push({
+      id: `${meta.id}:${++sequence}`,
+      sequence,
+      occurredAt: meta.occurredAt,
+      kind: "move",
+      title: next.lastFieldEvent?.title ?? "Combate",
+      details: batch.events,
+    });
+    return {
+      ...next,
+      activitySequence: sequence,
+      activityHistory: [
+        ...entries.reverse(),
+        ...(before.activityHistory ?? []),
+      ].slice(0, 10),
+    };
+  }
   const draft = describePartyActivity(action.type, before, next);
   if (!draft) return next;
   const sequence = (before.activitySequence ?? 0) + 1;

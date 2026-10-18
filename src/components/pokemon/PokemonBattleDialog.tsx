@@ -1,3 +1,4 @@
+import { submitEmeraldAction } from "@/lib/emerald/commands";
 import PokemonEvolutionControl from "./PokemonEvolutionControl";
 import { pendingBattleSwitch } from "@/lib/battleSwitch";
 import { toast } from "sonner";
@@ -45,8 +46,23 @@ const CRY_BASE =
 function PokemonBattleDialog({ captureId, onClose }: Props) {
   const dispatch = useAppDispatch();
   const party = useAppSelector((state) => state.party);
+  const [viewId, setViewId] = useState(captureId);
+  const activeRef = useRef(party.battleField?.activeCaptureId);
+  useEffect(() => {
+    setViewId(captureId);
+  }, [captureId]);
+  useEffect(() => {
+    const active = party.battleField?.activeCaptureId;
+    if (active && active !== activeRef.current && party.emerald)
+      setViewId(active);
+    activeRef.current = active;
+  }, [party.battleField?.activeCaptureId, party.emerald]);
+  captureId = viewId;
   const next = party.pokemons.find((p) => p.captureId === captureId);
-  const pending = pendingBattleSwitch(party, captureId);
+  const pending =
+    activeRef.current !== party.battleField?.activeCaptureId && party.emerald
+      ? null
+      : pendingBattleSwitch(party, captureId);
   if (!next) return null;
   if (pending) {
     const { previous, expectedContext } = pending;
@@ -70,9 +86,9 @@ function PokemonBattleDialog({ captureId, onClose }: Props) {
             </span>
             . Se quitarán los estados secundarios del que sale y se conservarán
             sus estados principales. El cambio consume la acción de tu Pokémon:
-            el que entra no podrá atacar este turno. Debes pulsar «Finalizar
-            turno» manualmente cuando corresponda; confirmar aquí no reduce el
-            clima ni los contadores.
+            {party.opponent?.kind === "wild"
+              ? "El cambio se resolverá junto con la acción rival y consumirá tu acción del turno."
+              : "El que entra no podrá atacar este turno. Finaliza el turno manualmente cuando corresponda; confirmar aquí no reduce el clima ni los contadores."}
           </DialogDescription>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" autoFocus onClick={onClose}>
@@ -81,20 +97,29 @@ function PokemonBattleDialog({ captureId, onClose }: Props) {
             <Button
               type="button"
               onClick={() => {
-                dispatch(
-                  confirmBattleSwitch({
-                    fromId: previous!.captureId,
-                    toId: next.captureId,
-                    expectedContext,
-                  }),
-                );
-                if (
-                  store.getState().party.battleField?.activeCaptureId !==
-                  next.captureId
-                )
-                  toast.error(
-                    "El combate cambió. Revisa la selección e intenta de nuevo.",
+                if (party.opponent?.kind === "wild") {
+                  void dispatch(
+                    submitEmeraldAction(previous.captureId, "player", {
+                      kind: "switch",
+                      captureId: next.captureId,
+                    }),
+                  )
+                    .then(onClose)
+                    .catch((error: Error) => toast.error(error.message));
+                } else {
+                  dispatch(
+                    confirmBattleSwitch({
+                      fromId: previous.captureId,
+                      toId: next.captureId,
+                      expectedContext,
+                    }),
                   );
+                  if (
+                    store.getState().party.battleField?.activeCaptureId !==
+                    next.captureId
+                  )
+                    toast.error("El combate cambió. Intenta de nuevo.");
+                }
               }}
             >
               Cambiar Pokémon
@@ -330,7 +355,12 @@ function BattleDialogContent({ captureId, onClose }: Props) {
                   className="bg-background/90"
                   onClick={() => setManageOpen(true)}
                 >
-                  <img src="/Pokeball-PNG.png" alt="poke-opponent-menu" className="h-4 w-4" />&nbsp;<span>{opponent ? "Oponente" : "Elegir oponente"}</span>
+                  <img
+                    src="/Pokeball-PNG.png"
+                    alt="poke-opponent-menu"
+                    className="h-4 w-4"
+                  />
+                  &nbsp;<span>{opponent ? "Oponente" : "Elegir oponente"}</span>
                 </Button>
               }
             />
@@ -389,6 +419,13 @@ function BattleDialogContent({ captureId, onClose }: Props) {
                   </details>
                 </>
               )
+            )}
+            {opponent?.kind === "wild" && (
+              <p className="px-2 text-xs text-muted-foreground">
+                Selecciona ambas acciones para resolver el turno. El botón
+                «Turno» muestra PP, acciones pendientes y reemplazos
+                obligatorios.
+              </p>
             )}
             <PokemonLastMoveSummary
               captureId={captureId}

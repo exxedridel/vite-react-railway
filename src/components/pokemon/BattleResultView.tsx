@@ -17,6 +17,7 @@ const phrases: Record<PokemonStatus, string> = {
   confused: "is confused!",
   infatuated: "is infatuated!",
   taunted: "was taunted!",
+  tormented: "was affected by Torment!",
   flinched: "flinched!",
   bound: "is bound!",
   trapped: "is trapped!",
@@ -26,6 +27,38 @@ const phrases: Record<PokemonStatus, string> = {
   "leech-seed": "was seeded!",
 };
 export default function BattleResultView({ result }: { result: BattleResult }) {
+  if (result.engine === "emerald")
+    return (
+      <div className="space-y-3 text-sm">
+        <p className="font-semibold capitalize">
+          {result.attackerName} → {result.opponentName} · {result.moveName}
+        </p>
+        <p>{result.message}</p>
+        {result.critical && (
+          <p className="font-semibold text-yellow-600 dark:text-yellow-400">
+            A critical hit!
+          </p>
+        )}
+        {result.appliedDamage > 0 && (
+          <p className="rounded-xl bg-muted p-3 text-center text-2xl font-bold">
+            {result.appliedDamage} HP{" "}
+            <span className="block text-xs font-normal">
+              Daño real aplicado
+            </span>
+          </p>
+        )}
+        <ul className="space-y-1">
+          {result.effectMessages?.map((text, i) => (
+            <li key={i}>{text}</li>
+          ))}
+        </ul>
+        <p className="text-xs text-muted-foreground">
+          Motor Gen III: incluye prioridad, precisión, críticos, variación de
+          daño y efectos automáticos. Los efectos de fin de turno se detallan en
+          la entrada del turno.
+        </p>
+      </div>
+    );
   const hit = result.outcome === "hit";
   const changedHp = result.hpChanges?.filter((c) => c.before !== c.after) ?? [];
   const effectiveness =
@@ -84,7 +117,10 @@ export default function BattleResultView({ result }: { result: BattleResult }) {
           </span>
         )}
         {statusChanges.map((c) => (
-          <span key={`${c.role}:${c.status}`} className="text-foreground text-yellow-600 dark:text-yellow-400">
+          <span
+            key={`${c.role}:${c.status}`}
+            className="text-foreground text-yellow-600 dark:text-yellow-400"
+          >
             <span className="capitalize">{c.name}</span> {phrases[c.status]}
           </span>
         ))}

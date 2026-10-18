@@ -1,3 +1,4 @@
+import { getWildMove } from "@/lib/emerald/moveInfo";
 import { getCuratedMove } from "@/lib/curatedMoveCatalog";
 import PokemonMoveExecutionDialog, {
   BattleResultView,
@@ -71,8 +72,14 @@ function MoveTypeIcon({ type }: { type: string }) {
     </span>
   );
 }
-function MoveDetails({ move }: { move: PokemonMove }) {
-  move = getCuratedMove(move);
+function MoveDetails({
+  move,
+  automatic = false,
+}: {
+  move: PokemonMove;
+  automatic?: boolean;
+}) {
+  move = automatic ? getWildMove(move, true) : getCuratedMove(move);
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
@@ -98,7 +105,7 @@ function MoveDetails({ move }: { move: PokemonMove }) {
         </div>
       </dl>
       <p className="text-xs leading-relaxed text-muted-foreground">
-        {getCuratedMove(move).description}
+        {move.description}
       </p>
     </div>
   );
@@ -334,6 +341,7 @@ export default function PokemonMovesPanel({
   const [choice, setChoice] = useState<Choice | null>(null);
   const [executingMoveId, setExecutingMoveId] = useState<number | null>(null);
   const opponent = useAppSelector((state) => state.party.opponent);
+  const runtime = useAppSelector((state) => state.party.emerald);
   const lastResult = useAppSelector((state) => state.party.lastBattleResult);
 
   if (!capture) return null;
@@ -369,12 +377,18 @@ export default function PokemonMovesPanel({
             className="flex flex-col gap-3 rounded-xl border p-3"
           >
             <h3 className="font-semibold">{move.displayName}</h3>
-            <MoveDetails move={move} />
+            <MoveDetails move={move} automatic={opponent?.kind === "wild"} />
             <Button
               type="button"
               size="sm"
               className="mt-auto w-full gap-2"
               disabled={
+                !!runtime?.pending.player ||
+                !!runtime?.ended ||
+                (!!runtime &&
+                  !runtime.requests.player.moves.some(
+                    (m) => m.id === move.id && !m.disabled,
+                  )) ||
                 !opponent ||
                 getCurrentHp(capture.pokemon) <= 0 ||
                 (opponent.kind === "wild" &&
@@ -389,6 +403,7 @@ export default function PokemonMovesPanel({
               size="sm"
               variant="outline"
               className="mt-auto w-full gap-2"
+              disabled={!!runtime && !runtime.ended}
               onClick={() => setChoice({ kind: "tm", replaceMoveId: move.id })}
               aria-label={`Sustituir ${move.displayName} con una TM`}
             >
@@ -399,6 +414,7 @@ export default function PokemonMovesPanel({
         {Array.from({ length: Math.max(0, 4 - moves.length) }, (_, index) => (
           <Button
             key={`empty-${index}`}
+            disabled={!!runtime && !runtime.ended}
             type="button"
             variant="outline"
             className="h-auto min-h-20 whitespace-normal border-dashed p-4"
@@ -419,7 +435,9 @@ export default function PokemonMovesPanel({
       </p>
       <p className="mt-1 text-xs text-muted-foreground">
         {opponent
-          ? "Cada confirmación ejecuta un nuevo movimiento. El último resultado queda guardado."
+          ? opponent.kind === "wild"
+            ? "Elige tu movimiento y después la acción rival. El turno se resuelve automáticamente; consulta «Turno» para PP y movimientos forzados."
+            : "Cada confirmación ejecuta un movimiento. Finaliza el turno manualmente cuando corresponda."
           : "Selecciona un oponente para usar tus movimientos."}
       </p>
       {showLastResult && lastResult?.captureId === captureId && (

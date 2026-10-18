@@ -1,9 +1,11 @@
+import ManualBattleFieldControl from "./ManualBattleFieldControl";
+import EmeraldTurnPanel from "./EmeraldTurnPanel";
 import { useState } from "react";
 import { Minus, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { store } from "@/store/store";
-import { adjustBattleTurn, finishBattleTurn } from "@/slices/partySlice";
+import { adjustBattleTurn } from "@/slices/partySlice";
 import { getBattleField } from "@/lib/battleField";
 import { battleContextKey } from "@/lib/battleEngine";
 import { getCurrentHp } from "@/lib/pokemonStats";
@@ -18,11 +20,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 
-export default function PokemonBattleFieldControl({
-  captureId,
-}: {
-  captureId: string;
-}) {
+function WildBattleFieldControl({ captureId }: { captureId: string }) {
   const dispatch = useAppDispatch();
   const party = useAppSelector((s) => s.party);
   const field = getBattleField(party.battleField);
@@ -33,7 +31,7 @@ export default function PokemonBattleFieldControl({
   const canEdit =
     !!opponent &&
     (!field.activeCaptureId || field.activeCaptureId === captureId);
-  const canFinish = canEdit && getCurrentHp(opponent!.pokemon) > 0;
+
   function correct(amount: number) {
     if (!opponent || !canEdit) return;
     dispatch(
@@ -49,24 +47,6 @@ export default function PokemonBattleFieldControl({
     )
       toast.error("El combate cambió. Revisa el turno e intenta nuevamente.");
   }
-  function finish() {
-    if (!opponent || !canFinish) return;
-    dispatch(
-      finishBattleTurn({
-        captureId,
-        expectedTurn: field.turn,
-        expectedContext: battleContextKey(capture!, opponent, field),
-      }),
-    );
-    if (
-      getBattleField(store.getState().party.battleField).turn !==
-      field.turn + 1
-    ) {
-      toast.error("El combate cambió. Revisa el turno e intenta nuevamente.");
-      return;
-    }
-    setOpen(false);
-  }
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -79,14 +59,17 @@ export default function PokemonBattleFieldControl({
           aria-label={`Turno ${field.turn}: finalizar o corregir contador`}
         >
           Turno {field.turn}
+          {party.emerald?.pending.player || party.emerald?.pending.opponent
+            ? " · 1/2"
+            : ""}
         </Button>
       </DialogTrigger>
       <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>Turno {field.turn}</DialogTitle>
           <DialogDescription>
-            Corrige el contador si no coincide con el de tu rival, o finaliza el
-            turno cuando ambos hayan terminado de actuar.
+            Ambas acciones se resuelven por prioridad y velocidad. El cierre del
+            turno y sus efectos son automáticos.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3 rounded-xl border bg-muted/40 p-4">
@@ -127,10 +110,7 @@ export default function PokemonBattleFieldControl({
             Pokémon. La corrección queda en el historial.
           </p>
         </div>
-        <p className="text-sm text-muted-foreground">
-          Finalizar turno aplica los efectos de fin de turno, reduce los
-          contadores y avanza al siguiente turno.
-        </p>
+        <EmeraldTurnPanel captureId={captureId} />
         <DialogFooter className="gap-2">
           <Button
             type="button"
@@ -139,11 +119,19 @@ export default function PokemonBattleFieldControl({
           >
             Cerrar
           </Button>
-          <Button type="button" disabled={!canFinish} onClick={finish}>
-            Finalizar turno {field.turn}
-          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+export default function PokemonBattleFieldControl(props: {
+  captureId: string;
+}) {
+  const wild = useAppSelector((s) => s.party.opponent?.kind === "wild");
+  return wild ? (
+    <WildBattleFieldControl {...props} />
+  ) : (
+    <ManualBattleFieldControl {...props} />
   );
 }
