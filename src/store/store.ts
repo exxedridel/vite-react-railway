@@ -2,8 +2,6 @@ import { configureStore, combineReducers } from "@reduxjs/toolkit";
 import { persistStore, persistReducer } from "redux-persist";
 import storage from "redux-persist/lib/storage";
 
-import cotizacionReducer from "@/slices/cotizacionSlice";
-import elegirClienteReducer from "@/slices/elegirClienteSlice";
 import partyReducer from "@/slices/partySlice";
 
 import { elegirClienteApi } from "@/api/elegirClienteApi";
@@ -13,8 +11,6 @@ import { creditsApi } from "@/api/creditsApi";
 import { pokeApi } from "@/api/pokeApi";
 
 const rootReducer = combineReducers({
-  cotizacion: cotizacionReducer,
-  elegirCliente: elegirClienteReducer,
   party: partyReducer,
 
   [elegirClienteApi.reducerPath]: elegirClienteApi.reducer,
