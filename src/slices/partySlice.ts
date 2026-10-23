@@ -111,7 +111,13 @@ type ExecuteMoveInput = {
 };
 export type PartyState = {
   emerald?: EmeraldRuntime;
-  lastEmeraldBatch?: { id: string; results: BattleResult[]; events: string[] };
+  lastEmeraldBatch?: {
+    id: string;
+    results: BattleResult[];
+    events: string[];
+    completed?: boolean;
+    highlights?: string[];
+  };
   bag?: TrainerBag;
   battleField?: BattleField;
   lastFieldEvent?: { id: string; title: string; details: string[] };
@@ -218,6 +224,8 @@ const partySlice = createSlice({
         id,
         results: update.results,
         events: update.events,
+        completed: update.completed || update.results.length > 0,
+        highlights: update.highlights ?? [],
       };
       state.lastFieldEvent = {
         id,
@@ -1365,7 +1373,7 @@ export default function partyReducer(
       activityHistory: [
         ...entries.reverse(),
         ...(before.activityHistory ?? []),
-      ].slice(0, 10),
+      ].slice(0, 20),
     };
   }
   const draft = describePartyActivity(action.type, before, next);
@@ -1380,6 +1388,6 @@ export default function partyReducer(
   return {
     ...next,
     activitySequence: sequence,
-    activityHistory: [entry, ...(before.activityHistory ?? [])].slice(0, 10),
+    activityHistory: [entry, ...(before.activityHistory ?? [])].slice(0, 20),
   };
 }

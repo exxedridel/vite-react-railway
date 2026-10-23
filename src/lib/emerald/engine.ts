@@ -2,6 +2,7 @@
  * The simulator snapshot is plain JSON: no instances/functions enter Redux.
  * @pkmn/sim 0.10.11 / Pokémon Showdown, MIT (see THIRD_PARTY_NOTICES.md).
  */
+import { turnHighlights } from "./highlights";
 import { installRollAudit } from "./audit";
 import {
   Battle,
@@ -814,7 +815,22 @@ export function runEmeraldAction(
     if (tie >= 0) events.splice(tie, 1);
     events.push("El encuentro terminó por huida; no se obtuvo una captura.");
   }
-  return { ...state, results, events, completed: b.turn > turn || b.ended };
+  const initialHp = Object.fromEntries(
+    before.pokemons.map((c) => [c.captureId, getCurrentHp(c.pokemon)]),
+  );
+  initialHp.opponent = getCurrentHp(before.opponent!.pokemon);
+  const highlights = turnHighlights(
+    raw.filter((line) => !escaped || line !== "|tie"),
+    names,
+    initialHp,
+  );
+  return {
+    ...state,
+    results,
+    events,
+    highlights,
+    completed: b.turn > turn || b.ended,
+  };
 }
 export function cancelEmeraldChoice(
   input: CombatState,

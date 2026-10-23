@@ -562,3 +562,69 @@ test("Dig/Fly can be hit before preparing and after emerging, not while still hi
     );
   }
 });
+
+import { turnHighlights } from "../src/lib/emerald/highlights";
+test("highlights show status, multihit, substitute, healing and residuals without RNG or duplicate direct damage", () => {
+  const notes = turnHighlights(
+    [
+      "|move|p1a: own|Double Slap|p2a: opponent",
+      "|-damage|p2a: opponent|80/100",
+      "|-hitcount|p2a: opponent|3",
+      "|-end|p2a: opponent|Substitute",
+      "|-status|p2a: opponent|par",
+      "|-heal|p1a: own|60/100|[from] drain",
+      "|boardchance|par|30|100|45|fallida",
+      "|boardend",
+      "|-damage|p2a: opponent|70/100|[from] psn",
+    ],
+    { own: "Pikachu", opponent: "Snorlax" },
+    { own: 50, opponent: 100 },
+  );
+  assert(notes.some((n) => n.includes("3 impactos")));
+  assert(notes.some((n) => n.includes("rompió el Substitute")));
+  assert(notes.some((n) => n.includes("Paralyzed")));
+  assert(notes.some((n) => n.includes("recuperó 10 HP")));
+  assert(notes.some((n) => n.includes("perdió 10 HP al finalizar")));
+  assert(
+    !notes.some(
+      (n) =>
+        n.includes("Probabilidad") ||
+        n.includes("Tirada") ||
+        n.includes("20 HP"),
+    ),
+  );
+});
+test("summary is not eligible on selection, is eligible after resolution, and history keeps newest 20", () => {
+  let state: PartyState = {
+    ...reducer(undefined, { type: "init" }),
+    ...fixture([150], [150]),
+  };
+  let next = choose(state, "player", 150);
+  state = reducer(
+    state,
+    commitEmeraldAction({
+      expected: combatKey(state),
+      update: next,
+      id: "summary-first",
+    }),
+  );
+  assert.equal(state.lastEmeraldBatch?.completed, false);
+  next = choose(state, "opponent", 150);
+  state = reducer(
+    state,
+    commitEmeraldAction({
+      expected: combatKey(state),
+      update: next,
+      id: "summary-second",
+    }),
+  );
+  assert.equal(state.lastEmeraldBatch?.completed, true);
+  assert.equal(state.lastEmeraldBatch?.results.length, 2);
+  for (let i = 0; i < 25; i++) state = reducer(state, resetGame());
+  assert.equal(state.activityHistory?.length, 20);
+  assert.equal(state.activityHistory?.[0].sequence, state.activitySequence);
+  assert.equal(
+    state.activityHistory?.[19].sequence,
+    state.activitySequence! - 19,
+  );
+});

@@ -1,3 +1,4 @@
+import BattleTurnHighlightsDialog from "./BattleTurnHighlightsDialog";
 import { submitEmeraldAction } from "@/lib/emerald/commands";
 import PokemonEvolutionControl from "./PokemonEvolutionControl";
 import { pendingBattleSwitch } from "@/lib/battleSwitch";
@@ -140,6 +141,29 @@ function PokemonBattleDialog({ captureId, onClose }: Props) {
 function BattleDialogContent({ captureId, onClose }: Props) {
   const dispatch = useAppDispatch();
   const [manageOpen, setManageOpen] = useState(false);
+  const batch = useAppSelector((state) => state.party.lastEmeraldBatch);
+  const seenBatch = useRef(batch?.id);
+  const [turnSummary, setTurnSummary] = useState<typeof batch>(undefined);
+  const battleScrollRef = useRef<HTMLDivElement>(null);
+  const returnToArena = () => {
+    battleScrollRef.current?.scrollTo({
+      top: 0,
+      behavior: "instant" as ScrollBehavior,
+    });
+    battleScrollRef.current?.focus({ preventScroll: true });
+  };
+  useEffect(() => {
+    if (!batch || seenBatch.current === batch.id) return;
+    seenBatch.current = batch.id;
+    if (!batch.completed) return;
+    // Wait until the move/turn confirmation closes before opening the summary.
+    const timer = window.setTimeout(() => {
+      returnToArena();
+      setTurnSummary(batch);
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [batch]);
+
   const [hpSide, setHpSide] = useState<"player" | "opponent" | null>(null);
   const field = getBattleField(
     useAppSelector((state) => state.party.battleField),
@@ -323,7 +347,12 @@ function BattleDialogContent({ captureId, onClose }: Props) {
           </div>
         </header>
         {/* Contenido desplazable */}
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div
+          ref={battleScrollRef}
+          tabIndex={-1}
+          aria-label="Escenario de batalla"
+          className="min-h-0 flex-1 overflow-y-auto outline-none"
+        >
           <div
             className="
               mx-auto flex min-h-full w-full max-w-3xl flex-col gap-4
@@ -446,6 +475,11 @@ function BattleDialogContent({ captureId, onClose }: Props) {
             </Dialog>
           </div>
         </div>
+        <BattleTurnHighlightsDialog
+          batch={turnSummary ?? null}
+          onClose={() => setTurnSummary(undefined)}
+          onReturnToArena={returnToArena}
+        />
       </DialogContent>
     </Dialog>
   );

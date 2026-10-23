@@ -39,6 +39,7 @@ export type EmeraldUpdate = CombatState & {
   results: BattleResult[];
   events: string[];
   completed: boolean;
+  highlights?: string[];
 };
 export function combatKey(state: CombatState): string {
   return JSON.stringify([

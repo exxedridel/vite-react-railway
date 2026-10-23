@@ -51,7 +51,7 @@ export default function PokemonActivityDialog({
               <History className="h-5 w-5 text-brand" /> Historial de actividad
             </DialogTitle>
             <DialogDescription>
-              Últimas {entries.length} de 10 acciones · Más recientes primero.
+              Últimas {entries.length} de 20 acciones · Más recientes primero.
               <span className="block">
                 Fecha y hora local de León, Guanajuato.
               </span>

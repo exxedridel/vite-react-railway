@@ -272,7 +272,7 @@ export default function DropdownUser() {
               Se eliminará todo tu equipo, incluido el inicial, con sus niveles,
               movimientos y estados. También se quitará al oponente guardado.
               Podrás elegir un nuevo Pokémon inicial. Esta acción no se puede
-              deshacer. El historial de las últimas 10 acciones se conserva y
+              deshacer. El historial de las últimas 20 acciones se conserva y
               registrará este reinicio.
             </DialogDescription>
           </DialogHeader>
