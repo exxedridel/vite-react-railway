@@ -369,8 +369,29 @@ test("21-character capture IDs remain intact in logs and damage accounting", () 
 });
 test("Teleport ends a wild encounter; trapping prevents escape", () => {
   let s = fixture([100]);
+  for (const member of s.pokemons)
+    member.pokemon.battleStages = {
+      attack: 3,
+      defense: -2,
+      "special-attack": 4,
+      "special-defense": -5,
+      speed: 6,
+      accuracy: -1,
+      evasiveness: 2,
+    };
+  const before = structuredClone(s.pokemons);
   let r = turn(s, 100, 150);
   assert.equal(r.opponent, null);
+  for (const member of r.pokemons) {
+    const old = before.find(
+      (pokemon) => pokemon.captureId === member.captureId,
+    )!;
+    assert.deepEqual(member.pokemon, {
+      ...old.pokemon,
+      battleStages: neutralBattleStages(),
+    });
+    assert.deepEqual(member.moves, old.moves);
+  }
   assert(r.events.some((e) => e.includes("huida")));
   s = fixture([100]);
   s.pokemons[0].statuses = ["trapped"];
@@ -379,9 +400,22 @@ test("Teleport ends a wild encounter; trapping prevents escape", () => {
   assert(!r.emerald!.ended);
 });
 test("Roar ends a wild encounter instead of switching a trainer bench", () => {
-  const r = turn(fixture([46]), 46, 150);
+  const state = fixture([46]);
+  for (const member of state.pokemons)
+    member.pokemon.battleStages = {
+      attack: -3,
+      defense: 2,
+      "special-attack": -4,
+      "special-defense": 5,
+      speed: -6,
+      accuracy: 1,
+      evasiveness: -2,
+    };
+  const r = turn(state, 46, 150);
   assert.equal(r.opponent, null);
   assert.equal(r.pokemons.length, 2);
+  for (const member of r.pokemons)
+    assert.deepEqual(member.pokemon.battleStages, neutralBattleStages());
 });
 import reducer, {
   commitEmeraldAction,
@@ -453,12 +487,25 @@ test("physical capture preserves moves/level/primary status and clears engine/se
   };
   s.opponent!.statuses = ["poisoned", "confused"];
   s.opponent!.statusTurns = { confused: 6 };
+  for (const member of s.pokemons)
+    member.pokemon.battleStages = {
+      attack: 3,
+      defense: -2,
+      "special-attack": 4,
+      "special-defense": -5,
+      speed: 6,
+      accuracy: -1,
+      evasiveness: 2,
+    };
+  s.pokemons[1].statuses = ["asleep", "confused"];
+  s.pokemons[1].statusTurns = { asleep: 4, confused: 3 };
   const a = choose(s, "player", 33);
   s = reducer(
     s,
     commitEmeraldAction({ expected: combatKey(s), update: a, id: "queued" }),
   );
   const level = s.opponent!.pokemon.level;
+  const originalParty = structuredClone(s.pokemons);
   s = reducer(s, captureWildOpponent("wild-1"));
   assert.equal(s.pokemons.length, 3);
   assert.equal(s.opponent, null);
@@ -467,6 +514,20 @@ test("physical capture preserves moves/level/primary status and clears engine/se
   assert.deepEqual(captured.statuses, ["poisoned"]);
   assert.equal(captured.pokemon.level, level);
   assert.equal(captured.moves?.[0].id, 150);
+  for (const member of s.pokemons)
+    assert.deepEqual(member.pokemon.battleStages, neutralBattleStages());
+  for (const old of originalParty) {
+    const member = s.pokemons.find(
+      (pokemon) => pokemon.captureId === old.captureId,
+    )!;
+    assert.deepEqual(member.pokemon, {
+      ...old.pokemon,
+      battleStages: neutralBattleStages(),
+    });
+    assert.deepEqual(member.moves, old.moves);
+  }
+  assert.deepEqual(s.pokemons[1].statuses, ["asleep"]);
+  assert.deepEqual(s.pokemons[1].statusTurns, { asleep: 4 });
   assert(s.activityHistory?.some((a) => a.kind === "capture"));
 });
 test("removing/replacing rival or resetting game cannot resurrect queued engine state", () => {

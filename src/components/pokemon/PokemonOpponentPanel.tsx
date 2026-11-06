@@ -46,7 +46,6 @@ import { pokeApi, useLazyGetPokemonQuery } from "@/api/pokeApi";
 import type { Pokemon } from "@/types/pokemon";
 import {
   BATTLE_STATS,
-  createBattleOpponent,
   changeOpponentLevel,
   type BattleOpponent,
 } from "@/lib/battleOpponent";
@@ -114,9 +113,9 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
   const partySize = useAppSelector((state) => state.party.pokemons.length);
   const needsStarter = useAppSelector((state) => canChooseStarter(state.party));
   const [captureTargetId, setCaptureTargetId] = useState<string | null>(null);
-  const [encounterKind, setEncounterKind] = useState<
-    "wild" | "trainer" | "random"
-  >("wild");
+  const [encounterKind, setEncounterKind] = useState<"random" | "custom">(
+    "random",
+  );
   const party = useAppSelector((state) => state.party);
   const [tierColor, setTierColor] = useState<CatchTierColor>("pink");
   const pool = encounterPool(party, tierColor);
@@ -178,7 +177,7 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
     generationRef.current = null;
     setBuilding(false);
     setProgress({ done: 0, total: 0 });
-    if (next) setEncounterKind("wild");
+    if (next) setEncounterKind("random");
     requestVersion.current += 1;
     searchingRef.current = false;
     setSearching(false);
@@ -210,10 +209,7 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
     try {
       const result = await getPokemon(query, false).unwrap();
       if (version !== requestVersion.current) return;
-      if (
-        encounterKind !== "trainer" &&
-        !pokemonAllowed(store.getState().party, result.id)
-      ) {
+      if (!pokemonAllowed(store.getState().party, result.id)) {
         toast.error(
           `Esta especie no pertenece a las regiones de la partida: ${regionSummary(store.getState().party)}.`,
         );
@@ -283,11 +279,6 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
       );
       return;
     }
-    if (encounterKind === "trainer") {
-      onChange(createBattleOpponent(candidate));
-      handleOpenChange(false);
-      return;
-    }
     if (!pokemonAllowed(store.getState().party, candidate.id)) {
       toast.error("Elige una especie de las regiones permitidas.");
       return;
@@ -328,7 +319,7 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
       }
       onChange(encounter);
       handleOpenChange(false);
-      toast.success("Encuentro salvaje preparado.");
+      toast.success("Encuentro preparado.");
     } catch (error: unknown) {
       if (controller.signal.aborted || version !== requestVersion.current)
         return;
@@ -594,7 +585,7 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
               </span>{" "}
               y se descartarán su nivel y sus modificadores guardados. Tu equipo
               conservará sus estados principales; se limpiarán los estados
-              secundarios del equipo.
+              secundarios y los modificadores de combate de todo el equipo.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">
@@ -642,32 +633,6 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
                 <input
                   type="radio"
                   name="encounter-kind"
-                  value="wild"
-                  checked={encounterKind === "wild"}
-                  onChange={() => {
-                    setEncounterKind("wild");
-                    setCandidate(null);
-                  }}
-                />{" "}
-                Salvaje
-              </label>
-              <label className="flex cursor-pointer items-center gap-2">
-                <input
-                  type="radio"
-                  name="encounter-kind"
-                  value="trainer"
-                  checked={encounterKind === "trainer"}
-                  onChange={() => {
-                    setEncounterKind("trainer");
-                    setCandidate(null);
-                  }}
-                />{" "}
-                De otro entrenador
-              </label>
-              <label className="flex cursor-pointer items-center gap-2">
-                <input
-                  type="radio"
-                  name="encounter-kind"
                   value="random"
                   checked={encounterKind === "random"}
                   onChange={() => {
@@ -677,15 +642,26 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
                 />
                 Aleatorio por casilla
               </label>
+              <label className="flex cursor-pointer items-center gap-2">
+                <input
+                  type="radio"
+                  name="encounter-kind"
+                  value="custom"
+                  checked={encounterKind === "custom"}
+                  onChange={() => {
+                    setEncounterKind("custom");
+                    setCandidate(null);
+                  }}
+                />{" "}
+                Personalizado
+              </label>
             </div>
           </fieldset>
-          {encounterKind !== "trainer" && (
-            <p className="text-xs text-muted-foreground">
-              Regiones permitidas: {allowedRegionsLabel}. Se elegirán hasta tres
-              movimientos de Emerald, priorizando STAB cuando exista. Los
-              espacios restantes podrán completarse con TM/HM.
-            </p>
-          )}
+          <p className="text-xs text-muted-foreground">
+            Regiones permitidas: {allowedRegionsLabel}. Se elegirán hasta tres
+            movimientos de Emerald, priorizando STAB cuando exista. Los espacios
+            restantes podrán completarse con TM/HM.
+          </p>
           {encounterKind === "random" ? (
             <form onSubmit={handleSearch} className="space-y-3">
               <fieldset disabled={searching || building}>
@@ -775,7 +751,7 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
           {candidate && (
             <div className="space-y-3 rounded-xl border p-3">
               <OpponentSummary key={candidate.id} pokemon={candidate} />
-              {encounterKind !== "trainer" && captureSpecies(candidate.id) && (
+              {captureSpecies(candidate.id) && (
                 <p className="text-xs text-muted-foreground">
                   Categoría:{" "}
                   {tierForSpecies(captureSpecies(candidate.id)!).name} ·
@@ -875,8 +851,8 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
               </dl>
               {opponent && (
                 <p className="text-xs text-muted-foreground">
-                  Al confirmar se reemplazará el rival actual y sus cambios
-                  temporales.
+                  Al confirmar se reemplazará el rival actual y se limpiarán los
+                  estados secundarios y modificadores de combate del equipo.
                 </p>
               )}
             </div>
@@ -909,11 +885,7 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
               }
               onClick={handleConfirm}
             >
-              {building
-                ? "Preparando encuentro…"
-                : encounterKind !== "trainer"
-                  ? "Iniciar encuentro salvaje"
-                  : "Usar este oponente"}
+              {building ? "Preparando encuentro…" : "Iniciar encuentro"}
             </Button>
           </DialogFooter>
         </DialogContent>

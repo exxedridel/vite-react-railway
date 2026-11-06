@@ -56,7 +56,7 @@ import {
   type GameSettings,
   type RegionId,
 } from "@/lib/gameSettings";
-import { hasLivingHp } from "@/lib/pokemonCondition";
+import { clearBattleConditions, hasLivingHp } from "@/lib/pokemonCondition";
 import { describePartyActivity } from "@/lib/partyActivity";
 import type { ActivityEntry, ActivityMeta } from "@/types/activity";
 import {
@@ -83,6 +83,7 @@ import {
   nanoid,
   type PayloadAction,
   type UnknownAction,
+  type ThunkAction,
 } from "@reduxjs/toolkit";
 import {
   STATUS_OPTIONS,
@@ -149,6 +150,18 @@ const initialState: PartyState = {
 const primaryStatuses = new Set<PokemonStatus>(
   STATUS_OPTIONS.filter((s) => s.group === "primary").map((s) => s.id),
 );
+
+function restoreCapture(capture: CapturedPokemon): boolean {
+  if (!isLeveled(capture.pokemon)) return false;
+  const hp = capture.pokemon.stats.find((stat) => stat.name === "hp");
+  const max = getMaxHp(capture.pokemon);
+  if (!hp || max === undefined) return false;
+  hp.value = max;
+  capture.statuses = [];
+  capture.statusTurns = {};
+  capture.pokemon.battleStages = neutralBattleStages();
+  return true;
+}
 
 function advanceBattleTurn(
   state: PartyState,
@@ -687,10 +700,10 @@ const partySlice = createSlice({
         state.battleField = emptyBattleField();
         state.lastFieldEvent = undefined;
       }
-      // Retirar al rival termina el combate para todo el equipo.
+      // Retirar o reemplazar al rival termina el combate para todo el equipo.
       // Conserva estados principales (incluido Sleep y su contador).
-      if (state.opponent && next === null) {
-        for (const member of state.pokemons) clearSecondaryStatuses(member);
+      if (state.opponent && !sameEncounter) {
+        for (const member of state.pokemons) clearBattleConditions(member);
       }
       state.opponent = next;
       if (next && getCurrentHp(next.pokemon) <= 0 && state.battleField)
@@ -745,7 +758,7 @@ const partySlice = createSlice({
         });
         state.starterClaimed = true;
         // Capturarlo también termina el combate: limpia al equipo completo.
-        for (const member of state.pokemons) clearSecondaryStatuses(member);
+        for (const member of state.pokemons) clearBattleConditions(member);
         // Captura y retirada del rival ocurren en la misma acción: evita duplicados.
         state.opponent = null;
         state.emerald = undefined;
@@ -1037,6 +1050,21 @@ const partySlice = createSlice({
       if (hp?.value === 0 && state.battleField)
         clearFieldSource(state.battleField, { side: "player", captureId });
     },
+    fullRestorePokemon(
+      state,
+      action: PayloadAction<{
+        captureId: string;
+        expected: string;
+        emerald?: EmeraldRuntime;
+      }>,
+    ) {
+      if (combatKey(state) !== action.payload.expected) return;
+      const capture = state.pokemons.find(
+        (pokemon) => pokemon.captureId === action.payload.captureId,
+      );
+      if (!capture || !restoreCapture(capture)) return;
+      if (action.payload.emerald) state.emerald = action.payload.emerald;
+    },
     setPokemonLevel(
       state,
       action: PayloadAction<{ captureId: string; level: number }>,
@@ -1257,6 +1285,44 @@ export const migratePokemonSpecies = withActivityMeta(
 export const changePokemonHp = withActivityMeta(
   partySlice.actions.changePokemonHp,
 );
+const commitFullRestorePokemon = withActivityMeta(
+  partySlice.actions.fullRestorePokemon,
+);
+/** Keep the simulator lazy while committing the restored card and legal choices together. */
+export function fullRestorePokemon(
+  captureId: string,
+): ThunkAction<Promise<void>, { party: PartyState }, unknown, UnknownAction> {
+  return async (dispatch, getState) => {
+    const current = getState().party;
+    const capture = current.pokemons.find(
+      (pokemon) => pokemon.captureId === captureId,
+    );
+    if (!capture || !isLeveled(capture.pokemon)) return;
+    const expected = combatKey(current);
+    let emerald = current.emerald;
+    if (emerald) {
+      const engine = await import("@/lib/emerald/engine");
+      if (combatKey(getState().party) !== expected)
+        throw new Error(
+          "El combate cambió durante la carga. Intenta otra vez.",
+        );
+      const snapshot = JSON.parse(
+        JSON.stringify({
+          pokemons: current.pokemons,
+          opponent: current.opponent,
+          battleField: current.battleField,
+          emerald,
+        }),
+      );
+      const target = snapshot.pokemons.find(
+        (pokemon: CapturedPokemon) => pokemon.captureId === captureId,
+      );
+      if (!target || !restoreCapture(target)) return;
+      emerald = engine.refreshEmeraldState(snapshot, [captureId]).emerald;
+    }
+    dispatch(commitFullRestorePokemon({ captureId, expected, emerald }));
+  };
+}
 export const setPokemonLevel = withActivityMeta(
   partySlice.actions.setPokemonLevel,
 );

@@ -24,7 +24,11 @@ export default function PokemonStatsPopover({
   return (
     <Popover modal>
       <PopoverTrigger asChild>
-        <Button type="button" variant="outline" className="w-full">
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full min-w-0 px-1 sm:px-3"
+        >
           Stats
         </Button>
       </PopoverTrigger>

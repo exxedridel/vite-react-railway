@@ -25,7 +25,7 @@ import {
   getMaxHp,
   neutralBattleStages,
 } from "@/lib/pokemonStats";
-import { clearSecondaryStatuses } from "@/lib/statusTurns";
+import { clearBattleConditions } from "@/lib/pokemonCondition";
 import { emptyBattleField, type BattleField } from "@/lib/battleField";
 import { normalizeStages } from "@/lib/battleModifiers";
 import type { StatusCarrier, TimedStatus } from "@/lib/statusTurns";
@@ -37,6 +37,20 @@ import {
   type EmeraldUpdate,
   type BattleSide,
 } from "./types";
+
+// Shared board adaptations; trainer battles retain the simulator's native rules.
+export {
+  setFor as createEmeraldPokemonSet,
+  applyStats as applyEmeraldStats,
+  applyStages as applyEmeraldStages,
+  readStages as readEmeraldStages,
+  syncStatus as syncEmeraldStatus,
+  readStatus as readEmeraldStatus,
+  request as readEmeraldRequest,
+  choose as chooseEmeraldAction,
+  publicLines as emeraldPublicLines,
+  describe as describeEmeraldLine,
+};
 
 const dex = Dex.forGen(3);
 const primary: Partial<Record<PokemonStatus, string>> = {
@@ -262,7 +276,12 @@ function initialise(
   b.makeRequest("move");
   return b;
 }
-function synchronise(b: Battle, state: CombatState, mirror: string) {
+function synchronise(
+  b: Battle,
+  state: CombatState,
+  mirror: string,
+  fullRestores: readonly string[] = [],
+) {
   const [oldTeam, oldFoe, oldField] = JSON.parse(mirror) as [
     CapturedPokemon[],
     BattleOpponent,
@@ -298,6 +317,19 @@ function synchronise(b: Battle, state: CombatState, mirror: string) {
             old.pokemon.stats.filter((s) => s.name !== "hp"),
           ),
       );
+    if (!isFoe && fullRestores.includes(p.set.name)) {
+      // These End events apply their harm; cancelling a condition must skip them.
+      delete p.volatiles.perishsong;
+      delete p.volatiles.yawn;
+      p.clearStatus();
+      for (const effect of [
+        ...Object.values(volatile),
+        "curse",
+        "nightmare",
+        "foresight",
+      ])
+        p.removeVolatile(effect);
+    }
     const stages = isFoe
       ? (c as BattleOpponent).stages
       : c.pokemon.battleStages;
@@ -327,10 +359,46 @@ function synchronise(b: Battle, state: CombatState, mirror: string) {
     }
   }
   syncWeather(b, state.battleField ?? emptyBattleField(), oldField);
+  if (fullRestores.length) {
+    // makeRequest reads cached restrictions. Re-evaluate them without nextTurn,
+    // retaining effects that still apply (for example the opponent's Imprison).
+    for (const p of b.getAllActive()) {
+      if (p.side.id !== "p1" || !fullRestores.includes(p.set.name)) continue;
+      p.maybeDisabled = false;
+      p.maybeLocked = false;
+      for (const slot of p.moveSlots) {
+        slot.disabled = false;
+        slot.disabledSource = "";
+      }
+      b.runEvent("DisableMove", p);
+      for (const slot of p.moveSlots)
+        b.singleEvent("DisableMove", b.dex.getActiveMove(slot.id), null, p);
+      p.trapped = p.maybeTrapped = false;
+      b.runEvent("TrapPokemon", p);
+      if (!p.knownType || b.dex.getImmunity("trapped", p))
+        b.runEvent("MaybeTrapPokemon", p);
+    }
+  }
   b.p1.pokemonLeft = b.p1.pokemon.filter((p) => p.hp > 0).length;
   b.p2.pokemonLeft = b.p2.pokemon.filter((p) => p.hp > 0).length;
   // Refresh legal choices following manual status/stage/HP edits, but never discard a mid-turn switch request.
   if (b.requestState === "move") b.makeRequest();
+}
+/** Apply board corrections without choosing an action, consuming PP or advancing the PRNG. */
+export function refreshEmeraldState(
+  input: CombatState,
+  fullRestores: readonly string[] = [],
+): CombatState {
+  const state = clone(input);
+  const runtime = state.emerald;
+  if (!runtime || runtime.encounterKey !== encounterKey(state)) return state;
+  const b = Battle.fromJSON(runtime.engine);
+  synchronise(b, state, runtime.mirror, fullRestores);
+  runtime.engine = JSON.stringify(b.toJSON());
+  runtime.mirror = projection(state);
+  runtime.requests = { player: request(b.p1), opponent: request(b.p2) };
+  runtime.serial += 1;
+  return state;
 }
 function request(side: Side): EmeraldRequest {
   const req = side.activeRequest;
@@ -807,13 +875,16 @@ export function runEmeraldAction(
   };
   state.emerald = runtime;
   if (escaped) {
-    for (const member of state.pokemons) clearSecondaryStatuses(member);
+    for (const member of state.pokemons) clearBattleConditions(member);
     state.opponent = null;
     state.emerald = undefined;
     state.battleField = emptyBattleField();
     const tie = events.indexOf("Combate terminado: empate.");
     if (tie >= 0) events.splice(tie, 1);
     events.push("El encuentro terminó por huida; no se obtuvo una captura.");
+    events.push(
+      "Estados secundarios y modificadores de combate de todo el equipo limpiados.",
+    );
   }
   const initialHp = Object.fromEntries(
     before.pokemons.map((c) => [c.captureId, getCurrentHp(c.pokemon)]),

@@ -1,4 +1,12 @@
-import type { Pokemon } from "@/types/pokemon";
+import type { CapturedPokemon, Pokemon } from "@/types/pokemon";
+import { neutralBattleStages } from "@/lib/pokemonStats";
+import { clearSecondaryStatuses } from "@/lib/statusTurns";
+
+// Al terminar un encuentro conserva HP, nivel y estados principales.
+export function clearBattleConditions(capture: CapturedPokemon): void {
+  clearSecondaryStatuses(capture);
+  capture.pokemon.battleStages = neutralBattleStages();
+}
 
 // Fainted se deriva del HP guardado; no es un estado seleccionable independiente.
 export function isPokemonFainted(pokemon: Pokemon | null | undefined): boolean {

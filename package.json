@@ -8,7 +8,7 @@
     "lint": "eslint src --ext js,jsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
     "start": "serve dist -s -n -L -p $PORT",
-    "test:combat": "node --import tsx --test tests/emerald-engine.test.ts && node tools/test-emerald-browser.mjs",
+    "test:combat": "node --import tsx --test tests/emerald-engine.test.ts tests/statusCleanup.test.ts tests/fullRestore.test.ts tests/full-restore-restrictions.test.ts tests/trainer-battle.test.ts tests/trainer-items.test.ts tests/trainer-session.test.ts && node tools/test-emerald-browser.mjs && node tools/test-trainer-browser.mjs && node tools/test-trainer-privacy.mjs",
     "catalog:emerald": "node tools/build-emerald-catalog.mjs"
   },
   "dependencies": {

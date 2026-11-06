@@ -66,7 +66,7 @@ function describeCapture(capture: CapturedPokemon): string[] {
     `Movimientos: ${capture.moves?.map((m) => m.displayName).join(", ") || "Sin movimientos"}`,
   ];
 }
-function clearedSecondaryDetails(before: Snapshot, after: Snapshot): string[] {
+function clearedBattleDetails(before: Snapshot, after: Snapshot): string[] {
   return before.pokemons.flatMap((old) => {
     const next = after.pokemons.find((p) => p.captureId === old.captureId);
     if (!next) return [];
@@ -75,11 +75,20 @@ function clearedSecondaryDetails(before: Snapshot, after: Snapshot): string[] {
         STATUS_OPTIONS.find((option) => option.id === status)?.group ===
           "additional" && !next.statuses?.includes(status),
     );
-    return removed.length
-      ? [
-          `${old.pokemon.name}: estados secundarios retirados (${removed.map((status) => STATUS_OPTIONS.find((option) => option.id === status)?.label ?? status).join(", ")}); sus contadores también se limpiaron.`,
-        ]
-      : [];
+    const stages = stageChanges(
+      old.pokemon.battleStages,
+      next.pokemon.battleStages,
+    );
+    return [
+      ...(removed.length
+        ? [
+            `${old.pokemon.name}: estados secundarios retirados (${removed.map((status) => STATUS_OPTIONS.find((option) => option.id === status)?.label ?? status).join(", ")}); sus contadores también se limpiaron.`,
+          ]
+        : []),
+      ...(stages.length
+        ? [`${old.pokemon.name}: modificadores de combate restablecidos a 0.`]
+        : []),
+    ];
   });
 }
 // Compara cambios efectivamente aplicados. No registra clics, renderizados ni consultas.
@@ -257,7 +266,7 @@ export function describePartyActivity(
       return {
         kind: "opponent",
         title: `Oponente retirado: ${a!.pokemon.name}`,
-        details: clearedSecondaryDetails(before, after),
+        details: clearedBattleDetails(before, after),
       };
     if (
       !a ||
@@ -274,6 +283,7 @@ export function describePartyActivity(
           ...(b.moves?.length
             ? [`Movimientos: ${b.moves.map((m) => m.displayName).join(", ")}`]
             : []),
+          ...clearedBattleDetails(before, after),
         ],
       };
     }
@@ -319,7 +329,7 @@ export function describePartyActivity(
       title: `${added.origin === "starter" ? "Inicial elegido" : "Pokémon capturado"}: ${added.pokemon.name}`,
       details: [
         ...describeCapture(added),
-        ...clearedSecondaryDetails(before, after),
+        ...clearedBattleDetails(before, after),
       ],
     };
   }
@@ -338,6 +348,7 @@ export function describePartyActivity(
   }
   // Las migraciones y la carga automática del catálogo no son acciones del jugador.
   const tracked = [
+    "fullRestorePokemon",
     "setPokemonLevel",
     "changePokemonHp",
     "updatePokemonStats",
@@ -358,6 +369,18 @@ export function describePartyActivity(
   const old = before.pokemons.find((p) => p.captureId === changed.captureId)!;
   const common = { captureId: changed.captureId };
   const name = changed.pokemon.name;
+  if (actionType === "party/fullRestorePokemon") {
+    return {
+      ...common,
+      kind: "hp",
+      title: `Full restore: ${name}`,
+      details: [
+        hpDetail(old.pokemon, changed.pokemon),
+        `Estados retirados: ${statusNames(old)}. Contadores de estados eliminados.`,
+        "Todos los modificadores de combate restablecidos a 0.",
+      ],
+    };
+  }
   if (actionType === "party/setPokemonLevel") {
     if (old.pokemon.level === changed.pokemon.level) return null;
     return {

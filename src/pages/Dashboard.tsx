@@ -2,16 +2,8 @@ import { toast } from "sonner";
 import { store } from "@/store/store";
 import { canChooseStarter } from "@/lib/starterPokemon";
 import { useEffect, useRef, useState } from "react";
-import { Plus, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Plus } from "lucide-react";
+import PokemonActionsDialog from "@/components/pokemon/PokemonActionsDialog";
 import PokemonStatsPopover from "@/components/pokemon/PokemonStatsPopover";
 import PokemonBagDialog from "@/components/pokemon/PokemonBagDialog";
 import PokemonHpBar from "@/components/pokemon/PokemonHpBar";
@@ -39,8 +31,7 @@ const Dashboard = () => {
       ? (state.party.battleField?.activeCaptureId ?? null)
       : null;
   });
-  const [pokemonToRemove, setPokemonToRemove] =
-    useState<CapturedPokemon | null>(null);
+  const [actionsCaptureId, setActionsCaptureId] = useState<string | null>(null);
   const [battleCaptureId, setBattleCaptureId] = useState<string | null>(null);
   const [bagOpen, setBagOpen] = useState(false);
   const cryAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -67,12 +58,12 @@ const Dashboard = () => {
       setBattleCaptureId(null);
     }
     if (
-      pokemonToRemove &&
-      !party.some((p) => p.captureId === pokemonToRemove.captureId)
+      actionsCaptureId &&
+      !party.some((p) => p.captureId === actionsCaptureId)
     ) {
-      setPokemonToRemove(null);
+      setActionsCaptureId(null);
     }
-  }, [party, battleCaptureId, pokemonToRemove]);
+  }, [party, battleCaptureId, actionsCaptureId]);
 
   const stopPokemonCry = () => {
     const audio = cryAudioRef.current;
@@ -94,18 +85,21 @@ const Dashboard = () => {
     stopPokemonCry();
     setBattleCaptureId(null);
   };
-  const handleConfirmRemove = () => {
-    if (!pokemonToRemove) return;
+  const handleConfirmRemove = (pokemonToRemove: CapturedPokemon) => {
     if (store.getState().party.pokemons.length <= 1) {
       toast.error(
         "No puedes quedarte sin ningún Pokémon. Agrega otro antes de liberar este.",
       );
-      setPokemonToRemove(null);
       return;
     }
     if (battleCaptureId === pokemonToRemove.captureId) handleCloseBattle();
     dispatch(removePokemon(pokemonToRemove.captureId));
-    setPokemonToRemove(null);
+    setActionsCaptureId(null);
+    const nextPokemon = store.getState().party.pokemons[0];
+    if (nextPokemon)
+      requestAnimationFrame(() =>
+        document.getElementById(`battle-trigger-${nextPokemon.captureId}`)?.focus(),
+      );
   };
 
   return (
@@ -173,26 +167,8 @@ const Dashboard = () => {
                   key={captureId}
                   className="flex min-w-0 flex-col rounded-2xl border bg-card p-2.5 text-card-foreground shadow-sm"
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center">
                     <PokemonHpBar pokemon={pokemon} />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 shrink-0"
-                      onClick={() => {
-                        if (store.getState().party.pokemons.length <= 1) {
-                          toast.error(
-                            "No puedes quedarte sin ningún Pokémon. Agrega otro antes de liberar este.",
-                          );
-                          return;
-                        }
-                        setPokemonToRemove(capturedPokemon);
-                      }}
-                      aria-label={`Liberar a ${pokemon.name}`}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
                   </div>
                   <button
                     id={`battle-trigger-${captureId}`}
@@ -239,8 +215,16 @@ const Dashboard = () => {
                         Elegir movimientos iniciales
                       </button>
                     )}
-                  <div className="mt-auto pt-3">
+                  <div className="mt-auto grid grid-cols-2 gap-1.5 pt-3">
                     <PokemonStatsPopover capturedPokemon={capturedPokemon} />
+                    <PokemonActionsDialog
+                      capturedPokemon={capturedPokemon}
+                      open={actionsCaptureId === captureId}
+                      onOpenChange={(open) =>
+                        setActionsCaptureId(open ? captureId : null)
+                      }
+                      onRelease={handleConfirmRemove}
+                    />
                   </div>
                 </article>
               );
@@ -248,43 +232,6 @@ const Dashboard = () => {
           </div>
         </div>
       )}
-
-      <Dialog
-        open={pokemonToRemove !== null}
-        onOpenChange={(open) => {
-          if (!open) setPokemonToRemove(null);
-        }}
-      >
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>¿Estás seguro?</DialogTitle>
-            <DialogDescription>
-              ¿Quieres liberar a{" "}
-              <span className="font-semibold capitalize">
-                {pokemonToRemove?.pokemon.name}
-              </span>
-              ? Se perderán sus estadísticas y movimientos guardados. Esta
-              acción no permite elegir otro inicial.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setPokemonToRemove(null)}
-            >
-              Cancelar
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={handleConfirmRemove}
-            >
-              Liberar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {battleCaptureId !== null && (
         <PokemonBattleDialog
@@ -297,7 +244,7 @@ const Dashboard = () => {
       {/* Visible solo en el dashboard, sin superponerse a sus diálogos. */}
       {battleCaptureId === null &&
         !bagOpen &&
-        pokemonToRemove === null &&
+        actionsCaptureId === null &&
         !pokemonDialogOpen && (
           <FloatingOpponent
             onOpenBattle={(captureId) => {

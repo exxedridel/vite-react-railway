@@ -1,13 +1,21 @@
 import { Volume2, VolumeX, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useBattleMusic } from "@/context/BattleMusicContext";
+import type { MusicPhase } from "@/lib/battleMusic";
 
-export default function BattleMusicControl({
+export function BattleMusicButton({
+  active,
+  enabled,
+  phase,
+  toggle,
   compact = false,
 }: {
+  active: boolean;
+  enabled: boolean;
+  phase: MusicPhase;
+  toggle: () => void;
   compact?: boolean;
 }) {
-  const { active, enabled, phase, toggle } = useBattleMusic();
   if (!active) return null;
   const label = !enabled
     ? "Activar música"
@@ -33,4 +41,13 @@ export default function BattleMusicControl({
       {!compact && <span>{label}</span>}
     </Button>
   );
+}
+
+export default function BattleMusicControl({
+  compact = false,
+}: {
+  compact?: boolean;
+}) {
+  const music = useBattleMusic();
+  return <BattleMusicButton {...music} compact={compact} />;
 }

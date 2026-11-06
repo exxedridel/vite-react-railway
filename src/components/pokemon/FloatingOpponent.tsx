@@ -331,8 +331,9 @@ function DraggableOpponent({
             <DialogDescription>
               Se quitará a{" "}
               <span className="font-semibold capitalize">{pokemon.name}</span> y
-              se descartarán su nivel y sus modificadores guardados. Tu equipo
-              no cambiará.
+              se descartarán su nivel y sus modificadores guardados. Se
+              limpiarán los estados secundarios y los modificadores de combate
+              de todo tu equipo.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">

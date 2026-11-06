@@ -13,10 +13,12 @@ export default function BattleTurnHighlightsDialog({
   batch,
   onClose,
   onReturnToArena,
+  sideLabels,
 }: {
   batch: Batch | null;
   onClose: () => void;
   onReturnToArena: () => void;
+  sideLabels?: { player: string; opponent: string };
 }) {
   return (
     <Dialog
@@ -56,7 +58,9 @@ export default function BattleTurnHighlightsDialog({
                 className="rounded-xl border bg-card p-3 text-card-foreground"
               >
                 <p className="text-xs text-muted-foreground">
-                  {result.actorSide === "opponent" ? "Rival" : "Tu Pokémon"}
+                  {result.actorSide === "opponent"
+                    ? (sideLabels?.opponent ?? "Rival")
+                    : (sideLabels?.player ?? "Tu Pokémon")}
                 </p>
                 <h3 className="font-semibold">
                   <span className="capitalize">{result.attackerName}</span> ·{" "}
