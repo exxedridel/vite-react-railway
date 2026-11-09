@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "start": "serve dist -s -n -L -p $PORT",
     "test:combat": "node --import tsx --test tests/emerald-engine.test.ts tests/statusCleanup.test.ts tests/fullRestore.test.ts tests/full-restore-restrictions.test.ts tests/trainer-battle.test.ts tests/trainer-items.test.ts tests/trainer-session.test.ts && node tools/test-emerald-browser.mjs && node tools/test-trainer-browser.mjs && node tools/test-trainer-privacy.mjs",
-    "catalog:emerald": "node tools/build-emerald-catalog.mjs"
+    "catalog:emerald": "node tools/build-emerald-catalog.mjs",
+    "test:messages:browser": "node tools/test-messages-browser.mjs"
   },
   "dependencies": {
     "@fortawesome/fontawesome-svg-core": "^6.4.0",
@@ -49,6 +50,7 @@
     "react-router-dom": "^6.11.2",
     "redux-persist": "^6.0.0",
     "serve": "^14.2.0",
+    "socket.io-client": "^4.8.4",
     "sonner": "^2.0.6",
     "tailwind-merge": "^1.14.0",
     "tailwindcss-animate": "^1.0.6",

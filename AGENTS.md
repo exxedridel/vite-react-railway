@@ -1,0 +1,16 @@
+# Contexto de la trilogia Pokemon
+
+Acuerdo del usuario confirmado el 2026-11-08:
+
+- `mysql-restapi` gestiona autenticacion e identidad mediante JWT.
+- `nest-mongo-pokedex` comunica las instancias del frontend mediante WebSocket.
+- `vite-react-railway` contiene las vistas de jugadores y administrador; las batallas se llevan a cabo en el panel administrador.
+- Los tres proyectos forman una sola aplicacion y se deben usar conjuntamente.
+
+Si esta disponible, leer [la memoria compartida](../PROJECT_MEMORY.md). Este resumen se conserva tambien aqui para sesiones que abran solo este repositorio.
+
+Conservar el panel administrador como centro de las batallas. El analisis propone reutilizar su simulador y conectar jugadores mediante Nest; mover el motor al backend seria una alternativa distinta del enfoque analizado. La sincronizacion, recuperacion y proyecciones privadas de la memoria son propuestas pendientes de implementacion, no funcionalidades existentes ni nuevos requisitos confirmados.
+
+No guardar credenciales o tokens en la documentacion. Actualizar el contexto cuando el usuario confirme nuevos acuerdos.
+
+Primera integracion local (2026-11-09): ya existe `/mensajes-prueba`, accesible para jugador/admin y conectada al Gateway Nest con el `bearer_token` actual. Usa `VITE_WEBSOCKET_URL` opcional o el origen de `VITE_BASE_SERVICES`; no necesita secretos de firma en React. Ver README.

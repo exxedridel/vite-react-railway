@@ -6,11 +6,22 @@ import AppExperience from "@/components/admin/AppExperience";
 import AppRoutes from "./components/Navigation/AppRoutes";
 import Logout from "./components/Navigation/Logout";
 import NotFound from "./pages/NotFound";
+import TestMessagesPage from "./pages/TestMessagesPage";
 
 function App() {
   return (
     <Routes>
       <Route index element={<Login />} />
+      <Route
+        path="/mensajes-prueba"
+        element={
+          <ProtectedRoutes>
+            <IdleTimer>
+              <TestMessagesPage />
+            </IdleTimer>
+          </ProtectedRoutes>
+        }
+      />
       {AppRoutes.map((route, index) => (
         <Route
           key={index}

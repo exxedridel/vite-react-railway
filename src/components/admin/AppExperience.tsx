@@ -1,15 +1,18 @@
 import { lazy, Suspense, useState, type ReactNode } from "react";
-import { Store, Swords } from "lucide-react";
+import { MessageCircle, Store, Swords } from "lucide-react";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/context/AppContext";
 import Layout from "@/layout/Layout";
 import AdminShopPage from "@/pages/AdminShopPage";
 import { isShopAdmin } from "@/lib/adminShop";
+import { testMessagePeer } from "@/lib/testMessages";
 
 const AdminBattlePanel = lazy(() => import("@/pages/AdminBattlePanel"));
 const ADMIN_PANEL_KEY = "pokemon-admin-active-panel:v1";
 
 function AdminWorkspace() {
+  const { user } = useAppContext();
   const [panel, setPanel] = useState<"shop" | "battle">(() => {
     try {
       return localStorage.getItem(ADMIN_PANEL_KEY) === "battle"
@@ -31,7 +34,7 @@ function AdminWorkspace() {
     <>
       <nav
         aria-label="Paneles del administrador"
-        className="mx-auto flex w-full max-w-7xl gap-2 border-b px-3 py-3 sm:px-6"
+        className="mx-auto flex w-full max-w-7xl flex-wrap gap-2 border-b px-3 py-3 sm:px-6"
       >
         <Button
           type="button"
@@ -51,6 +54,14 @@ function AdminWorkspace() {
         >
           <Swords className="h-4 w-4" aria-hidden="true" /> Panel batalla
         </Button>
+        {testMessagePeer(user?.email) && (
+          <Button asChild variant="outline" className="min-h-11 gap-2">
+            <Link to="/mensajes-prueba">
+              <MessageCircle className="h-4 w-4" aria-hidden="true" /> Mensajes
+              de prueba
+            </Link>
+          </Button>
+        )}
       </nav>
       {panel === "shop" ? (
         <AdminShopPage />
