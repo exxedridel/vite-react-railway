@@ -9,7 +9,16 @@ Acuerdo del usuario confirmado el 2026-11-08:
 
 Si esta disponible, leer [la memoria compartida](../PROJECT_MEMORY.md). Este resumen se conserva tambien aqui para sesiones que abran solo este repositorio.
 
-Conservar el panel administrador como centro de las batallas. El analisis propone reutilizar su simulador y conectar jugadores mediante Nest; mover el motor al backend seria una alternativa distinta del enfoque analizado. La sincronizacion, recuperacion y proyecciones privadas de la memoria son propuestas pendientes de implementacion, no funcionalidades existentes ni nuevos requisitos confirmados.
+Conservar el panel administrador como centro de las batallas. El usuario confirmo
+limitar WebSocket a PvP: instantaneas de equipos al admin y resultados de vuelta;
+cada jugador conserva su partida. La sincronizacion de batalla sigue pendiente.
+
+Etapa autorizada 2026-11-10: CRUD en `/users`, solo rol admin verificado por
+MySQL, login por correo propio y contactos dinamicos en `/mensajes-prueba`.
+Redux Persist y apodos se separan por ID; la partida antigua requiere importacion
+explicita y nunca se asigna automaticamente. Los datos admin siguen locales.
+Desplegar primero MySQL, Nest con AUTH_API_URL y finalmente este frontend.
+No afirmar que esta nueva etapa ya se verifico en produccion.
 
 No guardar credenciales o tokens en la documentacion. Actualizar el contexto cuando el usuario confirme nuevos acuerdos.
 

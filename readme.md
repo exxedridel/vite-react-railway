@@ -9,10 +9,36 @@ tags:
 
 # Vite + React + Serve
 
-## Primera integración: `/mensajes-prueba`
+## Usuarios: `/users`
 
-Página protegida por el login existente para `hevedrios@gmail.com` y
-`najerad2223@gmail.com`. También se accede mediante el botón **Mensajes** del
+El panel administrador incluye **Usuarios** para listar, buscar, crear, editar
+y eliminar cuentas. Permite asignar roles `player` o `admin` y cambiar contraseñas.
+Las operaciones requieren autorización del servidor; un jugador no puede usar
+el CRUD aunque escriba la ruta manualmente. La sesión se verifica con
+`GET /api/auth/me` antes de mostrar las pantallas protegidas.
+
+Cada usuario inicia sesión con su propio correo. El administrador inicial es
+`najerad2223@gmail.com`, asignado una sola vez por la migración MySQL. No hay alta
+pública ni verificación de correo. Cambiar correo, contraseña o rol exige iniciar
+sesión nuevamente; no se permite eliminar la propia cuenta o retirarse su rol admin.
+
+El equipo e inventario persistidos por Redux se guardan por ID de usuario en
+`persist:root:user:<id>`; el apodo también se separa por cuenta. Cerrar sesión
+conserva la partida de esa cuenta en este dispositivo. Esto no incorpora guardado
+remoto ni sincroniza la partida entre dispositivos.
+
+Una partida previa en la clave compartida `persist:root` se ofrece para importar
+solo con confirmación de su dueño. Se conserva el original y un respaldo; una
+reserva impide asignarla a varias cuentas del mismo navegador. La importación
+requiere Web Locks (navegador compatible y contexto seguro). Si no está disponible
+o falla el guardado, se muestra el error y se conserva la partida original.
+Los datos del escenario administrador siguen siendo locales al dispositivo.
+
+## Mensajería: `/mensajes-prueba`
+
+Página protegida para cualquier cuenta registrada. Permite elegir otro usuario
+del directorio y enviar mensajes privados; **Actualizar contactos** incorpora
+cuentas creadas o editadas durante la sesión. Se accede mediante **Mensajes** del
 jugador o **Mensajes de prueba** del administrador.
 
 | Variable de compilación | Servicio |
@@ -23,7 +49,7 @@ jugador o **Mensajes de prueba** del administrador.
 
 Usar la URL de Nest sin `/api/v2` para `VITE_WEBSOCKET_URL`; la página añade el
 namespace `/mensajes-prueba`. El token se envía en la autenticación Socket.IO y
-Nest verifica su firma. **No configurar `JWT_SECRET` en React**: debe existir solo
+Nest verifica su firma y consulta la identidad vigente en MySQL. **No configurar `JWT_SECRET` en React**: debe existir solo
 en MySQL y Nest con el mismo valor privado.
 
 La configuración actual de `VITE_BASE_SERVICES` puede reutilizarse. En Railway,
@@ -38,19 +64,32 @@ La página muestra conexión, presencia, mensajes y confirmación de envío. Con
 hasta 200 mensajes en memoria y permite reintentar si falta confirmación. No hay
 historial persistente ni entrega posterior al destinatario desconectado.
 
-Las instrucciones de configuración y pruebas del servidor están en el README de
-`nest-mongo-pokedex`. MySQL conserva su endpoint de login y sus cuentas actuales.
+Para desplegar esta versión: primero MySQL (CRUD y migración de roles), después
+Nest con `AUTH_API_URL` apuntando al origen público de MySQL, y finalmente este
+frontend. Se conservan las URLs anteriores; no intercambiar los dos servicios.
+Las instrucciones de configuración están en los README de ambos servidores.
 
-Para una comprobación automática de esta página con dos cuentas aisladas:
+Para comprobar automáticamente usuarios y mensajes con sesiones aisladas:
 
 1. Instalar dependencias y ejecutar `npm run build` en `nest-mongo-pokedex`.
-2. Ejecutar `npm run test:messages:browser` en este frontend.
+2. Ejecutar `npm run test:users:browser` en este frontend (`test:messages:browser`
+   se conserva como alias compatible).
 
-La herramienta levanta temporalmente Nest sin MongoDB y Vite con URLs locales,
-abre Chrome en modo headless con un perfil temporal y comprueba el intercambio
-en ambos sentidos. Usa JWT exclusivos de prueba y no inicia sesión en Railway.
+La herramienta levanta la API Express con usuarios en memoria, Nest sin MongoDB
+y Vite con URLs locales. Abre Chrome headless con un perfil temporal y usa el
+login real de la interfaz con credenciales de prueba. No conecta a Railway ni
+a bases de datos reales.
 Requiere Chrome instalado; si no está en la ruta habitual de Windows, indicar el
 ejecutable mediante `CHROME_PATH`. Cierra los procesos temporales al terminar.
+
+`npm run test:accounts` comprueba el guardado por cuenta y la importación anterior
+con almacenamiento simulado, incluyendo errores de escritura y datos corruptos;
+no abre el navegador ni realiza peticiones de red.
+
+Validación local de la etapa de usuarios: build de producción correcto, 7 casos
+de almacenamiento y prueba Chrome aprobados. El `tsc --noEmit` global conserva
+16 errores previos (módulos antiguos ausentes, objetivo ES5 y pruebas anteriores);
+no está limpio aunque esta etapa no añade diagnósticos.
 
 ## Plantilla original
 

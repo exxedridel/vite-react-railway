@@ -4,11 +4,13 @@ import { jwtDecode } from "jwt-decode";
 import { io, type Socket } from "socket.io-client";
 import {
   appendTestMessage,
+  isChatContact,
   isTestMessage,
   testMessageErrorText,
-  testMessagePeer,
   testMessagesUrl,
   TEST_MESSAGE_MAX_LENGTH,
+  type ChatUser,
+  type ChatContact,
   type TestMessage,
   type TestMessageAck,
   type TestMessagePayload,
@@ -26,23 +28,25 @@ export type TestMessagesConnection =
   | "disconnected"
   | "error"
   | "session-ended";
-const ACK_TIMEOUT_MS = 8000;
+const ACK_TIMEOUT_MS = 15000;
 const SESSION_ERROR_CODES = new Set([
   "TOKEN_REQUIRED",
   "INVALID_TOKEN",
   "TOKEN_EXPIRED",
-  "ACCOUNT_NOT_ALLOWED",
+  "SESSION_REVOKED",
+  "ACCOUNT_NOT_FOUND",
 ]);
 
-export function useTestMessages(email: string | undefined) {
-  const selfEmail = email?.trim().toLowerCase() ?? "";
-  const peerEmail = testMessagePeer(selfEmail);
+export function useTestMessages(user: ChatUser | null | undefined) {
+  const selfUserId = user?.id ?? 0;
+  const selfEmail = user?.email.trim().toLowerCase() ?? "";
   const [connection, setConnection] =
     useState<TestMessagesConnection>("disconnected");
   const [connectionError, setConnectionError] = useState("");
   const [sendError, setSendError] = useState("");
-  const [peerOnline, setPeerOnline] = useState(false);
-  const [messages, setMessages] = useState<TestMessage[]>([]);
+  const [contacts, setContacts] = useState<ChatContact[]>([]);
+  const [peerUserId, updatePeerUserId] = useState<number | null>(null);
+  const [allMessages, setMessages] = useState<TestMessage[]>([]);
   const [draft, updateDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [retryVersion, setRetryVersion] = useState(0);
@@ -51,35 +55,35 @@ export function useTestMessages(email: string | undefined) {
   const draftRef = useRef("");
   const sendingRef = useRef(false);
   const attemptRef = useRef(0);
+  const peer = contacts.find((contact) => contact.id === peerUserId) ?? null;
 
   const setDraft = useCallback((value: string) => {
     draftRef.current = value;
     updateDraft(value);
   }, []);
-
   useEffect(() => {
     setMessages([]);
     setDraft("");
     setSendError("");
+    setContacts([]);
+    updatePeerUserId(null);
     pendingRef.current = null;
-  }, [selfEmail, setDraft]);
+  }, [selfUserId, setDraft]);
 
   const acceptMessage = useCallback(
-    (message: unknown) => {
-      if (!isTestMessage(message) || !peerEmail) return false;
+    (value: unknown) => {
       if (
-        !(
-          (message.from === selfEmail && message.to === peerEmail) ||
-          (message.from === peerEmail && message.to === selfEmail)
-        )
+        !isTestMessage(value) ||
+        (value.fromUserId !== selfUserId && value.toUserId !== selfUserId)
       )
         return false;
-      setMessages((current) => appendTestMessage(current, message));
+      setMessages((current) => appendTestMessage(current, value));
       const pending = pendingRef.current;
       if (
-        message.from === selfEmail &&
-        pending?.clientMessageId === message.clientMessageId &&
-        pending.text === message.text
+        value.fromUserId === selfUserId &&
+        pending?.clientMessageId === value.clientMessageId &&
+        pending.toUserId === value.toUserId &&
+        pending.text === value.text
       ) {
         pendingRef.current = null;
         sendingRef.current = false;
@@ -89,23 +93,29 @@ export function useTestMessages(email: string | undefined) {
       }
       return true;
     },
-    [selfEmail, peerEmail, setDraft],
+    [selfUserId, setDraft],
   );
 
   useEffect(() => {
-    if (!peerEmail) return;
+    if (!selfUserId) return;
     sendingRef.current = false;
     setSending(false);
-    setPeerOnline(false);
     let token: string | null;
     let expiresAt: number;
     let endpoint: string;
     try {
       token = localStorage.getItem("bearer_token");
-      if (!token) throw new Error("Inicia sesión para conectar los mensajes.");
-      const decoded = jwtDecode<{ exp?: number }>(token);
-      if (typeof decoded.exp !== "number" || !Number.isFinite(decoded.exp))
-        throw new Error("La sesión no tiene una fecha de expiración válida.");
+      if (!token)
+        throw new Error(
+          "Inicia sesión con tu correo para conectar los mensajes.",
+        );
+      const decoded = jwtDecode<{ exp?: number; id?: number }>(token);
+      if (
+        typeof decoded.exp !== "number" ||
+        !Number.isFinite(decoded.exp) ||
+        Number(decoded.id) !== selfUserId
+      )
+        throw new Error("La sesión no corresponde a esta cuenta.");
       expiresAt = decoded.exp * 1000;
       if (expiresAt <= Date.now())
         throw new Error("La sesión expiró. Vuelve a iniciar sesión.");
@@ -118,7 +128,6 @@ export function useTestMessages(email: string | undefined) {
       setConnectionError(testMessageErrorText(error, "No se pudo conectar."));
       return;
     }
-
     const socket: MessagesSocket = io(endpoint, {
       auth: { token },
       autoConnect: false,
@@ -126,15 +135,11 @@ export function useTestMessages(email: string | undefined) {
       reconnectionDelay: 1000,
       timeout: ACK_TIMEOUT_MS,
     });
-    let sessionEnded = false;
     socketRef.current = socket;
     setConnection("connecting");
     setConnectionError("");
-    setPeerOnline(false);
-    sendingRef.current = false;
-    setSending(false);
+    let sessionEnded = false;
     const isCurrent = () => socketRef.current === socket;
-
     function endSession(message: string) {
       if (!isCurrent() || sessionEnded) return;
       sessionEnded = true;
@@ -142,7 +147,7 @@ export function useTestMessages(email: string | undefined) {
       attemptRef.current += 1;
       sendingRef.current = false;
       setSending(false);
-      setPeerOnline(false);
+      setContacts([]);
       setConnection("session-ended");
       setConnectionError(message);
     }
@@ -159,6 +164,23 @@ export function useTestMessages(email: string | undefined) {
         endSession("No se pudo comprobar la sesión del navegador.");
       }
     }
+    function updateContacts(values: unknown) {
+      if (
+        !isCurrent() ||
+        !Array.isArray(values) ||
+        !values.every(isChatContact)
+      )
+        return;
+      const next = values.filter((contact) => contact.id !== selfUserId);
+      setContacts(next);
+      updatePeerUserId((current) =>
+        next.some((contact) => contact.id === current)
+          ? current
+          : (next.find((contact) => contact.role === "admin")?.id ??
+            next[0]?.id ??
+            null),
+      );
+    }
     socket.on("connect", () => {
       if (!isCurrent()) return;
       checkSession();
@@ -171,7 +193,9 @@ export function useTestMessages(email: string | undefined) {
       attemptRef.current += 1;
       sendingRef.current = false;
       setSending(false);
-      setPeerOnline(false);
+      setContacts((current) =>
+        current.map((contact) => ({ ...contact, online: false })),
+      );
       setConnection("disconnected");
       if (pendingRef.current)
         setSendError(
@@ -193,30 +217,38 @@ export function useTestMessages(email: string | undefined) {
     });
     socket.on("mensajes:estado", (state) => {
       if (
-        !isCurrent() ||
-        state?.selfEmail !== selfEmail ||
-        state.peerEmail !== peerEmail ||
-        typeof state.peerOnline !== "boolean"
+        isCurrent() &&
+        (state?.selfUserId !== selfUserId || state.selfEmail !== selfEmail)
       )
-        return;
-      setPeerOnline(state.peerOnline);
+        endSession("La conexión no corresponde a tu cuenta autenticada.");
     });
+    socket.on("mensajes:contactos", (state) => updateContacts(state?.users));
     socket.on("mensajes:recibir", (message) => {
       if (isCurrent()) acceptMessage(message);
     });
     socket.on("mensajes:error", (error) => {
-      endSession(testMessageErrorText(error, "La sesión de mensajes terminó."));
+      if (!isCurrent()) return;
+      const message = testMessageErrorText(
+        error,
+        "No se pudo completar la operación.",
+      );
+      if (
+        typeof error === "object" &&
+        error &&
+        SESSION_ERROR_CODES.has(error.code)
+      )
+        endSession(message);
+      else setConnectionError(message);
     });
     const reconnectAttempt = () => {
       if (isCurrent()) setConnection("connecting");
     };
     socket.io.on("reconnect_attempt", reconnectAttempt);
-    const sessionTimer = window.setInterval(checkSession, 1000);
+    const timer = window.setInterval(checkSession, 1000);
     window.addEventListener("storage", checkSession);
     socket.connect();
-
     return () => {
-      window.clearInterval(sessionTimer);
+      window.clearInterval(timer);
       window.removeEventListener("storage", checkSession);
       if (isCurrent()) socketRef.current = null;
       attemptRef.current += 1;
@@ -225,13 +257,50 @@ export function useTestMessages(email: string | undefined) {
       socket.io.off("reconnect_attempt", reconnectAttempt);
       socket.disconnect();
     };
-  }, [selfEmail, peerEmail, retryVersion, acceptMessage]);
+  }, [selfUserId, selfEmail, retryVersion, acceptMessage]);
 
+  function refreshContacts() {
+    const socket = socketRef.current;
+    if (!socket?.connected) return;
+    socket
+      .timeout(ACK_TIMEOUT_MS)
+      .emit("mensajes:contactos:solicitar", (error: Error | null, response) => {
+        if (socketRef.current !== socket) return;
+        if (
+          error ||
+          !response?.ok ||
+          !Array.isArray(response.users) ||
+          !response.users.every(isChatContact)
+        ) {
+          setConnectionError(
+            error
+              ? "No se pudo actualizar la lista de contactos."
+              : testMessageErrorText(
+                  response && !response.ok ? response.error : null,
+                  "No se pudieron actualizar los contactos.",
+                ),
+          );
+          return;
+        }
+        setConnectionError("");
+        setContacts(
+          response.users.filter((contact) => contact.id !== selfUserId),
+        );
+      });
+  }
+  function selectPeer(value: number) {
+    if (sendingRef.current || !contacts.some((contact) => contact.id === value))
+      return;
+    updatePeerUserId(value);
+    pendingRef.current = null;
+    setDraft("");
+    setSendError("");
+  }
   function send() {
     const socket = socketRef.current;
     if (sendingRef.current) return;
-    if (!socket?.connected) {
-      setSendError("Conecta con Nest antes de enviar.");
+    if (!socket?.connected || !peer) {
+      setSendError("Conecta y selecciona un destinatario antes de enviar.");
       return;
     }
     const text = draftRef.current.trim();
@@ -240,11 +309,13 @@ export function useTestMessages(email: string | undefined) {
       return;
     }
     const payload =
-      pendingRef.current?.text === text
+      pendingRef.current?.text === text &&
+      pendingRef.current.toUserId === peer.id
         ? pendingRef.current
         : {
             clientMessageId: globalThis.crypto?.randomUUID?.() ?? nanoid(),
             text,
+            toUserId: peer.id,
           };
     pendingRef.current = payload;
     sendingRef.current = true;
@@ -257,16 +328,17 @@ export function useTestMessages(email: string | undefined) {
         "mensajes:enviar",
         payload,
         (error: Error | null, response: TestMessageAck | undefined) => {
-          if (socketRef.current !== socket || attemptRef.current !== attempt)
-            return;
-          // The broadcast may have already confirmed the same message before its ACK.
-          if (pendingRef.current?.clientMessageId !== payload.clientMessageId)
+          if (
+            socketRef.current !== socket ||
+            attemptRef.current !== attempt ||
+            pendingRef.current?.clientMessageId !== payload.clientMessageId
+          )
             return;
           sendingRef.current = false;
           setSending(false);
           if (error) {
             setSendError(
-              "No llegó la confirmación. Reintenta sin cambiar el texto; se usará el mismo identificador.",
+              "No llegó la confirmación. Reintenta sin cambiar el texto ni el destinatario.",
             );
             return;
           }
@@ -274,8 +346,8 @@ export function useTestMessages(email: string | undefined) {
             response?.ok === true &&
             isTestMessage(response.message) &&
             response.message.clientMessageId === payload.clientMessageId &&
-            response.message.from === selfEmail &&
-            response.message.to === peerEmail &&
+            response.message.fromUserId === selfUserId &&
+            response.message.toUserId === payload.toUserId &&
             response.message.text === text &&
             acceptMessage(response.message)
           )
@@ -283,20 +355,29 @@ export function useTestMessages(email: string | undefined) {
           setSendError(
             response?.ok === false
               ? testMessageErrorText(response.error, "Nest rechazó el mensaje.")
-              : "La confirmación recibida no es válida. Reintenta el envío.",
+              : "La confirmación recibida no es válida. Reintenta.",
           );
         },
       );
   }
-
   return {
     selfEmail,
-    peerEmail,
+    selfUserId,
+    contacts,
+    peerUserId,
+    selectPeer,
+    refreshContacts,
+    peerEmail: peer?.email ?? "",
+    peerOnline: !!peer?.online,
     connection,
     connectionError,
     sendError,
-    peerOnline,
-    messages,
+    messages: allMessages.filter(
+      (message) =>
+        (message.fromUserId === selfUserId &&
+          message.toUserId === peerUserId) ||
+        (message.toUserId === selfUserId && message.fromUserId === peerUserId),
+    ),
     draft,
     setDraft,
     sending,

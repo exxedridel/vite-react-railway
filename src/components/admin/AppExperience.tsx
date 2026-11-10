@@ -1,12 +1,10 @@
 import { lazy, Suspense, useState, type ReactNode } from "react";
-import { MessageCircle, Store, Swords } from "lucide-react";
+import { MessageCircle, Store, Swords, Users } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/context/AppContext";
 import Layout from "@/layout/Layout";
 import AdminShopPage from "@/pages/AdminShopPage";
-import { isShopAdmin } from "@/lib/adminShop";
-import { testMessagePeer } from "@/lib/testMessages";
 
 const AdminBattlePanel = lazy(() => import("@/pages/AdminBattlePanel"));
 const ADMIN_PANEL_KEY = "pokemon-admin-active-panel:v1";
@@ -54,7 +52,12 @@ function AdminWorkspace() {
         >
           <Swords className="h-4 w-4" aria-hidden="true" /> Panel batalla
         </Button>
-        {testMessagePeer(user?.email) && (
+        <Button asChild variant="outline" className="min-h-11 gap-2">
+          <Link to="/users">
+            <Users className="h-4 w-4" aria-hidden="true" /> Usuarios
+          </Link>
+        </Button>
+        {user && (
           <Button asChild variant="outline" className="min-h-11 gap-2">
             <Link to="/mensajes-prueba">
               <MessageCircle className="h-4 w-4" aria-hidden="true" /> Mensajes
@@ -95,6 +98,6 @@ export default function AppExperience({ children }: { children: ReactNode }) {
         Cargando perfil…
       </div>
     );
-  if (isShopAdmin(user.email)) return <AdminWorkspace />;
+  if (user.role === "admin") return <AdminWorkspace />;
   return <Layout>{children}</Layout>;
 }

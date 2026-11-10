@@ -5,7 +5,6 @@ import { Link } from "react-router-dom";
 import { MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/context/AppContext";
-import { testMessagePeer } from "@/lib/testMessages";
 
 function Navbar() {
   const { user } = useAppContext();
@@ -14,7 +13,7 @@ function Navbar() {
       <div className="ml-3 flex items-center gap-2">
         <DropdownUser />
         <ModeToggle />
-        {testMessagePeer(user?.email) && (
+        {user && (
           <Button asChild variant="outline" size="sm" className="gap-2">
             <Link to="/mensajes-prueba">
               <MessageCircle className="h-4 w-4" aria-hidden="true" /> Mensajes

@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/form";
 
 const FormSchema = z.object({
-  email: z.string().email({
+  email: z.string().trim().toLowerCase().email({
     message: "Ingresa correo válido",
   }),
   password: z.string().min(1, {
@@ -27,7 +27,7 @@ const FormSchema = z.object({
 });
 
 const Login = () => {
-  const { login, navigate, isIdle } = useAppContext();
+  const { login, navigate, isIdle, loading } = useAppContext();
   const [showPassword, setShowPassword] = useState(false);
   const [shouldRender, setShouldRender] = useState(false);
 
@@ -58,17 +58,9 @@ const Login = () => {
   });
 
   async function onSubmit(data: z.infer<typeof FormSchema>) {
-    try {
-      await login(data).then(() => {
-        setShowPassword(false);
-        form.reset({
-          ...form.getValues(),
-          password: "",
-        });
-      });
-    } catch (err) {
-      console.log(err);
-    }
+    await login(data);
+    setShowPassword(false);
+    form.reset({ ...form.getValues(), password: "" });
   }
 
   return shouldRender ? (
@@ -103,9 +95,9 @@ const Login = () => {
             name="email"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Cuenta o email</FormLabel>
+                <FormLabel>Correo electrónico</FormLabel>
                 <FormControl>
-                  <Input autoComplete="off" {...field} />
+                  <Input type="email" autoComplete="username" {...field} />
                 </FormControl>
                 <FormMessage className="text-xs" />
               </FormItem>
@@ -116,7 +108,7 @@ const Login = () => {
             name="password"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Constraseña</FormLabel>
+                <FormLabel>Contraseña</FormLabel>
                 <FormControl>
                   <div className="relative">
                     <Input
@@ -141,7 +133,7 @@ const Login = () => {
               </FormItem>
             )}
           />
-          <Button type="submit" size="lg" className="w-full">
+          <Button type="submit" size="lg" className="w-full" disabled={loading}>
             Iniciar sesión
           </Button>
         </form>

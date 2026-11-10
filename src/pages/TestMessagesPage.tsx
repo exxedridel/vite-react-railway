@@ -30,7 +30,7 @@ const connectionLabels: Record<TestMessagesConnection, string> = {
 
 export default function TestMessagesPage() {
   const { user } = useAppContext();
-  const chat = useTestMessages(user?.email);
+  const chat = useTestMessages(user);
   const endRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "nearest" });
@@ -39,6 +39,7 @@ export default function TestMessagesPage() {
   const connected = chat.connection === "connected";
   const canSend =
     connected &&
+    !!chat.peerUserId &&
     !chat.sending &&
     chat.draft.trim().length > 0 &&
     chat.draft.length <= TEST_MESSAGE_MAX_LENGTH;
@@ -69,11 +70,7 @@ export default function TestMessagesPage() {
         </div>
       </header>
 
-      {!chat.peerEmail ? (
-        <p role="alert" className="rounded-xl border p-4 text-sm">
-          Esta prueba solo está disponible para las dos cuentas habilitadas.
-        </p>
-      ) : (
+      {
         <>
           <section className="space-y-3 rounded-xl border bg-card p-4 text-sm">
             <p className="break-all">
@@ -81,8 +78,42 @@ export default function TestMessagesPage() {
             </p>
             <p className="break-all">
               <span className="font-semibold">Destinatario:</span>{" "}
-              {chat.peerEmail}
+              {chat.peerEmail || "Selecciona una cuenta registrada"}
             </p>
+            <div className="flex flex-wrap gap-2">
+              <label htmlFor="message-recipient" className="sr-only">
+                Destinatario del mensaje
+              </label>
+              <select
+                id="message-recipient"
+                value={chat.peerUserId ?? ""}
+                onChange={(event) =>
+                  chat.selectPeer(Number(event.target.value))
+                }
+                disabled={!connected || chat.sending}
+                className="min-h-11 min-w-0 flex-1 rounded-md border bg-background px-3"
+              >
+                <option value="" disabled>
+                  {chat.contacts.length
+                    ? "Selecciona un usuario"
+                    : "Sin otros usuarios disponibles"}
+                </option>
+                {chat.contacts.map((contact) => (
+                  <option key={contact.id} value={contact.id}>
+                    {contact.first_name} · {contact.email}
+                    {contact.online ? " · conectado" : ""}
+                  </option>
+                ))}
+              </select>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!connected || chat.sending}
+                onClick={chat.refreshContacts}
+              >
+                Actualizar contactos
+              </Button>
+            </div>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div aria-live="polite" className="space-y-1">
                 <p className="font-medium">
@@ -139,7 +170,7 @@ export default function TestMessagesPage() {
                 className={`max-w-[95%] rounded-xl border p-3 text-sm sm:max-w-[85%] ${message.from === chat.selfEmail ? "ml-auto bg-brand/10" : "mr-auto bg-card"}`}
               >
                 <p className="break-all text-xs font-semibold">
-                  {message.from === chat.selfEmail ? "Tú" : message.from}
+                  {message.fromUserId === chat.selfUserId ? "Tú" : message.from}
                 </p>
                 <p className="mt-1 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
                   {message.text}
@@ -191,7 +222,7 @@ export default function TestMessagesPage() {
             )}
           </form>
         </>
-      )}
+      }
     </main>
   );
 }

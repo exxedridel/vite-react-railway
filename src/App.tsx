@@ -7,11 +7,25 @@ import AppRoutes from "./components/Navigation/AppRoutes";
 import Logout from "./components/Navigation/Logout";
 import NotFound from "./pages/NotFound";
 import TestMessagesPage from "./pages/TestMessagesPage";
+import UsersPage from "./pages/UsersPage";
+import AdminRoutes from "./components/Navigation/AdminRoutes";
 
 function App() {
   return (
     <Routes>
       <Route index element={<Login />} />
+      <Route
+        path="/users"
+        element={
+          <ProtectedRoutes>
+            <AdminRoutes>
+              <IdleTimer>
+                <UsersPage />
+              </IdleTimer>
+            </AdminRoutes>
+          </ProtectedRoutes>
+        }
+      />
       <Route
         path="/mensajes-prueba"
         element={

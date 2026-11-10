@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import {
   LogOut,
@@ -34,21 +34,18 @@ import { useAppContext } from "@/context/AppContext";
 import { useAppDispatch } from "@/store/hooks";
 import { resetGame } from "@/slices/partySlice";
 import FloatingActivityHistory from "@/components/pokemon/FloatingActivityHistory";
-
-const NICKNAME_STORAGE_KEY = "trainer_nickname";
-const getStoredNickname = (): string => {
-  try {
-    return localStorage.getItem(NICKNAME_STORAGE_KEY)?.trim() || "";
-  } catch {
-    return "";
-  }
-};
+import {
+  accountNicknameKey,
+  getStoredNickname,
+  ACCOUNT_NICKNAME_EVENT,
+} from "@/store/accountStorage";
 type ActiveDialog = "nickname" | "reset" | null;
 
 export default function DropdownUser() {
   const { user, navigate, setPokemonDialogOpen } = useAppContext();
   const dispatch = useAppDispatch();
-  const [nickname, setNickname] = useState(getStoredNickname);
+  const userId = Number(user?.id);
+  const [nickname, setNickname] = useState(() => getStoredNickname(userId));
   const [nicknameDraft, setNicknameDraft] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [historyVisible, setHistoryVisible] = useState(false);
@@ -56,6 +53,20 @@ export default function DropdownUser() {
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
   const openingDialogRef = useRef(false);
   const resetSubmittedRef = useRef(false);
+  useEffect(() => {
+    const refreshNickname = () => setNickname(getStoredNickname(userId));
+    refreshNickname();
+    setNicknameDraft("");
+    setActiveDialog(null);
+    setMenuOpen(false);
+    setHistoryVisible(false);
+    window.addEventListener("storage", refreshNickname);
+    window.addEventListener(ACCOUNT_NICKNAME_EVENT, refreshNickname);
+    return () => {
+      window.removeEventListener("storage", refreshNickname);
+      window.removeEventListener(ACCOUNT_NICKNAME_EVENT, refreshNickname);
+    };
+  }, [userId]);
   const backendFullName =
     [user?.first_name, user?.last_name].filter(Boolean).join(" ") || "N/A";
   const buttonName = nickname || user?.first_name || "N/A";
@@ -84,7 +95,7 @@ export default function DropdownUser() {
       return;
     }
     try {
-      localStorage.setItem(NICKNAME_STORAGE_KEY, value);
+      localStorage.setItem(accountNicknameKey(userId), value);
       setNickname(value);
       closeDialog();
       toast.success("Nickname guardado.");
@@ -94,7 +105,7 @@ export default function DropdownUser() {
   };
   const handleRemoveNickname = () => {
     try {
-      localStorage.removeItem(NICKNAME_STORAGE_KEY);
+      localStorage.removeItem(accountNicknameKey(userId));
       setNickname("");
       setNicknameDraft("");
       closeDialog();
@@ -212,8 +223,8 @@ export default function DropdownUser() {
               {nickname ? "Editar nickname" : "Agregar nickname"}
             </DialogTitle>
             <DialogDescription>
-              Elige el nombre de tu entrenador para este navegador. Si lo
-              eliminas, aparecerá el nombre de tu cuenta.
+              Elige el nombre de tu entrenador para tu cuenta en este navegador.
+              Si lo eliminas, aparecerá el nombre de tu cuenta.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSaveNickname}>
