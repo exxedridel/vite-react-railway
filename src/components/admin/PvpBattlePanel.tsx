@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw, Swords } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import TrainerBattleView from "./TrainerBattleView";
 import { usePvpContext } from "@/context/PvpContext";
 import { startTrainerBattle } from "@/lib/trainerBattle/engine";
+import { validTrainerBattleSession } from "@/lib/trainerBattle/model";
 import type { TrainerChoice, TrainerSide } from "@/lib/trainerBattle/types";
 import {
   applyPvpTrainerCommands,
@@ -27,6 +28,34 @@ const failureText = (error: unknown): string =>
         ? error.message
         : "No se pudo completar la operación PvP. Actualiza la conexión.";
 
+const INCOMPLETE_CHECKPOINT_MESSAGE =
+  "El estado del combate está incompleto o es incompatible. Actualiza la conexión para recuperarlo. Los equipos siguen reservados.";
+
+function hasCompleteCheckpoint(view: PvpBattleView): boolean {
+  const requiresSession = ["active", "finished", "finalizing"].includes(
+    view.phase,
+  );
+  if (!view.session) return !requiresSession;
+  try {
+    if (
+      !validTrainerBattleSession(view.session) ||
+      view.session.id !== view.battleId ||
+      view.session.networkBattleId !== view.battleId
+    )
+      return false;
+    if (view.phase === "active" && view.session.phase !== "battle")
+      return false;
+    if (
+      ["finished", "finalizing"].includes(view.phase) &&
+      view.session.phase !== "finished"
+    )
+      return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export default function PvpBattlePanel() {
   const pvp = usePvpContext();
   const contextRef = useRef(pvp);
@@ -39,6 +68,10 @@ export default function PvpBattlePanel() {
   const [playerA, setPlayerA] = useState("");
   const [playerB, setPlayerB] = useState("");
   const state = pvp.state;
+  const incompleteCheckpoint = useMemo(
+    () => !!state && !hasCompleteCheckpoint(state),
+    [state?.session, state?.phase, state?.battleId],
+  );
   const ownerId = pvp.user?.id ?? 0;
   const ownHost =
     !!state &&
@@ -74,6 +107,8 @@ export default function PvpBattlePanel() {
 
   function requireHost(view: PvpBattleView, requirePlayers = true): void {
     const current = contextRef.current;
+    if (!hasCompleteCheckpoint(view))
+      throw new Error(INCOMPLETE_CHECKPOINT_MESSAGE);
     if (
       !current.connected ||
       !current.synced ||
@@ -112,6 +147,7 @@ export default function PvpBattlePanel() {
     );
     if (
       !accepted ||
+      !hasCompleteCheckpoint(accepted) ||
       accepted.checkpointRevision <= entry.expectedCheckpointRevision ||
       stablePvpJson(accepted.session) !== stablePvpJson(entry.session)
     )
@@ -145,6 +181,10 @@ export default function PvpBattlePanel() {
   }
 
   useEffect(() => {
+    if (incompleteCheckpoint) {
+      attemptedRef.current = "";
+      return;
+    }
     if (!pvp.connected || !pvp.synced) {
       attemptedRef.current = "";
       return;
@@ -222,6 +262,7 @@ export default function PvpBattlePanel() {
     pvp.clientId,
     pvp.connected,
     pvp.synced,
+    incompleteCheckpoint,
   ]);
 
   async function start(): Promise<void> {
@@ -305,6 +346,14 @@ export default function PvpBattlePanel() {
           className="rounded-xl border border-destructive/40 p-3 text-sm text-destructive"
         >
           {localError || failureText(pvp.error)}
+        </p>
+      )}
+      {incompleteCheckpoint && (
+        <p
+          role="alert"
+          className="rounded-xl border border-destructive/40 p-3 text-sm text-destructive"
+        >
+          {INCOMPLETE_CHECKPOINT_MESSAGE}
         </p>
       )}
       {(!state || terminal) && (
@@ -408,7 +457,11 @@ export default function PvpBattlePanel() {
                 {state.phase === "ready" && (
                   <Button
                     disabled={
-                      locked || !readyConnection || !ownHost || !ownersOnline
+                      locked ||
+                      !readyConnection ||
+                      !ownHost ||
+                      !ownersOnline ||
+                      incompleteCheckpoint
                     }
                     onClick={() => void start()}
                   >
@@ -417,7 +470,12 @@ export default function PvpBattlePanel() {
                 )}
                 <Button
                   variant="outline"
-                  disabled={locked || !readyConnection || !ownHost}
+                  disabled={
+                    locked ||
+                    !readyConnection ||
+                    !ownHost ||
+                    incompleteCheckpoint
+                  }
                   onClick={() => void run(() => pvp.cancelBattle())}
                 >
                   Cancelar preparación
@@ -425,7 +483,7 @@ export default function PvpBattlePanel() {
               </div>
             )}
           </div>
-          {state.session && (
+          {state.session && !incompleteCheckpoint && (
             <TrainerBattleView
               session={state.session}
               onChange={() => {}}
@@ -450,7 +508,9 @@ export default function PvpBattlePanel() {
                 confirmar la salida.
               </p>
               <Button
-                disabled={locked || !readyConnection || !ownHost}
+                disabled={
+                  locked || !readyConnection || !ownHost || incompleteCheckpoint
+                }
                 onClick={() => void run(() => pvp.finalizeBattle())}
               >
                 Salir y actualizar Partys

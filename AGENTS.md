@@ -25,6 +25,10 @@ patch HP/estados tras salir y recibo+ACK antes de liberar ambos. Reconexion no
 desbloquea; equipo divergente exige dispositivo original. Ver README/protocolo.
 No convertir moves[].pp de catalogo en PP gastados; Full Restore solo manual
 porque mochila no tiene existencias. No se agregan XP ni premios.
+Correccion 2026-11-11: PvpBattlePanel valida checkpoint antes de montar controles
+o procesar cola/outbox. Estado incompatible muestra aviso y permite actualizar
+conexion sin desbloquear. Causa Nest: Mongoose eliminaba pending={} (minimize).
+QA navegador usa MongoPvpRepository con serializacion Mongoose y driver simulado.
 Desplegar Nest primero y React despues; coleccion Mongo real no verificada.
 
 Etapa autorizada 2026-11-10: CRUD en `/users`, solo rol admin verificado por

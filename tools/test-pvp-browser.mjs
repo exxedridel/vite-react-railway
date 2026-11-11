@@ -732,12 +732,19 @@ try {
   );
   class BrowserUsersRoot {}
   const { PvpModule } = requireNest(join(nestRoot, "dist/pvp/pvp.module.js"));
-  const { MemoryPvpRepository } = requireNest(
+  const { MongoPvpRepository, PvpBattleSchema } = requireNest(
     join(nestRoot, "dist/pvp/pvp.repository.js"),
   );
   const { PvpGateway } = requireNest(join(nestRoot, "dist/pvp/pvp.gateway.js"));
   const { PvpService } = requireNest(join(nestRoot, "dist/pvp/pvp.service.js"));
-  const pvpRepository = new MemoryPvpRepository();
+  const { createMongoosePvpFixture } = requireNest(
+    join(nestRoot, "test/support/mongoose-pvp-model.cjs"),
+  );
+  const persistence = createMongoosePvpFixture({
+    mongoose: requireNest("mongoose"),
+    schema: PvpBattleSchema,
+  });
+  const pvpRepository = new MongoPvpRepository(persistence.model);
   Module({
     imports: [MessagesModule, PvpModule.withRepository(pvpRepository)],
   })(BrowserUsersRoot);
@@ -880,10 +887,67 @@ try {
   );
   battle = await pvpRepository.get(battleId);
   const serialBeforePause = battle.session.runtime.serial;
+  const gateway = app.get(PvpGateway);
+  const service = app.get(PvpService);
+  assert.deepEqual(persistence.rows.get(battleId).session.runtime.pending, {});
+  assert.deepEqual(persistence.rows.get(battleId).commandHashes, {});
+  // A malformed incoming envelope must show a recoverable error, never crash
+  // React or execute its queued commands. The accepted checkpoint is unchanged.
+  const adminActor = [...service.actors.values()].find(
+    (actor) => actor.user.id === 1,
+  );
+  const incomplete = service.view(battle, adminActor);
+  delete incomplete.session.runtime.pending;
+  incomplete.commands = [{ commandId: "malformed-envelope-only", side: "a" }];
+  for (const socket of gateway.namespace.sockets.values()) {
+    if (socket.data.identity?.user.id === 1)
+      socket.emit("pvp:state", incomplete);
+  }
+  await waitArgs(
+    admin,
+    () =>
+      document.body.innerText.includes("El estado del combate está incompleto"),
+    "incomplete checkpoint is reported without a black screen",
+  );
+  assert.equal(
+    await evalArgs(
+      admin,
+      () => document.querySelectorAll("button[data-move-id]").length,
+    ),
+    0,
+  );
+  assert.equal(
+    (await pvpRepository.get(battleId)).session.runtime.serial,
+    serialBeforePause,
+  );
+  assert.ok((await partyState(playerA)).pvpLock);
+  assert.ok((await partyState(playerB)).pvpLock);
+  await clickButton(admin, "Actualizar conexión");
+  await waitArgs(
+    admin,
+    () => document.querySelectorAll("button[data-move-id]").length >= 2,
+    "valid synchronization restores the battle controls",
+  );
+  // Reproduce an already-persisted document written by minimize:true. Reads
+  // through the REAL Mongo repository must repair only known empty maps.
+  persistence.rows.set(
+    battleId,
+    new persistence.model(persistence.rows.get(battleId)).toObject({
+      minimize: true,
+    }),
+  );
+  assert.equal(
+    persistence.rows.get(battleId).session.runtime.pending,
+    undefined,
+  );
+  assert.equal(persistence.rows.get(battleId).commandHashes, undefined);
+  assert.deepEqual(
+    (await pvpRepository.get(battleId)).players.a.snapshot.pokemons,
+    originalA.pokemons,
+  );
   // Model a phone leaving its document; close its server socket so the test does
   // not depend on the polling heartbeat duration of an abandoned browser page.
   await cdp.request("Page.navigate", { url: "about:blank" }, playerA);
-  const gateway = app.get(PvpGateway);
   for (const socket of gateway.namespace.sockets.values()) {
     if (socket.data.identity?.user.id === 2) socket.disconnect(true);
   }
@@ -926,7 +990,7 @@ try {
     serialBeforePause,
   );
   console.log(
-    "PvP Chrome: phone disconnect/reload keeps its reservation and admin reload restores the accepted engine checkpoint.",
+    "PvP Chrome: real Mongoose writes preserve empty maps; incomplete UI state is recoverable; legacy Mongo checkpoint survives player/admin reconnect with reservations intact.",
   );
   // One real round consumes PP and applies residual damage before surrender.
   await evalArgs(admin, () => {

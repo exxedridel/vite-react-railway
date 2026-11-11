@@ -56,6 +56,13 @@ las páginas de la aplicación; no hace falta dejar abierto `/mensajes-prueba`.
 El administrador elige las acciones de ambos equipos; los jugadores observan.
 La pestaña **Batalla manual** conserva el escenario anterior.
 
+El panel valida el checkpoint recibido antes de mostrar controles o procesar
+acciones. Si está incompleto, muestra un aviso y permite **Actualizar conexión**;
+los equipos conservan sus reservas. Para corregir el fallo de pantalla negra
+causado por objetos vacíos eliminados al guardar, desplegar primero la corrección
+de Nest (schema `minimize: false` y recuperación de documentos anteriores), luego
+este frontend y recargar los navegadores originales. No requiere variables nuevas.
+
 1. Cada jugador inicia sesión con su correo en su navegador/dispositivo. Su
    Party debe contener de 1 a 6 Pokémon, al menos uno con HP, con 1–4 movimientos
    válidos de Gen III por Pokémon y sin otro encuentro local activo.
@@ -115,9 +122,12 @@ npm run test:pvp:browser
 ```
 
 La prueba Chrome requiere compilar primero Nest. Usa Express con repositorio en
-memoria, Nest aislado sin Mongo y tres sesiones reales de navegador; prueba
-importación 1/6, bloqueo, desconexión y recargas, un turno, rendición, salida,
-guardado de ambos resultados e idempotencia. No modifica Railway ni bases reales.
+memoria, Nest aislado sin servidor Mongo y tres sesiones reales de navegador.
+MongoPvpRepository ejecuta consultas y serialización Mongoose con una colección
+simulada: prueba objetos vacíos y recuperación de documentos anteriores. Cubre
+estado incompleto sin pantalla negra, importación 1/6, bloqueo, desconexión y
+recargas, un turno, rendición, salida, guardado de ambos e idempotencia.
+No modifica Railway ni bases reales.
 
 ## Cierre de sesión
 
