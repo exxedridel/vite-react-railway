@@ -27,20 +27,13 @@ const FormSchema = z.object({
 });
 
 const Login = () => {
-  const { login, navigate, isIdle, loading } = useAppContext();
+  const { login, navigate, isIdle, loading, user } = useAppContext();
   const [showPassword, setShowPassword] = useState(false);
   const [shouldRender, setShouldRender] = useState(false);
 
   useEffect(() => {
-    try {
-      const bearer_token = localStorage.getItem("bearer_token");
-      if (bearer_token) {
-        navigate("/dashboard");
-      }
-    } catch (error) {
-      console.error("Error:", error);
-    }
-  }, []);
+    if (user) navigate("/dashboard", { replace: true });
+  }, [user, navigate]);
 
   useEffect(() => {
     const timeout = setTimeout(() => {

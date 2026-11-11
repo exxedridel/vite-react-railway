@@ -22,5 +22,8 @@ export const profileReq = async (token, signal) =>
     timeout: 10000,
   });
 
-export const logoutReq = async (config) =>
-  await axios.post(authUrl("logout"), null, { ...config, timeout: 5000 });
+export const logoutReq = async (token) =>
+  await axios.post(authUrl("logout"), null, {
+    headers: { Authorization: `Bearer ${token}` },
+    timeout: 5000,
+  });

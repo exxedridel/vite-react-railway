@@ -34,6 +34,30 @@ requiere Web Locks (navegador compatible y contexto seguro). Si no está disponi
 o falla el guardado, se muestra el error y se conserva la partida original.
 Los datos del escenario administrador siguen siendo locales al dispositivo.
 
+## Cierre de sesión
+
+`/logout` está disponible aunque falle la verificación del perfil. React captura
+el token actual, solicita `POST /api/logout`, elimina la identidad local, vacía
+el estado en memoria y desconecta el chat al salir de su pantalla. Conserva la
+partida guardada por cuenta. MySQL revoca únicamente ese token; otros logins del
+mismo usuario siguen funcionando. Los tokens nuevos llevan un `jti` distinto.
+
+La solicitud tiene un límite de cinco segundos. Si el servidor no confirma el
+cierre, la aplicación sale igualmente de la cuenta en este navegador y muestra
+una advertencia; no afirma que el token remoto haya sido revocado. Una respuesta
+401 indica que la sesión ya no era válida y permite completar el cierre local.
+La inactividad conserva el límite de quince minutos y reconoce actividad táctil;
+al volver del segundo plano comprueba el tiempo transcurrido.
+
+Desplegar primero la actualización MySQL (tabla aditiva `revoked_tokens`) y luego
+React. Nest ya consulta la identidad vigente: rechaza la sesión cerrada al
+reconectar o en la siguiente operación/comprobación, sin una migración del chat.
+
+La prueba Chrome de usuarios incluye logout desde la interfaz, revocación
+comprobada por HTTP/Nest, independencia de otro login de la misma cuenta,
+conservación de la partida y salida con fallo de perfil o red. Se usan cuentas
+y servidores locales de prueba, sin modificar los servicios desplegados.
+
 ## Mensajería: `/mensajes-prueba`
 
 Página protegida para cualquier cuenta registrada. Permite elegir otro usuario

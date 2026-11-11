@@ -20,6 +20,11 @@ explicita y nunca se asigna automaticamente. Los datos admin siguen locales.
 Desplegar primero MySQL, Nest con AUTH_API_URL y finalmente este frontend.
 No afirmar que esta nueva etapa ya se verifico en produccion.
 
+Correccion autorizada posterior (2026-11-10): logout real por token en MySQL.
+`/logout` debe funcionar sin esperar un perfil verificado; limpieza local no
+purga partidas. Si falla el cierre remoto, avisar que solo se confirmo la salida
+local. Nuevos cambios requieren desplegar MySQL primero y React despues.
+
 No guardar credenciales o tokens en la documentacion. Actualizar el contexto cuando el usuario confirme nuevos acuerdos.
 
 Primera integracion local (2026-11-09): ya existe `/mensajes-prueba`, accesible para jugador/admin y conectada al Gateway Nest con el `bearer_token` actual. Usa `VITE_WEBSOCKET_URL` opcional o el origen de `VITE_BASE_SERVICES`; no necesita secretos de firma en React. Ver README.

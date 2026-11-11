@@ -51,14 +51,7 @@ function App() {
           }
         />
       ))}
-      <Route
-        path="/logout"
-        element={
-          <ProtectedRoutes>
-            <Logout />
-          </ProtectedRoutes>
-        }
-      />
+      <Route path="/logout" element={<Logout />} />
       <Route
         path="*"
         element={

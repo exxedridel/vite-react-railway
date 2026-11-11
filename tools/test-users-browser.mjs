@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdtemp, rm } from "node:fs/promises";
+import { createServer as createHttpServer } from "node:http";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -15,12 +16,14 @@ const mysqlRoot = resolve(root, "../mysql-restapi");
 const require = createRequire(join(root, "package.json"));
 const requireNest = createRequire(join(nestRoot, "package.json"));
 const requireMysql = createRequire(join(mysqlRoot, "package.json"));
+const { io } = requireNest("socket.io-client");
 const WebSocket = require("ws");
 const bcrypt = requireMysql("bcryptjs");
 const TEST_SECRET = "pokemon-users-browser-test-only-secret-no-production-use";
 const TEST_PASSWORD = "Browser-fixture-password-123";
 const ADMIN_EMAIL = "qa-admin@example.test";
 const OTHER_EMAIL = "qa-observer@example.test";
+const PLAYER_EMAIL = "qa-player@example.test";
 const NEW_EMAIL = "created-player@example.test";
 const EDITED_EMAIL = "edited-player@example.test";
 const pause = (ms) =>
@@ -146,6 +149,8 @@ let chrome;
 let cdp;
 let profile;
 let cleanupPromise;
+let authFailure = null;
+let logoutAttempts = 0;
 const savedEnvironment = new Map(
   [
     "AUTH_API_URL",
@@ -333,6 +338,142 @@ async function api(sessionId, authUrl, path, method = "GET", body) {
   );
 }
 
+async function capturedToken(sessionId) {
+  const token = await cdp.evaluate(
+    sessionId,
+    'localStorage.getItem("bearer_token")',
+  );
+  assert.ok(
+    typeof token === "string" && token.length > 0,
+    "Expected fixture session",
+  );
+  return token;
+}
+
+async function tokenStatus(authUrl, token) {
+  const response = await fetch(`${authUrl}/api/auth/me`, {
+    headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(5000),
+  });
+  await response.arrayBuffer();
+  return response.status;
+}
+
+async function expectTokenStatus(authUrl, token, status) {
+  const deadline = Date.now() + 7000;
+  while (Date.now() < deadline) {
+    if ((await tokenStatus(authUrl, token)) === status) return;
+    await pause(100);
+  }
+  assert.fail(`The captured test session never returned HTTP ${status}`);
+}
+
+async function independentLogin(authUrl, email) {
+  const response = await fetch(`${authUrl}/api/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password: TEST_PASSWORD }),
+    signal: AbortSignal.timeout(5000),
+  });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.ok(typeof body.token === "string" && body.token.length > 0);
+  return body.token;
+}
+
+async function expectRevokedSocket(backendUrl, token) {
+  const socket = io(`${backendUrl}/mensajes-prueba`, {
+    auth: { token },
+    transports: ["websocket"],
+    autoConnect: false,
+    reconnection: false,
+    forceNew: true,
+    timeout: 5000,
+  });
+  try {
+    const error = await bounded(
+      new Promise((resolveError, reject) => {
+        socket.once("connect", () =>
+          reject(new Error("A revoked session connected to Nest")),
+        );
+        socket.once("connect_error", resolveError);
+        socket.connect();
+      }),
+      7000,
+      "revoked JWT WebSocket rejection",
+    );
+    assert.equal(error.data?.code, "SESSION_REVOKED");
+    assert.equal(socket.connected, false);
+  } finally {
+    socket.disconnect();
+    socket.removeAllListeners();
+  }
+}
+
+async function seedLogoutParty(sessionId, userId) {
+  return cdp.evaluate(
+    sessionId,
+    `(async () => {
+    const [{store,persistor},actions,storage] = await Promise.all([
+      import('/src/store/store.ts'), import('/src/slices/partySlice.ts'),
+      import('/src/store/accountStorage.ts')
+    ]);
+    if (storage.getActiveAccountId() !== ${JSON.stringify(userId)}) throw new Error('Wrong account owner before logout');
+    store.dispatch(actions.configureGame({regions:['kanto'],startingLevel:5,hpMultiplier:1.3}));
+    store.dispatch(actions.addPokemon({
+      id:1,name:'bulbasaur',image:null,types:['grass','poison'],
+      stats:['hp','attack','defense','special-attack','special-defense','speed'].map(name=>({name,value:50})),
+      learnset:{versionGroup:'emerald',moves:[{id:33,name:'tackle'}]}
+    }));
+    store.dispatch(actions.changeBagMoney({amount:77,direction:'add'}));
+    localStorage.setItem(storage.accountNicknameKey(${JSON.stringify(userId)}),'QA logout owner');
+    await persistor.flush();
+    const raw=localStorage.getItem(storage.accountStorageKey(${JSON.stringify(userId)}));
+    if (!raw || store.getState().party.pokemons.length !== 1) throw new Error('Nonempty logout fixture was not saved');
+    return {party:JSON.parse(JSON.parse(raw).party),nickname:'QA logout owner'};
+  })()`,
+  );
+}
+
+async function expectLocalLogout(sessionId, userId, saved) {
+  await cdp.waitFor(
+    sessionId,
+    'location.pathname === "/" && !!document.querySelector("input[name=email]") && localStorage.getItem("bearer_token") === null',
+    "logout returns to login and removes local token",
+    12000,
+  );
+  await cdp.waitFor(
+    sessionId,
+    `(async () => {
+    const [{store},storage]=await Promise.all([import('/src/store/store.ts'),import('/src/store/accountStorage.ts')]);
+    return storage.getActiveAccountId()===null && store.getState().party.pokemons.length===0;
+  })()`,
+    "logout clears the in-memory party and account owner",
+  );
+  const after = await cdp.evaluate(
+    sessionId,
+    `(async () => {
+    const storage=await import('/src/store/accountStorage.ts');
+    const raw=localStorage.getItem(storage.accountStorageKey(${JSON.stringify(userId)}));
+    return {party:raw?JSON.parse(JSON.parse(raw).party):null,nickname:localStorage.getItem(storage.accountNicknameKey(${JSON.stringify(userId)}))};
+  })()`,
+  );
+  assert.deepEqual(
+    after,
+    saved,
+    "Logout must preserve the owner's saved party and nickname",
+  );
+}
+
+async function expectPeerOffline(observer, userId) {
+  await chooseRecipient(observer, userId);
+  await cdp.waitFor(
+    observer,
+    'document.body.innerText.includes("Destinatario desconectado")',
+    "logout disconnects the browser's live message socket",
+  );
+}
+
 async function userDialog(sessionId, values) {
   await cdp.waitFor(
     sessionId,
@@ -415,7 +556,7 @@ try {
     },
     {
       id: 2,
-      email: "qa-player@example.test",
+      email: PLAYER_EMAIL,
       first_name: "QA",
       last_name: "Player",
       role: "player",
@@ -435,7 +576,33 @@ try {
     jwtSecret: TEST_SECRET,
   });
   authServer = await new Promise((resolveListen) => {
-    const server = authApp.listen(0, "127.0.0.1", () => resolveListen(server));
+    const server = createHttpServer((request, response) => {
+      if (request.url === "/api/logout" && request.method === "POST")
+        logoutAttempts++;
+      if (authFailure === "offline") {
+        request.socket.destroy();
+        return;
+      }
+      if (
+        authFailure === "profile" &&
+        request.url === "/api/auth/me" &&
+        request.method === "GET"
+      ) {
+        response.writeHead(503, {
+          "Access-Control-Allow-Origin": "*",
+          "Content-Type": "application/json",
+        });
+        response.end(
+          JSON.stringify({
+            message: "Simulated temporary profile outage",
+            code: "AUTH_UNAVAILABLE",
+          }),
+        );
+        return;
+      }
+      authApp(request, response);
+    });
+    server.listen(0, "127.0.0.1", () => resolveListen(server));
   });
   const authUrl = `http://127.0.0.1:${authServer.address().port}`;
   process.env.JWT_SECRET = TEST_SECRET;
@@ -653,9 +820,131 @@ try {
     "deleted account disconnected or rejected",
   );
   await expectMessages(observer, []);
+
+  // Exercise the actual logout control with a nonempty saved party and live WS.
+  const logoutSession = await openAccount(PLAYER_EMAIL, frontendUrl);
+  await navigate(logoutSession, frontendUrl, "/mensajes-prueba");
+  await chooseRecipient(logoutSession, 3);
+  await chooseRecipient(observer, 2);
+  await cdp.waitFor(
+    observer,
+    'document.body.innerText.includes("Destinatario conectado")',
+    "logout fixture has a live message connection",
+  );
+  const savedLogoutParty = await seedLogoutParty(logoutSession, 2);
+  const revokedToken = await capturedToken(logoutSession);
+  const otherSessionToken = await independentLogin(authUrl, PLAYER_EMAIL);
+  assert.ok(
+    revokedToken !== otherSessionToken,
+    "Separate logins must issue distinct session JWTs",
+  );
+  assert.equal(await tokenStatus(authUrl, revokedToken), 200);
+  const attemptsBeforeLogout = logoutAttempts;
+  await clickLabel(logoutSession, "Cerrar sesión");
+  await expectLocalLogout(logoutSession, 2, savedLogoutParty);
+  await expectTokenStatus(authUrl, revokedToken, 401);
+  assert.ok(
+    logoutAttempts > attemptsBeforeLogout,
+    "UI logout must invoke the real HTTP logout endpoint",
+  );
+  assert.equal(
+    await tokenStatus(authUrl, otherSessionToken),
+    200,
+    "Logging out must preserve another session of the same account",
+  );
+  assert.equal(
+    (await api(admin, authUrl, "/auth/me")).status,
+    200,
+    "Logging out must preserve other accounts' sessions",
+  );
+  await expectPeerOffline(observer, 2);
+  await expectRevokedSocket(backendUrl, revokedToken);
+  console.log(
+    "Browser QA: logout click clears local session, memory and socket, preserves saved party, revokes the captured JWT in HTTP/Nest and leaves independent sessions valid.",
+  );
+
+  // GET /auth/me can fail while POST /logout still works. /logout must remain
+  // reachable from a fresh document even when profile verification is blocked.
+  const profileFailureSession = await openAccount(PLAYER_EMAIL, frontendUrl);
+  await navigate(profileFailureSession, frontendUrl, "/mensajes-prueba");
+  await chooseRecipient(profileFailureSession, 3);
+  const savedProfileFailureParty = await seedLogoutParty(
+    profileFailureSession,
+    2,
+  );
+  const profileFailureToken = await capturedToken(profileFailureSession);
+  authFailure = "profile";
+  await navigate(profileFailureSession, frontendUrl, "/dashboard");
+  await cdp.waitFor(
+    profileFailureSession,
+    'document.body.innerText.includes("No se pudo verificar la cuenta")',
+    "fixture profile verification fails with HTTP 503",
+  );
+  const profileLogoutAttempts = logoutAttempts;
+  await cdp.request(
+    "Page.navigate",
+    { url: frontendUrl + "/logout" },
+    profileFailureSession,
+  );
+  await expectLocalLogout(profileFailureSession, 2, savedProfileFailureParty);
+  authFailure = null;
+  await expectTokenStatus(authUrl, profileFailureToken, 401);
+  assert.ok(
+    logoutAttempts > profileLogoutAttempts,
+    "The public /logout route must run when GET /auth/me returns 503",
+  );
+  // A full document navigation can abandon an Engine.IO polling connection
+  // until its heartbeat. Nest rejects revoked destinations on the next check.
+  await sendFromPage(
+    observer,
+    "Check the revoked destination after navigation",
+  );
+  await expectPeerOffline(observer, 2);
+  // The ACK can accept the sender's own copy without delivery to an offline peer.
+  await expectMessages(observer, [
+    "Check the revoked destination after navigation",
+  ]);
+  console.log(
+    "Browser QA: public /logout works after failed profile verification and still revokes the server session.",
+  );
+
+  // When the identity network is unreachable, a local logout must still succeed
+  // and warn truthfully that the server-side revocation could not be confirmed.
+  const offlineSession = await openAccount(PLAYER_EMAIL, frontendUrl);
+  await navigate(offlineSession, frontendUrl, "/mensajes-prueba");
+  await chooseRecipient(offlineSession, 3);
+  await chooseRecipient(observer, 2);
+  await cdp.waitFor(
+    observer,
+    'document.body.innerText.includes("Destinatario conectado")',
+    "offline logout fixture has a live message connection",
+  );
+  const savedOfflineParty = await seedLogoutParty(offlineSession, 2);
+  const unconfirmedToken = await capturedToken(offlineSession);
+  authFailure = "offline";
+  await clickLabel(offlineSession, "Cerrar sesión");
+  await expectLocalLogout(offlineSession, 2, savedOfflineParty);
+  await cdp.waitFor(
+    offlineSession,
+    'document.body.innerText.includes("No se pudo confirmar el cierre en el servidor.")',
+    "offline logout warns that server revocation was not confirmed",
+    12000,
+  );
+  await expectPeerOffline(observer, 2);
+  authFailure = null;
+  assert.equal(
+    await tokenStatus(authUrl, unconfirmedToken),
+    200,
+    "A failed network request must not claim that server revocation happened",
+  );
+  assert.equal(await tokenStatus(authUrl, otherSessionToken), 200);
+  console.log(
+    "Browser QA: offline logout clears local token/store/socket, preserves saved data and reports unconfirmed remote revocation.",
+  );
+
   assert.deepEqual(cdp.exceptions, [], "Unexpected browser exceptions");
   console.log(
-    "PASS: real Chrome UI login, admin create/edit/delete, public identity, player 403, dynamic private messages, third-user privacy and deleted-session rejection. No real database or deployed credentials used.",
+    "PASS: real Chrome login/CRUD/private messages, deleted-session rejection and real logout with per-session revocation, local save preservation, Nest rejection and profile/network failure recovery. No real database or deployed credentials used.",
   );
 } catch (error) {
   console.error(`FAIL: ${error.message}`);

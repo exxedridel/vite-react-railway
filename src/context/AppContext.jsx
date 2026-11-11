@@ -69,6 +69,8 @@ export const AppContextProvider = ({ children }) => {
   const requestRef = useRef(null);
   const generationRef = useRef(0);
   const logoutRef = useRef(null);
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
 
   useEffect(() => {
     if (brandColor) {
@@ -84,26 +86,32 @@ export const AppContextProvider = ({ children }) => {
     }
   }, [brandColor, brandForeColor]);
 
-  const endSession = useCallback(
-    async (expectedToken, message = "") => {
-      if (expectedToken && readToken() !== expectedToken) return;
-      const generation = ++generationRef.current;
-      requestRef.current?.abort();
-      setUser(null);
-      setPokemonDialogOpen(false);
-      setSessionError(message);
-      setSessionStatus("anonymous");
+  const endSession = useCallback(async (expectedToken, message = "") => {
+    if (expectedToken && readToken() !== expectedToken) return;
+    ++generationRef.current;
+    requestRef.current?.abort();
+    setUser(null);
+    setPokemonDialogOpen(false);
+    setPolizasData(undefined);
+    setCurrentPoliza(undefined);
+    setSessionError(message);
+    setSessionStatus("anonymous");
+    try {
       localStorage.removeItem("bearer_token");
-      try {
-        await clearAccountStore();
-      } catch {
-        toast.error("No se pudo completar el guardado local al cerrar sesión.");
-      }
-      if (generationRef.current === generation)
-        navigate("/", { replace: true });
-    },
-    [navigate],
-  );
+    } catch {
+      toast.error(
+        "El navegador no permitió borrar la sesión guardada. Revisa sus permisos de almacenamiento.",
+      );
+    }
+    try {
+      await clearAccountStore();
+    } catch {
+      toast.error("No se pudo completar el guardado local al cerrar sesión.");
+    }
+    const currentToken = readToken();
+    if (!currentToken || (expectedToken && currentToken === expectedToken))
+      navigateRef.current("/", { replace: true });
+  }, []);
 
   const validateToken = useCallback(
     async (token = readToken()) => {
@@ -151,7 +159,7 @@ export const AppContextProvider = ({ children }) => {
 
   useEffect(() => {
     const token = readToken();
-    if (token) void validateToken(token);
+    if (token && !logoutRef.current) void validateToken(token);
     else setSessionStatus("anonymous");
     function changedSession(event) {
       if (event.key !== "bearer_token" && event.key !== null) return;
@@ -201,31 +209,42 @@ export const AppContextProvider = ({ children }) => {
     }
   };
 
-  const logout = async (token = readToken()) => {
-    if (logoutRef.current) return logoutRef.current;
-    if (token && readToken() !== token) return;
-    const operation = (async () => {
-      setLoading(true);
+  const logout = useCallback(
+    async (token = readToken()) => {
+      if (logoutRef.current) return logoutRef.current;
+      if (token && readToken() !== token) return;
+      const operation = (async () => {
+        setLoading(true);
+        try {
+          const request = token
+            ? logoutReq(token).then(
+                () => true,
+                // An expired or already-revoked session is already closed.
+                (error) => error?.response?.status === 401,
+              )
+            : Promise.resolve(true);
+          await endSession(token);
+          const confirmed = await request;
+          if (readToken() === null) {
+            if (confirmed) toast.success("Se ha cerrado tu sesión.");
+            else
+              toast.warning(
+                "Sesión cerrada en este dispositivo. No se pudo confirmar el cierre en el servidor.",
+              );
+          }
+        } finally {
+          setLoading(false);
+        }
+      })();
+      logoutRef.current = operation;
       try {
-        const request = token
-          ? logoutReq({ headers: { Authorization: `Bearer ${token}` } }).catch(
-              () => {},
-            )
-          : Promise.resolve();
-        await endSession(token);
-        await request;
-        toast.success("Se ha cerrado tu sesión.");
+        await operation;
       } finally {
-        setLoading(false);
+        logoutRef.current = null;
       }
-    })();
-    logoutRef.current = operation;
-    try {
-      await operation;
-    } finally {
-      logoutRef.current = null;
-    }
-  };
+    },
+    [endSession],
+  );
 
   return (
     <AppContext.Provider

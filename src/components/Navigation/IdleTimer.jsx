@@ -1,56 +1,68 @@
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 import { useAppContext } from "@/context/AppContext";
 
+const IDLE_TIMEOUT_MS = 15 * 60 * 1000;
+
 const IdleTimer = ({ children }) => {
-  const { logout, navigate, isIdle, setIsIdle } = useAppContext();
-
-  const idleTimeout = 15 * 60 * 1000;
-  let timer;
-  let resetEvents = [];
-
-  const resetTimer = () => {
-    clearTimeout(timer);
-    startIdleTimer();
-  };
-
-  const handleIdle = async () => {
-    setIsIdle(true);
-    try {
-      const bearer_token = localStorage.getItem("bearer_token");
-      await logout(bearer_token);
-    } catch (error) {
-      console.error("Error:", error);
-    }
-  };
-
-  const startIdleTimer = () => {
-    timer = setTimeout(handleIdle, idleTimeout);
-  };
+  const { logout, setIsIdle } = useAppContext();
 
   useEffect(() => {
-    if (isIdle) {
-      setIsIdle(false);
-    }
-    startIdleTimer();
+    let timer;
+    let lastActivity = Date.now();
+    let closing = false;
+    setIsIdle(false);
 
-    const events = ["mousemove", "keydown"];
-    resetEvents = events.map((event) => {
-      const eventHandler = () => {
-        resetTimer();
-      };
-      document.addEventListener(event, eventHandler);
-      return { event, eventHandler };
-    });
+    function checkIdle() {
+      window.clearTimeout(timer);
+      if (closing) return;
+      const remaining = IDLE_TIMEOUT_MS - (Date.now() - lastActivity);
+      if (remaining <= 0) {
+        closing = true;
+        setIsIdle(true);
+        void logout();
+      } else {
+        timer = window.setTimeout(checkIdle, remaining);
+      }
+    }
+
+    function activity() {
+      if (closing) return;
+      // Background tabs may delay timers: a late touch must not renew an expired session.
+      if (Date.now() - lastActivity >= IDLE_TIMEOUT_MS) {
+        checkIdle();
+        return;
+      }
+      lastActivity = Date.now();
+      checkIdle();
+    }
+
+    function visibilityChanged() {
+      if (document.visibilityState === "visible") checkIdle();
+    }
+
+    const events = [
+      "pointerdown",
+      "pointermove",
+      "keydown",
+      "input",
+      "wheel",
+      "touchstart",
+    ];
+    events.forEach((event) =>
+      document.addEventListener(event, activity, { passive: true }),
+    );
+    document.addEventListener("visibilitychange", visibilityChanged);
+    window.addEventListener("focus", checkIdle);
+    checkIdle();
 
     return () => {
-      resetEvents.forEach(({ event, eventHandler }) => {
-        document.removeEventListener(event, eventHandler);
-      });
-      clearTimeout(timer);
+      events.forEach((event) => document.removeEventListener(event, activity));
+      document.removeEventListener("visibilitychange", visibilityChanged);
+      window.removeEventListener("focus", checkIdle);
+      window.clearTimeout(timer);
     };
-  }, []);
+  }, [logout, setIsIdle]);
 
   return <div>{children}</div>;
 };
-
 export default IdleTimer;
