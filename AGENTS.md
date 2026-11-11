@@ -9,6 +9,15 @@ Acuerdo del usuario confirmado el 2026-11-08:
 
 Si esta disponible, leer [la memoria compartida](../PROJECT_MEMORY.md). Este resumen se conserva tambien aqui para sesiones que abran solo este repositorio.
 
+FutureSight global corregido 2026-11-11: auditoría native boardfuture produce
+resultado de impacto en wild/trainer; no volver a aplicar HP nativo ni tirar
+RNG extra. Legacy no-wild usa pendingDelayedAttacks persistido en BattleField
+y consume ticks sólo al finalizar turnos (no corregir contador). 248/353 comparten
+posición y stats de lanzamiento. NPC consulta slot futuremove serializado y evita
+otro futuro con alternativa legal, incluso al cambiar/recargar. Test específico
+test:future-sight + minified browser + Chrome Sabrina cubren estas rutas.
+Para esta corrección sólo desplegar React. No se cambian Nest/MySQL ni .env.
+
 Trainer Battle autorizado 2026-11-11 sustituye manual/editor: humano A conectado
 contra preset NPC B Kanto. Usuario eligió NPC AUTOMÁTICO: IA/motor local admin,
 acciones humano por admin. 18 presets/68 slots exactos + variantes por starter

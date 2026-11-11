@@ -11,6 +11,7 @@ npm ci
 npm run dev
 npm run typecheck
 npm run build
+npm run test:future-sight
 ```
 
 `npm run typecheck` revisa aplicación y pruebas con TypeScript estricto.
@@ -18,6 +19,19 @@ npm run build
 no elimina archivos automáticamente. Las referencias dinámicas a assets deben
 revisarse antes de eliminar recursos. `npm run test:arena-status` ejecuta las
 pruebas de estados/sprites de la arena con React Test Renderer.
+
+`test:future-sight` comprueba Future Sight y Doom Desire en los adaptadores
+salvaje/Trainer y el motor local anterior: lanzamiento sin daño inmediato,
+impacto al final del segundo turno posterior, recargas, cambios, daño único y
+fallos de precisión. El resumen muestra el impacto como una acción propia con
+HP reales; el motor nativo conserva su cálculo y PRNG originales.
+
+El NPC evita usar otro ataque futuro mientras haya uno pendiente sobre la
+posición objetivo, incluso si cambia el Pokémon. Elige otra acción legal y
+vuelve a considerar esos ataques después del impacto. Los movimientos forzados
+y los casos sin alternativa conservan las reglas nativas para poder avanzar.
+En encuentros locales no salvajes, sólo **Finalizar turno** reduce el contador
+del ataque pendiente; corregir manualmente el número de turno no aplica daño.
 
 Railway ejecuta `npm start` para servir `dist` con soporte de rutas SPA y el
 puerto `PORT`. Variables locales de ejemplo en `.env.example`; las variables

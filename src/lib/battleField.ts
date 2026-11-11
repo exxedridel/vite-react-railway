@@ -4,6 +4,28 @@ export type WeatherKind = "sun" | "rain" | "sand" | "hail";
 export type FieldSource =
   | { side: "player"; captureId: string }
   | { side: "opponent" };
+/** Gen III future attacks belong to a position, never to its current occupant. */
+export type DelayedFieldAttack = {
+  moveId: 248 | 353;
+  moveName: string;
+  source: FieldSource;
+  targetSide: "player" | "opponent";
+  attackerName: string;
+  level: number;
+  remainingTurns: number;
+  damage: number;
+  accuracy: number;
+  accuracyRoll: number;
+  sourceAccuracyStage: number;
+  attackStat: "attack" | "special-attack";
+  defenseStat: "defense" | "special-defense";
+  attack: number;
+  defense: number;
+  attackStage: number;
+  defenseStage: number;
+  baseDamage: number;
+  burn: number;
+};
 export type BattleField = {
   version: 1;
   turn: number;
@@ -12,6 +34,7 @@ export type BattleField = {
   weather: { kind: WeatherKind; turnsLeft: number; permanent?: boolean } | null;
   mudSport: FieldSource[] | null;
   waterSport: FieldSource[] | null;
+  pendingDelayedAttacks?: DelayedFieldAttack[];
 };
 export const WEATHER_LABELS: Record<WeatherKind, string> = {
   sun: "Sunny Day",
@@ -98,6 +121,13 @@ export function fieldMoveFailure(
   moveId: number,
   source: FieldSource,
 ): string | null {
+  if (
+    [248, 353].includes(moveId) &&
+    field.pendingDelayedAttacks?.some(
+      (attack) => attack.targetSide !== source.side,
+    )
+  )
+    return "Ya hay un ataque futuro pendiente contra esa posición; su duración no se reinicia.";
   const weather = WEATHER_MOVES[moveId];
   if (weather && field.weather?.kind === weather)
     return `${WEATHER_LABELS[weather]} ya está activo; el movimiento falla sin reiniciar su duración.`;

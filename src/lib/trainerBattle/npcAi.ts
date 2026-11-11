@@ -24,6 +24,35 @@ const primary = new Set([
 ]);
 const toType = (type: string) =>
   type[0].toUpperCase() + type.slice(1).toLowerCase();
+const delayedMoveIds = new Set([248, 353]); // Future Sight / Doom Desire
+
+/** Delayed hits belong to a battle position, not the current capture. Reading
+ * the persisted native condition also works after either Pokemon switches or
+ * the administrator reloads, without restoring or advancing the simulator.
+ */
+function targetHasDelayedAttack(engine: string): boolean {
+  try {
+    const snapshot = JSON.parse(engine) as {
+      sides?: {
+        id?: string;
+        slotConditions?: {
+          futuremove?: { move?: string; duration?: number };
+        }[];
+      }[];
+    };
+    const pending = snapshot.sides?.find((side) => side.id === "p1")
+      ?.slotConditions?.[0]?.futuremove;
+    return (
+      !!pending &&
+      (pending.move === "futuresight" || pending.move === "doomdesire") &&
+      (pending.duration === undefined || pending.duration > 0)
+    );
+  } catch {
+    // Invalid checkpoints are rejected by the battle panel. The policy itself
+    // must not throw or invent a new effect when used with incomplete fixtures.
+    return false;
+  }
+}
 
 /** A small deterministic NPC policy, based on the visible active Pokémon.
  * It never reads pending A or advances a simulator/PRNG to inspect its choice.
@@ -155,8 +184,11 @@ export function chooseNpcTrainerAction(
   const available = request.moves.filter(
     (move) => !move.disabled && (move.pp > 0 || move.maxpp === 0),
   );
-  if (available.length) {
-    const ranked = available
+  const useful = targetHasDelayedAttack(runtime.engine)
+    ? available.filter((move) => !delayedMoveIds.has(move.id))
+    : available;
+  if (useful.length) {
+    const ranked = useful
       .map((move) => ({
         move,
         score: active ? score(move.id, active) : 0,
@@ -168,6 +200,11 @@ export function chooseNpcTrainerAction(
     const substitute = replacement();
     if (substitute) return substitute;
   }
+  // A native request can legally offer only a delayed move that would fail
+  // while its previous hit is pending. If there is no legal replacement,
+  // choose that offered move so the turn can advance to the scheduled hit.
+  // Inventing Wait/Struggle or returning null would deadlock the battle.
+  if (available.length) return { kind: "move", moveId: available[0].id };
   // An ordinary native move request with exhausted PP supplies Struggle as an
   // available move above. A missing legal request is not an excuse to invent it.
   return null;

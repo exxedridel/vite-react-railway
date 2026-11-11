@@ -6,6 +6,7 @@ export type BattleOutcome =
   | "blocked"
   | "manual";
 export type BattleResult = {
+  delayedAttack?: import("@/lib/battleField").DelayedFieldAttack;
   engine?: "emerald";
   protocol?: string[];
   attackStat?: "attack" | "special-attack";

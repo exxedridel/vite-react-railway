@@ -11,7 +11,7 @@
     "lint": "eslint src --ext js,jsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
     "start": "serve dist -s -n -L -p $PORT",
-    "test:combat": "node --import tsx --test tests/emerald-engine.test.ts tests/statusCleanup.test.ts tests/fullRestore.test.ts tests/full-restore-restrictions.test.ts tests/trainer-battle.test.ts tests/trainer-items.test.ts tests/trainer-session.test.ts && node tools/test-emerald-browser.mjs && node tools/test-trainer-browser.mjs && node tools/test-trainer-privacy.mjs",
+    "test:combat": "node --import tsx --test tests/emerald-engine.test.ts tests/statusCleanup.test.ts tests/fullRestore.test.ts tests/full-restore-restrictions.test.ts tests/trainer-battle.test.ts tests/trainer-items.test.ts tests/trainer-session.test.ts tests/future-sight-native.test.ts tests/legacy-delayed-attacks.test.ts tests/npc-delayed-moves.test.ts && node tools/test-emerald-browser.mjs && node tools/test-trainer-browser.mjs && node tools/test-trainer-privacy.mjs",
     "catalog:emerald": "node tools/build-emerald-catalog.mjs",
     "test:messages:browser": "node tools/test-messages-browser.mjs",
     "test:users:browser": "node tools/test-users-browser.mjs",
@@ -20,7 +20,8 @@
     "test:pvp:party": "node tools/test-account-storage.mjs --pvp",
     "test:pvp:browser": "node tools/test-pvp-browser.mjs",
     "test:trainer:catalog": "node --import tsx --test tests/kanto-trainers.test.ts",
-    "test:trainer:browser": "node tools/test-pvp-browser.mjs"
+    "test:trainer:browser": "node tools/test-pvp-browser.mjs",
+    "test:future-sight": "node --import tsx --test tests/future-sight-native.test.ts tests/legacy-delayed-attacks.test.ts tests/npc-delayed-moves.test.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.2.0",

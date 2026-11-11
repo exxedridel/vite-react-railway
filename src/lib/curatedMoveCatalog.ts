@@ -12,6 +12,18 @@ const FIELD_DESCRIPTIONS: Record<number, string> = {
 export const CURATED_MOVE_CATALOG: typeof GEN3_MOVE_DATA = {
   ...GEN3_MOVE_DATA,
   ...Object.fromEntries(
+    [248, 353].map((id) => [
+      id,
+      {
+        ...GEN3_MOVE_DATA[id],
+        automation: "automatic",
+        handler: "delayedAttack",
+        manualReason: undefined,
+        description: `${GEN3_MOVE_DATA[id].name}: programa daño sin tipo al final de dos turnos posteriores. El daño usa las estadísticas de lanzamiento, sin STAB ni crítico, y alcanza al ocupante de la posición aunque cambien los Pokémon. No se acumula con otro ataque futuro en esa posición.`,
+      },
+    ]),
+  ),
+  ...Object.fromEntries(
     Object.entries(FIELD_DESCRIPTIONS).map(([id, description]) => [
       id,
       {

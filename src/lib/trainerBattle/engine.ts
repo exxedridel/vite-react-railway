@@ -444,7 +444,7 @@ function resultsFrom(
       active[values[2].startsWith("p1") ? "a" : "b"] = actorKey(values[2]);
       current = undefined;
     }
-    if (event === "move" || event === "cant") {
+    if (event === "move" || event === "boardfuture" || event === "cant") {
       if (
         event === "move" &&
         values.some((value) => value.startsWith("[from] move:")) &&
@@ -456,13 +456,13 @@ function resultsFrom(
       const side = values[2].startsWith("p1") ? "a" : "b";
       attacker = actorKey(values[2]);
       const target =
-        values[3] && event === "move"
+        values[3] && event !== "cant"
           ? actorKey(values[4])
           : active[side === "a" ? "b" : "a"];
       const defender = names[target]
         ? target
         : active[side === "a" ? "b" : "a"];
-      const move = event === "move" ? dex.moves.get(values[3]) : undefined;
+      const move = event !== "cant" ? dex.moves.get(values[3]) : undefined;
       current = {
         id: `${id}:${output.length}`,
         captureId: roster.find((entry) => entry.key === attacker)!.capture
@@ -476,9 +476,11 @@ function resultsFrom(
         message:
           event === "cant"
             ? `No pudo actuar: ${values[3]}`
-            : values.includes("[still]")
-              ? "Preparando movimiento"
-              : "Movimiento ejecutado",
+            : event === "boardfuture"
+              ? "Impacto del ataque diferido."
+              : values.includes("[still]")
+                ? "Preparando movimiento"
+                : "Movimiento ejecutado",
         hitChance: null,
         accuracyRoll: null,
         criticalChance: 0,

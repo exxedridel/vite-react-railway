@@ -52,6 +52,17 @@ export default function BattleTurnHighlightsDialog({
               result.outcome,
             );
             const preparing = result.message === "Preparando movimiento";
+            const delayedMove = [248, 353].includes(
+              result.resolvedMoveId ?? result.moveId,
+            );
+            const delayedImpact =
+              delayedMove &&
+              protocol.some((line) => line.startsWith("|boardfuture|"));
+            const delayedLaunch =
+              delayedMove &&
+              !delayedImpact &&
+              !noHit &&
+              result.appliedDamage === 0;
             return (
               <article
                 key={result.id}
@@ -66,18 +77,25 @@ export default function BattleTurnHighlightsDialog({
                   <span className="capitalize">{result.attackerName}</span> ·{" "}
                   {result.moveName}
                 </h3>
+                {delayedImpact && (
+                  <p className="text-sm text-muted-foreground">
+                    Impacto del ataque diferido
+                  </p>
+                )}
                 <p className="mt-2 text-xl font-bold tabular-nums">
                   {preparing
                     ? "Preparando ataque"
-                    : result.outcome === "miss"
-                      ? "Falló"
-                      : result.outcome === "immune"
-                        ? "Sin efecto · Inmune"
-                        : result.outcome === "blocked"
-                          ? "No pudo actuar"
-                          : result.appliedDamage > 0
-                            ? `${result.appliedDamage} HP de daño`
-                            : "Sin daño directo al HP"}
+                    : delayedLaunch
+                      ? "Ataque programado · dentro de 2 turnos"
+                      : result.outcome === "miss"
+                        ? "Falló"
+                        : result.outcome === "immune"
+                          ? "Sin efecto · Inmune"
+                          : result.outcome === "blocked"
+                            ? "No pudo actuar"
+                            : result.appliedDamage > 0
+                              ? `${result.appliedDamage} HP de daño`
+                              : "Sin daño directo al HP"}
                 </p>
                 <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-sm font-semibold">
                   {result.critical && (
@@ -97,6 +115,7 @@ export default function BattleTurnHighlightsDialog({
                   )}
                   {!noHit &&
                     !preparing &&
+                    !delayedImpact &&
                     result.appliedDamage > 0 &&
                     !superEffective &&
                     !resisted && (

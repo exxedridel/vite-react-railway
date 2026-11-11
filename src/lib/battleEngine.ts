@@ -71,7 +71,8 @@ export function criticalChance(move: PokemonMove): number {
     e.automation === "manual" ||
     e.parameters.damageClass === "status" ||
     fixedHandlers.has(e.handler ?? "") ||
-    e.handler === "spitUp"
+    e.handler === "spitUp" ||
+    e.handler === "delayedAttack"
   )
     return 0;
   return [1 / 16, 1 / 8, 1 / 4, 1 / 3, 1 / 2][Math.min(4, e.critStage)];
@@ -295,6 +296,74 @@ export function resolveBattleMove(
     r.outcome = "manual";
     r.message = "Uso registrado; este efecto aún requiere resolución manual.";
     r.manualEffect = e.description;
+    return r;
+  }
+  if (move.id === 248 || move.id === 353) {
+    // Native Gen III Future Sight / Doom Desire compute typeless damage on
+    // launch. Accuracy is resolved later, using a roll already in the action.
+    const physical = move.id === 353;
+    const attackStat = physical ? "attack" : "special-attack";
+    const defenseStat = physical ? "defense" : "special-defense";
+    const attackStage = normalizeStages(p.battleStages)[attackStat];
+    const defenseStage = normalizeStages(o.stages)[defenseStat];
+    const rawAttack = p.stats.find((stat) => stat.name === attackStat)?.value;
+    const rawDefense = q.stats.find((stat) => stat.name === defenseStat)?.value;
+    if (!rawAttack || !rawDefense)
+      return stop("Estadísticas ofensivas/defensivas inválidas.");
+    const attack = getEffectiveStat(rawAttack, attackStage);
+    const defense = getEffectiveStat(rawDefense, defenseStage);
+    const burn = physical && c.statuses?.includes("burned") ? 0.5 : 1;
+    let base = Math.floor(
+      Math.floor(
+        ((Math.floor((2 * p.level) / 5) + 2) * (physical ? 120 : 80) * attack) /
+          defense,
+      ) / 50,
+    );
+    base = Math.floor(base * burn);
+    if (physical && base === 0) base = 1;
+    base += 2;
+    const damage = Math.max(
+      1,
+      Math.floor((base * (100 - Math.floor(random(0) * 16))) / 100),
+    );
+    if (!Number.isSafeInteger(damage))
+      return stop("Daño fuera del rango permitido.");
+    r.attackStat = attackStat;
+    r.defenseStat = defenseStat;
+    r.attack = attack;
+    r.defense = defense;
+    r.attackStage = attackStage;
+    r.defenseStage = defenseStage;
+    r.baseDamage = base;
+    r.burn = burn;
+    r.criticalChance = 0;
+    r.damageType = "???";
+    r.outcome = "status";
+    r.message = `${move.displayName} quedó programado: impactará al final de dos turnos posteriores.`;
+    r.delayedAttack = {
+      moveId: move.id,
+      moveName: move.displayName,
+      source: { ...fieldSource },
+      targetSide: fieldSource.side === "player" ? "opponent" : "player",
+      attackerName: p.name,
+      level: p.level,
+      remainingTurns: 3,
+      damage,
+      accuracy: physical ? 85 : 90,
+      accuracyRoll: rolls.accuracy * 100,
+      sourceAccuracyStage: normalizeStages(p.battleStages).accuracy,
+      attackStat,
+      defenseStat,
+      attack,
+      defense,
+      attackStage,
+      defenseStage,
+      baseDamage: base,
+      burn,
+    };
+    r.effectMessages!.push(
+      "No causa daño inmediato. La precisión se comprobará al llegar el ataque; cambiar Pokémon no cancela el ataque futuro.",
+    );
     return r;
   }
   if (

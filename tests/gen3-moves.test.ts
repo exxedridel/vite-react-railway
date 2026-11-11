@@ -34,20 +34,26 @@ function move(id: number): LearnedMove {
   };
 }
 function pokemon(name: string) {
-  return createLeveledPokemon({
-    id: 96,
-    name,
-    types: ["normal"],
-    image: null,
-    stats: [
-      "hp",
-      "attack",
-      "defense",
-      "special-attack",
-      "special-defense",
-      "speed",
-    ].map((name) => ({ name, value: 300 })),
-  });
+  // These fixtures declare 250/400 HP below: use a level whose real maximum
+  // supports those values rather than the application's level-5 default.
+  return createLeveledPokemon(
+    {
+      id: 96,
+      name,
+      types: ["normal"],
+      image: null,
+      stats: [
+        "hp",
+        "attack",
+        "defense",
+        "special-attack",
+        "special-defense",
+        "speed",
+      ].map((name) => ({ name, value: 300 })),
+    },
+    undefined,
+    50,
+  );
 }
 function fixture(id: number): PartyState {
   return {
@@ -351,8 +357,9 @@ test("Jump Kick crash on miss, not Ghost immunity", () => {
   assert.equal(n.lastBattleResult!.outcome, "miss");
   assert.ok(hp(n)[0] < hp(s)[0]);
   assert.equal(hp(n)[1], hp(s)[1]);
-  s.opponent!.pokemon.types = ["ghost"];
-  assert.equal(hp(execute(s, 26).next)[0], hp(s)[0]);
+  const ghost = structuredClone(s);
+  ghost.opponent!.pokemon.types = ["ghost"];
+  assert.equal(hp(execute(ghost, 26).next)[0], hp(ghost)[0]);
 });
 test("fixed damage ignores STAB and defenses", () => {
   for (const [id, damage] of [
@@ -386,8 +393,8 @@ test("duplicate and changed target rejected", () => {
   assert.equal(reducer(altered, action), altered);
 });
 test("manual effects never invent damage", () => {
-  const s = fixture(248),
-    n = execute(s, 248).next;
+  const s = fixture(118),
+    n = execute(s, 118).next;
   assert.equal(n.lastBattleResult!.outcome, "manual");
   assert.deepEqual(hp(n), hp(s));
 });
@@ -416,7 +423,7 @@ for (const e of Object.values(catalog))
         },
         0,
       ).next;
-      assert.ok(n.lastBattleResult);
+      assert.ok(n.lastBattleResult, `catalog ${e.id} ${side}: missing result`);
       assert.equal(n.activityHistory!.length, 1);
       if (e.automation === "manual")
         assert.equal(n.lastBattleResult!.outcome, "manual");
@@ -428,8 +435,14 @@ for (const e of Object.values(catalog))
           n.lastBattleResult!.message,
         );
       for (const p of [n.pokemons[0].pokemon, n.opponent!.pokemon]) {
-        assert.ok(Number.isSafeInteger(p.stats[0].value));
-        assert.ok(p.stats[0].value >= 0 && p.stats[0].value <= getMaxHp(p)!);
+        assert.ok(
+          Number.isSafeInteger(p.stats[0].value),
+          `catalog ${e.id}: HP must be an integer`,
+        );
+        assert.ok(
+          p.stats[0].value >= 0 && p.stats[0].value <= getMaxHp(p)!,
+          `catalog ${e.id}: HP must stay within the fixture's real maximum`,
+        );
       }
     });
 test("historical removals: Waterfall/Volt Tackle/Rapid Spin/Charge", () => {
@@ -484,9 +497,9 @@ test("Heal Bell heals primary conditions of own entire party, not confusion", ()
 test("Sleep Talk does not silently reroll manual moves", () => {
   const s = fixture(214);
   s.pokemons[0].statuses = ["asleep"];
-  s.pokemons[0].moves!.push(move(248));
+  s.pokemons[0].moves!.push(move(102));
   const n = execute(s, 214).next;
-  assert.equal(n.lastBattleResult!.resolvedMoveId, 248);
+  assert.equal(n.lastBattleResult!.resolvedMoveId, 102);
   assert.equal(n.lastBattleResult!.outcome, "manual");
   assert.deepEqual(hp(n), hp(s));
 });

@@ -31,10 +31,16 @@ export function turnHighlights(
   const who = (s: string = "") => names[key(s)] ?? key(s);
   for (const line of lines) {
     const [, event, actor, value, amount] = line.split("|");
-    if (event === "move" || event === "cant") inMove = true;
+    if (event === "move" || event === "cant" || event === "boardfuture")
+      inMove = true;
     if (["boardend", "upkeep", "turn"].includes(event)) inMove = false;
     const name = who(actor);
     switch (event) {
+      case "boardfuture":
+        events.push(
+          `${name}: impacto diferido de ${value} sobre ${who(amount)}.`,
+        );
+        break;
       case "-damage":
       case "-heal": {
         const next = parseInt(value, 10),

@@ -1406,9 +1406,208 @@ try {
     (await partyState(playerA)).pvpRevision,
     trainerFinal.pvpRevision,
   );
+  // Regression: Sabrina must schedule Future Sight once, use other actions
+  // while it is pending, and show its actual delayed damage after a reload.
+  await evalArgs(playerA, async () => {
+    const [{ store, persistor }, storage, stats, catalog] = await Promise.all([
+      import("/src/store/store.ts"),
+      import("/src/store/accountStorage.ts"),
+      import("/src/lib/pokemonStats.ts"),
+      import("/src/lib/trainerBattle/catalog.ts"),
+    ]);
+    const party = JSON.parse(JSON.stringify(store.getState().party));
+    const species = catalog.trainerSpecies.find((entry) => entry.id === 143);
+    party.pokemons = [
+      {
+        captureId: crypto.randomUUID(),
+        origin: "wild",
+        pokemon: stats.createLeveledPokemon(
+          {
+            id: species.id,
+            name: species.name,
+            types: species.types,
+            image: null,
+            stats: species.baseStats,
+          },
+          species.baseStats,
+          100,
+          1.3,
+        ),
+        moves: [catalog.trainerMoves.find((move) => move.id === 150)],
+        statuses: [],
+        statusTurns: {},
+      },
+    ];
+    store.dispatch({ type: storage.PVP_PARTY_COMMIT, payload: party });
+    await persistor.flush();
+  });
+  await waitArgs(
+    admin,
+    () => !!document.querySelector('select[aria-label="Jugador Trainer A"]'),
+    "Trainer lobby after previous result",
+  );
+  await field(admin, 'select[aria-label="Jugador Trainer A"]', "2");
+  await field(admin, 'select[aria-label="Preset Trainer"]', "kanto-sabrina");
+  await clickButton(admin, "Solicitar equipo y preparar Trainer");
+  await waitArgs(
+    admin,
+    () =>
+      [...document.querySelectorAll("button")].some(
+        (button) =>
+          button.textContent.trim() === "Iniciar Trainer Battle" &&
+          !button.disabled,
+      ),
+    "Sabrina ready",
+  );
+  await evalArgs(admin, () => {
+    const original = crypto.getRandomValues.bind(crypto);
+    crypto.getRandomValues = (array) => {
+      if (array instanceof Uint16Array && array.length === 4) {
+        array.set([1, 2, 3, 5]);
+        return array;
+      }
+      return original(array);
+    };
+  });
+  await clickButton(admin, "Iniciar Trainer Battle");
+  await waitArgs(
+    admin,
+    () => !!document.querySelector('[aria-label="NPC Sabrina"]'),
+    "automatic Sabrina battle started",
+  );
+  const sightBattleId = (await pvpRepository.locked())[0].battleId;
+  const ownHp = (row) =>
+    row.session.teams.a.pokemons[0].pokemon.stats.find(
+      (stat) => stat.name === "hp",
+    ).value;
+  const beforeSightHp = ownHp(await pvpRepository.get(sightBattleId));
+  const chooseSplash = async (label) => {
+    await waitArgs(
+      admin,
+      () =>
+        [...document.querySelectorAll('button[data-move-id="150"]')].some(
+          (button) => !button.disabled,
+        ),
+      label + " action available",
+    );
+    await evalArgs(admin, () =>
+      document.querySelector('button[data-move-id="150"]').click(),
+    );
+    await waitArgs(
+      admin,
+      () => !!document.querySelector('[role="dialog"]'),
+      label + " summary",
+    );
+  };
+  const closeSummary = async () => {
+    await clickButton(admin, "Volver al combate", "[role=dialog]");
+    await waitArgs(
+      admin,
+      () => !document.querySelector('[role="dialog"]'),
+      "close delayed turn summary",
+    );
+  };
+  await chooseSplash("Future Sight cast");
+  let sightBattle = await pvpRepository.get(sightBattleId);
+  assert.equal(
+    ownHp(sightBattle),
+    beforeSightHp,
+    "Future Sight has no immediate damage",
+  );
+  assert.equal(
+    sightBattle.session.history[0].results.find(
+      (result) => result.actorSide === "opponent",
+    ).moveId,
+    248,
+  );
+  const sightPp = sightBattle.session.runtime.requests.b.moves.find(
+    (move) => move.id === 248,
+  ).pp;
+  await waitArgs(
+    admin,
+    () =>
+      document
+        .querySelector('[role="dialog"]')
+        .textContent.includes("Ataque programado"),
+    "cast is described as scheduled, not missing damage",
+  );
+  await closeSummary();
+  await cdp.request("Page.reload", {}, admin);
+  await waitArgs(
+    admin,
+    () => !!document.querySelector('[aria-label="NPC Sabrina"]'),
+    "Future Sight checkpoint reload",
+  );
+  await chooseSplash("Future Sight waiting");
+  sightBattle = await pvpRepository.get(sightBattleId);
+  assert.equal(
+    sightBattle.session.runtime.requests.b.moves.find((move) => move.id === 248)
+      .pp,
+    sightPp,
+    "NPC does not repeat the queued Future Sight",
+  );
+  await closeSummary();
+  const beforeImpactHp = ownHp(sightBattle);
+  await chooseSplash("Future Sight impact");
+  sightBattle = await pvpRepository.get(sightBattleId);
+  const impact = sightBattle.session.history[0].results.find(
+    (result) => result.moveId === 248,
+  );
+  assert.ok(
+    impact?.appliedDamage > 0,
+    "delayed damage has its own Future Sight result: " + JSON.stringify(impact),
+  );
+  assert.equal(
+    sightBattle.session.runtime.requests.b.moves.find((move) => move.id === 248)
+      .pp,
+    sightPp,
+    "no repeated cast on the impact turn",
+  );
+  assert.equal(
+    beforeImpactHp - ownHp(sightBattle),
+    sightBattle.session.history[0].results
+      .filter((result) => result.actorSide === "opponent")
+      .reduce((sum, result) => sum + result.appliedDamage, 0),
+    "summary damage matches the real HP reduction",
+  );
+  await waitArgs(
+    admin,
+    () =>
+      document
+        .querySelector('[role="dialog"]')
+        .textContent.includes("Impacto del ataque diferido") &&
+      document
+        .querySelector('[role="dialog"]')
+        .textContent.includes("Future Sight"),
+    "Future Sight impact card is visible",
+  );
+  await closeSummary();
+  await evalArgs(admin, () =>
+    [...document.querySelectorAll("button")]
+      .find((button) => button.textContent.trim().startsWith("Rendirse:"))
+      .click(),
+  );
+  await clickButton(admin, "Confirmar rendición", "[role=dialog]");
+  await waitArgs(
+    admin,
+    () => document.body.innerText.includes("¡Victoria de Sabrina!"),
+    "finish delayed move fixture",
+  );
+  await waitArgs(
+    admin,
+    () => !!document.querySelector('[role="dialog"]'),
+    "Sabrina final summary",
+  );
+  await closeSummary();
+  await clickButton(admin, "Salir y actualizar Party");
+  await waitArgs(
+    playerA,
+    () => !document.querySelector('[data-testid="pvp-party-lock"]'),
+    "delayed damage result saves and unlocks the party",
+  );
   assert.deepEqual(cdp.exceptions, [], "Unexpected browser exception");
   console.log(
-    "PASS: PvP and automatic Kanto Trainer Battle, exact presets, 1..6 snapshots, party locks, pause/reconnect/admin reload, real turns, forfeit, offline result delivery, unchanged inventory, sole-owner ACK and idempotent receipts.",
+    "PASS: PvP and automatic Kanto Trainers, reservations/recovery/results, and Sabrina Future Sight: delayed HP damage, reload persistence, visible impact and no repeated pending cast.",
   );
 } catch (error) {
   console.error("FAIL: " + error.message);

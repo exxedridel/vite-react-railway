@@ -522,6 +522,8 @@ function describe(line: string, names: Record<string, string>): string | null {
       return `Probabilidad de ${a[2]}: ${Number(((Number(a[3]) / Number(a[4])) * 100).toFixed(2))}%. Tirada: ${Number(((Number(a[5]) / Number(a[4])) * 100).toFixed(2))}% · ${a[6]} (un resultado favorable puede ser impedido por inmunidad/protección).`;
     case "move":
       return `${who(a[2])}: ${a[3]}${a.includes("[still]") ? " (preparación)" : ""}.`;
+    case "boardfuture":
+      return `${who(a[2])}: impacto diferido de ${a[3]} sobre ${who(a[4])}.`;
     case "-damage":
     case "-heal":
       return `${who(a[2])}: HP ${a[3]}${a[4] ? ` · ${who(a.slice(4).join(" · "))}` : ""}.`;
@@ -602,7 +604,7 @@ function resultsFrom(
     const a = line.split("|");
     if (["switch", "drag"].includes(a[1]) && a[2]?.startsWith("p1"))
       activePlayer = key(a[2]);
-    if (a[1] === "move" || a[1] === "cant") {
+    if (a[1] === "move" || a[1] === "boardfuture" || a[1] === "cant") {
       if (
         a[1] === "move" &&
         a.some((v) => v.startsWith("[from] move:")) &&
@@ -614,10 +616,10 @@ function resultsFrom(
       const side: BattleSide = a[2].startsWith("p1") ? "player" : "opponent";
       const attacker = key(a[2]),
         defender = side === "player" ? "opponent" : activePlayer;
-      const move = a[1] === "move" ? dex.moves.get(a[3]) : undefined;
+      const move = a[1] !== "cant" ? dex.moves.get(a[3]) : undefined;
       current = {
         id: `${id}:${output.length}`,
-        captureId: activePlayer,
+        captureId: side === "player" ? attacker : activePlayer,
         actorSide: side,
         attackerName: names[attacker] ?? attacker,
         opponentName: names[defender] ?? defender,
@@ -627,9 +629,11 @@ function resultsFrom(
         message:
           a[1] === "cant"
             ? `No pudo actuar: ${a[3]}`
-            : a.includes("[still]")
-              ? "Preparando movimiento"
-              : "Movimiento ejecutado",
+            : a[1] === "boardfuture"
+              ? "Impacto del ataque diferido."
+              : a.includes("[still]")
+                ? "Preparando movimiento"
+                : "Movimiento ejecutado",
         hitChance: null,
         accuracyRoll: null,
         criticalChance: 0,

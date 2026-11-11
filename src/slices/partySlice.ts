@@ -102,6 +102,7 @@ import {
   neutralBattleStages,
 } from "@/lib/pokemonStats";
 import { PVP_PARTY_COMMIT } from "@/store/accountStorage";
+import { finishLegacyDelayedAttacks } from "@/lib/legacyDelayedAttacks";
 import type { PvpPartyLock, PvpPartyReceipt } from "@/lib/pvpParty";
 type ExecuteMoveInput = {
   options?: MoveExecutionOptions;
@@ -205,6 +206,21 @@ function advanceBattleTurn(
     ...tickStatusTurns(c, c.pokemon.name),
     ...tickStatusTurns(o, o.pokemon.name),
   );
+  const delayed = finishLegacyDelayedAttacks(
+    field,
+    state.pokemons,
+    o,
+    c.captureId,
+    id,
+  );
+  details.push(...delayed.details);
+  for (const result of delayed.results) {
+    state.lastBattleResult = result;
+    if (result.actorSide === "player") {
+      state.lastMovesByPlayer ??= {};
+      state.lastMovesByPlayer[result.captureId] = result;
+    } else state.lastOpponentMove = result;
+  }
   if (getCurrentHp(c.pokemon) <= 0)
     clearFieldSource(field, { side: "player", captureId: c.captureId });
   if (getCurrentHp(o.pokemon) <= 0)
@@ -619,6 +635,13 @@ const partySlice = createSlice({
             : { side: "opponent" },
         );
         result.actorSide = actorSide;
+        if (result.delayedAttack) {
+          state.battleField.pendingDelayedAttacks ??= [];
+          state.battleField.pendingDelayedAttacks.push({
+            ...result.delayedAttack,
+            source: { ...result.delayedAttack.source },
+          });
+        }
         const player = {
           pokemon: capture.pokemon,
           statuses: [...(capture.statuses ?? [])],

@@ -15,7 +15,8 @@ export function installRollAudit(b: Battle): () => void {
     chance = b.randomChance;
   const accuracy = b.actions.hitStepAccuracy,
     damage = b.actions.getDamage,
-    secondary = b.actions.secondaries;
+    secondary = b.actions.secondaries,
+    spreadMoveHit = b.actions.trySpreadMoveHit;
   const randomDescriptor = Object.getOwnPropertyDescriptor(b, "random");
   const chanceDescriptor = Object.getOwnPropertyDescriptor(b, "randomChance");
   b.randomChance = function (n, d) {
@@ -99,6 +100,19 @@ export function installRollAudit(b: Battle): () => void {
       effectIndex = oldIndex;
     }
   };
+  b.actions.trySpreadMoveHit = function (targets, source, move, ...rest) {
+    if (!move.flags.futuremove || rest[0] !== true)
+      return spreadMoveHit.call(this, targets, source, move, ...rest);
+    // Future Sight/Doom Desire resolve during residuals, outside a regular
+    // move action. Mark that native hit for the shared UI result parser;
+    // do not apply damage, draw RNG or schedule a second attack here.
+    b.add("boardfuture", source, move.name, targets[0]);
+    try {
+      return spreadMoveHit.call(this, targets, source, move, ...rest);
+    } finally {
+      b.add("boardend");
+    }
+  };
   return () => {
     if (randomDescriptor) Object.defineProperty(b, "random", randomDescriptor);
     else Reflect.deleteProperty(b, "random");
@@ -108,5 +122,6 @@ export function installRollAudit(b: Battle): () => void {
     b.actions.hitStepAccuracy = accuracy;
     b.actions.getDamage = damage;
     b.actions.secondaries = secondary;
+    b.actions.trySpreadMoveHit = spreadMoveHit;
   };
 }

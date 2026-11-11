@@ -102,10 +102,68 @@ if (
     "Trainer browser item reload failed to heal the reserve and consume its turn.",
   );
 writeTrainerBattleSession(storage, session);
+const futureSetup = createTrainerBattleSession();
+futureSetup.teams.a = {
+  name: "Source",
+  activeCaptureId: "future-source",
+  pokemons: [member(65, "future-source")],
+};
+futureSetup.teams.b = {
+  name: "Target",
+  activeCaptureId: "future-target",
+  pokemons: [member(143, "future-target")],
+};
+futureSetup.teams.a.pokemons[0].moves = [248, 150].map(
+  (id) => trainerMoves.find((move) => move.id === id)!,
+);
+// Fixed seed with a successful native 90% Future Sight accuracy check.
+let futureSession = startTrainerBattle(futureSetup, [1, 2, 3, 5]);
+const futureInitialHp = getCurrentHp(futureSession.teams.b.pokemons[0].pokemon);
+for (let turn = 1; turn <= 3; turn++) {
+  futureSession = chooseTrainerAction(futureSession, "a", {
+    kind: "move",
+    moveId: turn === 1 ? 248 : 150,
+  });
+  writeTrainerBattleSession(storage, futureSession);
+  futureSession = chooseTrainerAction(readTrainerBattleSession(storage)!, "b", {
+    kind: "move",
+    moveId: 150,
+  });
+  if (
+    turn < 3 &&
+    getCurrentHp(futureSession.teams.b.pokemons[0].pokemon) !== futureInitialHp
+  )
+    throw new Error(
+      "Future Sight hit before its delayed turn in the minified browser engine.",
+    );
+}
+const futureImpact = futureSession.history[0].results.find(
+  (result) => result.moveId === 248,
+);
+if (
+  !futureImpact ||
+  futureImpact.appliedDamage <= 0 ||
+  futureImpact.appliedDamage !==
+    futureInitialHp - getCurrentHp(futureSession.teams.b.pokemons[0].pokemon)
+)
+  throw new Error(
+    "Minified browser Future Sight delayed result: " +
+      JSON.stringify({
+        before: futureInitialHp,
+        after: getCurrentHp(futureSession.teams.b.pokemons[0].pokemon),
+        results: futureSession.history[0].results.map((result) => ({
+          moveId: result.moveId,
+          outcome: result.outcome,
+          damage: result.appliedDamage,
+          message: result.message,
+        })),
+      }),
+  );
 Object.assign(globalThis, {
   trainerBrowserSmoke: {
     turn: session.runtime.turn,
     teams: [session.teams.a.pokemons.length, session.teams.b.pokemons.length],
     savedBytes: saved.length,
+    futureSightDamage: futureImpact.appliedDamage,
   },
 });

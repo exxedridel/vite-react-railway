@@ -101,13 +101,14 @@ const hp = (s: PartyState) => [
 
 import {
   emptyBattleField,
+  getBattleField,
   activateMoveField,
   fieldPowerMultiplier,
   weatherResidual,
 } from "../src/lib/battleField";
 import {
   finishBattleTurn,
-  activateBattlePokemon,
+  confirmBattleSwitch,
   changeOpponentHp,
   setBattleOpponent,
   resetGame,
@@ -248,7 +249,19 @@ for (const [id, property, type] of [
       ...s,
       pokemons: [...s.pokemons, { ...s.pokemons[0], captureId: "second" }],
     };
-    s = reducer(s, activateBattlePokemon("second"));
+    s = reducer(
+      s,
+      confirmBattleSwitch({
+        fromId: "own",
+        toId: "second",
+        expectedContext: JSON.stringify([
+          s.pokemons[0],
+          s.pokemons[1],
+          s.opponent,
+          getBattleField(s.battleField),
+        ]),
+      }),
+    );
     assert.equal(s.battleField![property], null);
   });
 test("rival sport survives player switch; HP dialog fainting clears source", () => {
@@ -257,7 +270,19 @@ test("rival sport survives player switch; HP dialog fainting clears source", () 
     ...s,
     pokemons: [...s.pokemons, { ...s.pokemons[0], captureId: "second" }],
   };
-  s = reducer(s, activateBattlePokemon("second"));
+  s = reducer(
+    s,
+    confirmBattleSwitch({
+      fromId: "own",
+      toId: "second",
+      expectedContext: JSON.stringify([
+        s.pokemons[0],
+        s.pokemons[1],
+        s.opponent,
+        getBattleField(s.battleField),
+      ]),
+    }),
+  );
   assert.ok(s.battleField?.waterSport);
   s = reducer(
     s,
