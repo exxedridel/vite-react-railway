@@ -7,6 +7,7 @@ import { getPvpLock } from "@/lib/pvpParty";
 import { usePvpContext } from "@/context/PvpContext";
 import { getCurrentHp, getMaxHp } from "@/lib/pokemonStats";
 import { STATUS_OPTIONS } from "@/types/pokemon";
+import { isTrainerBattle, pvpPlayersOnline } from "@/lib/pvp/types";
 
 export default function PvpPartyGate({ children }: { children: ReactNode }) {
   const pvp = usePvpContext();
@@ -21,18 +22,17 @@ export default function PvpPartyGate({ children }: { children: ReactNode }) {
   const waitingConnection = !pvp.connected || !pvp.synced;
   const side =
     battle?.side ?? (battle?.players.a.user.id === pvp.user.id ? "a" : "b");
-  const opponent = battle?.players[side === "a" ? "b" : "a"].user;
+  const trainerBattle = isTrainerBattle(battle);
+  const trainerName =
+    battle?.trainer?.name ?? battle?.trainer?.team?.name ?? "Trainer";
+  const opponent = battle?.players[side === "a" ? "b" : "a"]?.user;
   const team = battle?.team?.pokemons ?? lock?.snapshot?.pokemons ?? party;
   const finished =
     battle?.phase === "finished" ||
     battle?.phase === "finalizing" ||
     battle?.phase === "finalized";
   const saved = lock?.phase === "saved";
-  const paused =
-    !!battle &&
-    (!battle.host.online ||
-      !battle.players.a.online ||
-      !battle.players.b.online);
+  const paused = !!battle && (!battle.host.online || !pvpPlayersOnline(battle));
   const title =
     !lock && !battle
       ? "Verificando tu Party"
@@ -85,11 +85,22 @@ export default function PvpPartyGate({ children }: { children: ReactNode }) {
           {!lock && !battle
             ? "Comprobamos si tu equipo tiene una batalla pendiente antes de permitir cambios."
             : saved
-              ? "Tu Party ya recibió el resultado. Esperamos a que el otro jugador confirme su guardado para liberar los dos equipos."
+              ? trainerBattle
+                ? "Tu Party ya recibió el resultado. Esperamos la confirmación del servidor para liberar tu equipo."
+                : "Tu Party ya recibió el resultado. Esperamos a que el otro jugador confirme su guardado para liberar los dos equipos."
               : finished
-                ? "El administrador debe salir de la batalla y confirmar la actualización de ambos Partys."
-                : "El administrador maneja ambos equipos. Mientras termina la batalla no puedes editar, curar, evolucionar o reemplazar tus Pokémon ni modificar tu mochila."}
+                ? trainerBattle
+                  ? "El administrador debe salir de la batalla y confirmar la actualización de tu Party."
+                  : "El administrador debe salir de la batalla y confirmar la actualización de ambos Partys."
+                : trainerBattle
+                  ? "El administrador maneja tu equipo y el Trainer elige sus acciones automáticamente. Mientras termina la batalla no puedes editar, curar, evolucionar o reemplazar tus Pokémon ni modificar tu mochila."
+                  : "El administrador maneja ambos equipos. Mientras termina la batalla no puedes editar, curar, evolucionar o reemplazar tus Pokémon ni modificar tu mochila."}
         </p>
+        {trainerBattle && (
+          <p className="text-sm">
+            Trainer Battle · Rival: <strong>{trainerName}</strong>
+          </p>
+        )}
         {opponent && (
           <p className="text-sm">
             Rival:{" "}

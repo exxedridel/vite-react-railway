@@ -9,6 +9,14 @@ Acuerdo del usuario confirmado el 2026-11-08:
 
 Si esta disponible, leer [la memoria compartida](../PROJECT_MEMORY.md). Este resumen se conserva tambien aqui para sesiones que abran solo este repositorio.
 
+Trainer Battle autorizado 2026-11-11 sustituye manual/editor: humano A conectado
+contra preset NPC B Kanto. Usuario eligió NPC AUTOMÁTICO: IA/motor local admin,
+acciones humano por admin. 18 presets/68 slots exactos + variantes por starter
+del jugador seleccionado explícitamente. /pvp reserva sólo A; results/ACK A
+único, applied.b=true. Preservar pausa/navegador original/outbox/recibos/guardia.
+No premios/XP/medallas automáticos. Tests catálogo y IA (Struggle/Recharge0),
+Chrome PvP+Trainer y build/TS pasan. Desplegar Nest y React, sin nuevas variables.
+
 Saneamiento autorizado 2026-11-10: retirados 20 archivos huerfanos/legacy, 14
 dependencias directas y APIs de seguros del store/contexto. Configuracion Vite
 ES2022/Bundler strict con tests incluidos; TypeScript global CERO errores.
@@ -17,10 +25,10 @@ permiten comprobarlo; test:arena-status ejecuta 8 pruebas con renderer React18.
 Build y Chrome PvP pasan tras la limpieza; no se tocaron .env ni datos reales.
 
 Conservar el panel administrador como centro de las batallas. El usuario confirmo
-limitar WebSocket a PvP: instantaneas de equipos al admin y resultados de vuelta;
+limitar WebSocket a batallas: instantaneas al admin y resultados de vuelta;
 cada jugador conserva su partida. Etapa PvP autorizada y local implementada:
-ADMIN controla ambos equipos; jugadores observan. Panel batalla ofrece PvP y
-manual. Locks por cuenta/Web Locks, guardia party/*, rendicion en turno propio,
+ADMIN controla ambos equipos en PvP; jugadores observan. En Trainer NPC automático.
+Locks por cuenta/Web Locks, guardia party/*, rendicion en turno propio,
 patch HP/estados tras salir y recibo+ACK antes de liberar ambos. Reconexion no
 desbloquea; equipo divergente exige dispositivo original. Ver README/protocolo.
 No convertir moves[].pp de catalogo en PP gastados; Full Restore solo manual

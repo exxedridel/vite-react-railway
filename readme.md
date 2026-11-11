@@ -54,7 +54,33 @@ En **Panel batalla → Jugadores conectados · PvP**, el administrador seleccion
 dos cuentas de jugador que estén conectadas. La conexión PvP se mantiene desde
 las páginas de la aplicación; no hace falta dejar abierto `/mensajes-prueba`.
 El administrador elige las acciones de ambos equipos; los jugadores observan.
-La pestaña **Batalla manual** conserva el escenario anterior.
+La pestaña **Trainer Battle** enfrenta a un jugador con un NPC de Kanto.
+
+### Trainer Battle: jugador contra NPC
+
+1. Abre **Panel batalla → Trainer Battle** y selecciona al jugador conectado.
+2. Elige categoría y Trainer. Hay ocho líderes de gimnasio, cuatro del Alto
+   Mando y dos encuentros del rival con tres variantes cada uno: **18 presets**.
+   En Rival selecciona el tipo del inicial original del **jugador**; se carga
+   el equipo contrario correspondiente. La vista previa muestra niveles y movesets.
+3. Pulsa **Solicitar equipo y preparar Trainer**. El lado A recibe la Party
+   actual completa (1–6); el lado B recibe el preset, sano y con el multiplicador
+   de HP del jugador. Se reserva únicamente la cuenta real del jugador.
+4. Pulsa **Iniciar Trainer Battle**. El administrador maneja las acciones del
+   jugador A. El NPC decide sus movimientos y reemplazos automáticamente en el
+   navegador del administrador, respetando solicitudes legales, PP y recargas.
+   Las decisiones usan el estado visible del combate, sin consultar la elección
+   pendiente del jugador. El motor sigue funcionando en React.
+5. Si falta el jugador original, el combate se pausa y conserva su reserva.
+   Al terminar, **Salir y actualizar Party** publica HP/condiciones finales;
+   la reserva se libera tras guardar y confirmar ese único resultado. El NPC
+   no necesita cuenta, conexión ni ACK. Se conserva mochila/progreso restante.
+
+Los presets reproducen el listado proporcionado por el usuario, incluidos los
+movimientos del primer rival a nivel 5. El catálogo es local, no consulta
+PokeAPI para preparar Trainers. El mapa disponible es Kanto; no se añaden
+recompensas, experiencia o medallas automáticas en este flujo. La pestaña manual
+anterior se sustituyó; sus datos locales antiguos no se borran.
 
 El panel valida el checkpoint recibido antes de mostrar controles o procesar
 acciones. Si está incompleto, muestra un aviso y permite **Actualizar conexión**;
@@ -119,6 +145,7 @@ jugador continúa en su navegador. Usar una sola réplica Nest en esta etapa.
 npm run test:pvp:engine
 npm run test:pvp:party
 npm run test:pvp:browser
+npm run test:trainer:catalog
 ```
 
 La prueba Chrome requiere compilar primero Nest. Usa Express con repositorio en
@@ -128,6 +155,11 @@ simulada: prueba objetos vacíos y recuperación de documentos anteriores. Cubre
 estado incompleto sin pantalla negra, importación 1/6, bloqueo, desconexión y
 recargas, un turno, rendición, salida, guardado de ambos e idempotencia.
 No modifica Railway ni bases reales.
+La misma prueba Chrome también cubre Trainer Battle: variante del rival, preset
+de Brock, turno automático, reserva de un usuario, pausa/recarga, rendición,
+entrega offline y liberación tras su único ACK. `test:trainer:browser` ejecuta
+esa prueba conjunta. Los tests de motor incluyen PP agotados/Struggle y recarga
+nativa de Hyper Beam; el catálogo comprueba los 18 equipos completos.
 
 ## Cierre de sesión
 

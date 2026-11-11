@@ -41,6 +41,7 @@ type Props = {
   disabled?: boolean;
   allowItems?: boolean;
   allowForfeit?: boolean;
+  automaticSide?: TrainerSide;
   onExit?: () => void | Promise<void>;
 };
 
@@ -406,6 +407,7 @@ export default function TrainerBattleView({
   disabled = false,
   allowItems = true,
   allowForfeit = false,
+  automaticSide,
   onExit,
 }: Props) {
   const [flipped, setFlipped] = useState(false);
@@ -427,7 +429,7 @@ export default function TrainerBattleView({
     arenaRef.current?.focus({ preventScroll: true });
   }
   async function act(side: TrainerSide, choice: TrainerChoice | "cancel") {
-    if (actionLock.current || disabled) return;
+    if (actionLock.current || disabled || side === automaticSide) return;
     actionLock.current = true;
     setBusy(true);
     try {
@@ -523,23 +525,72 @@ export default function TrainerBattleView({
       </div>
       {!finished && (
         <p className="text-sm text-muted-foreground">
-          Cada entrenador elige su acción. Al confirmar ambas, se resuelven por
-          prioridad y velocidad. Puedes cancelar una elección mientras espera.
+          {automaticSide
+            ? "Elige la acción del jugador. El NPC responde automáticamente; el turno se resuelve por prioridad y velocidad."
+            : "Cada entrenador elige su acción. Al confirmar ambas, se resuelven por prioridad y velocidad. Puedes cancelar una elección mientras espera."}
         </p>
       )}
       <div className="grid items-start gap-3 md:grid-cols-2">
-        {(["a", "b"] as const).map((side) => (
-          <TrainerControls
-            key={side}
-            session={session}
-            side={side}
-            disabled={busy || disabled}
-            allowItems={allowItems}
-            allowForfeit={allowForfeit}
-            onChoose={act}
-            onCancel={(target) => act(target, "cancel")}
-          />
-        ))}
+        {(["a", "b"] as const).map((side) =>
+          side === automaticSide ? (
+            <section
+              key={side}
+              aria-label={`NPC ${session.teams[side].name}`}
+              className="space-y-3 rounded-2xl border bg-card p-4"
+            >
+              <h3 className="text-lg font-bold">
+                {side.toUpperCase()} · {session.teams[side].name}
+              </h3>
+              <p role="status" className="text-sm text-muted-foreground">
+                {finished
+                  ? "Combate terminado"
+                  : disabled
+                    ? "Esperando confirmación o conexión para continuar."
+                    : runtime.pending[side]
+                      ? "El NPC ya eligió su acción."
+                      : "El NPC elige sus movimientos y cambios automáticamente."}
+              </p>
+              <ul className="space-y-2 text-sm">
+                {session.teams[side].pokemons.map((capture) => (
+                  <li
+                    key={capture.captureId}
+                    className="flex flex-wrap justify-between gap-2 rounded-lg border p-2"
+                  >
+                    <span className="capitalize">
+                      {capture.pokemon.name} · Nv. {capture.pokemon.level}
+                      {capture.captureId === session.teams[side].activeCaptureId
+                        ? " · En campo"
+                        : ""}
+                    </span>
+                    <span>
+                      {getCurrentHp(capture.pokemon)}/
+                      {getMaxHp(capture.pokemon)} HP
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {session.teams[side].pokemons
+                .filter(
+                  (capture) =>
+                    capture.captureId === session.teams[side].activeCaptureId,
+                )
+                .map((capture) => (
+                  <CombatDetails key={capture.captureId} capture={capture} />
+                ))}
+            </section>
+          ) : (
+            <TrainerControls
+              key={side}
+              session={session}
+              side={side}
+              disabled={busy || disabled}
+              allowItems={allowItems}
+              allowForfeit={allowForfeit}
+              onChoose={act}
+              onCancel={(target) => act(target, "cancel")}
+            />
+          ),
+        )}
       </div>
       <section
         className="rounded-2xl border bg-card p-4 text-card-foreground"

@@ -47,6 +47,10 @@ type PvpContextValue = {
     playerAId: number,
     playerBId: number,
   ) => Promise<PvpBattleView | null>;
+  createTrainerBattle: (
+    playerAId: number,
+    trainerPresetId: string,
+  ) => Promise<PvpBattleView | null>;
   claimBattle: () => Promise<PvpBattleView | null>;
   cancelBattle: () => Promise<PvpBattleView | null>;
   sendCommand: (
@@ -110,7 +114,13 @@ function validState(value: unknown): value is PvpBattleView {
     ].includes(state.phase) &&
     !!state.host &&
     !!state.players?.a?.user &&
-    !!state.players?.b?.user
+    (state.mode === "trainer"
+      ? state.players.b === undefined &&
+        state.trainer?.region === "kanto" &&
+        typeof state.trainer.presetId === "string" &&
+        state.trainer.presetId.length > 0
+      : (state.mode === undefined || state.mode === "pvp") &&
+        !!state.players?.b?.user)
   );
 }
 
@@ -316,12 +326,14 @@ export default function PvpProvider({
         next.side ??
         (next.players.a.user.id === actor.id
           ? "a"
-          : next.players.b.user.id === actor.id
+          : next.players.b?.user.id === actor.id
             ? "b"
             : null);
       if (!side)
         throw new Error("La batalla recibida no pertenece a esta cuenta.");
       const owner = next.players[side];
+      if (!owner || owner.user.id !== actor.id)
+        throw new Error("La batalla recibida no pertenece a esta cuenta.");
       const snapshot = next.snapshot ?? owner.snapshot;
       if (
         next.phase === "finalized" &&
@@ -595,6 +607,12 @@ export default function PvpProvider({
       playerAId,
       playerBId,
     });
+  const createTrainerBattle = (playerAId: number, trainerPresetId: string) =>
+    mutate("pvp:create", {
+      commandId: crypto.randomUUID(),
+      playerAId,
+      trainerPresetId,
+    });
   const claimBattle = () =>
     mutate("pvp:claim", { battleId: requireState().battleId });
   const cancelBattle = () => {
@@ -650,6 +668,7 @@ export default function PvpProvider({
         busy,
         sync,
         createBattle,
+        createTrainerBattle,
         claimBattle,
         cancelBattle,
         sendCommand,

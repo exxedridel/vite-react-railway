@@ -73,13 +73,23 @@ export type PvpCommand = {
   requestKey: string;
   choice: PvpChoice;
 };
+export type PvpTrainer = {
+  presetId: string;
+  region: "kanto";
+  name?: string;
+  // Only the administrator needs the preset team. Player views keep the
+  // opponent's full party private, just as in a battle against another user.
+  team?: TrainerTeam;
+};
 export type PvpBattleView = {
   battleId: string;
+  mode?: "pvp" | "trainer";
+  trainer?: PvpTrainer;
   phase: PvpPhase;
   revision: number;
   checkpointRevision: number;
   host: PvpHost;
-  players: Record<TrainerSide, PvpPlayer>;
+  players: { a: PvpPlayer; b?: PvpPlayer };
   applied: Record<TrainerSide, boolean>;
   session?: TrainerBattleSession | null;
   commands?: PvpCommand[];
@@ -91,6 +101,21 @@ export type PvpBattleView = {
   pending?: boolean;
   result?: PvpResult;
 };
+
+export function isTrainerBattle(
+  state: PvpBattleView | null | undefined,
+): boolean {
+  return state?.mode === "trainer";
+}
+
+export function pvpPlayersOnline(
+  state: PvpBattleView | null | undefined,
+): boolean {
+  return (
+    !!state?.players.a.online &&
+    (isTrainerBattle(state) || !!state.players.b?.online)
+  );
+}
 export type PvpError = { code: string; message: string };
 export type PvpAck =
   | { ok: true; state: PvpBattleView | null; lobby?: PvpLobbyPlayer[] }

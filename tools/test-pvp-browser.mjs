@@ -1170,9 +1170,245 @@ try {
   const replayA = await partyState(playerA);
   assert.equal(replayA.pvpReceipts.length, 1);
   assert.deepEqual(replayA.pokemons, finalA.pokemons);
+  // Trainer Battle reuses the same real user reservation and Mongo adapter.
+  // The unrelated second player remains free and no synthetic user/socket is needed.
+  const trainerOriginal = await seedPvpTeam(playerA, 6, 60, 1.3);
+  const unrelatedBefore = await partyState(playerB);
+  await clickButton(admin, "Trainer Battle");
+  await waitArgs(
+    admin,
+    () => !!document.querySelector('select[aria-label="Jugador Trainer A"]'),
+    "Trainer Battle tab replaces manual mode",
+  );
+  await field(admin, 'select[aria-label="Categoría Trainer"]', "rival");
+  await field(admin, 'select[aria-label="Inicial del jugador"]', "grass");
+  await waitArgs(
+    admin,
+    () =>
+      document
+        .querySelector('[aria-label="Equipo del Trainer"]')
+        ?.textContent.toLowerCase()
+        .includes("charmander"),
+    "grass starter selects opposing Charmander preset",
+  );
+  await field(admin, 'select[aria-label="Categoría Trainer"]', "gym");
+  await field(admin, 'select[aria-label="Preset Trainer"]', "kanto-brock");
+  await field(admin, 'select[aria-label="Jugador Trainer A"]', "2");
+  await clickButton(admin, "Solicitar equipo y preparar Trainer");
+  await waitArgs(
+    admin,
+    () =>
+      [...document.querySelectorAll("button")].some(
+        (button) =>
+          button.textContent.trim() === "Iniciar Trainer Battle" &&
+          !button.disabled,
+      ),
+    "single player snapshot and Brock preset are ready",
+  );
+  const trainerBattleId = (await pvpRepository.locked())[0].battleId;
+  let trainerBattle = await pvpRepository.get(trainerBattleId);
+  assert.equal(trainerBattle.mode, "trainer");
+  assert.deepEqual(trainerBattle.lockedUserIds, [2]);
+  assert.equal(trainerBattle.players.b, undefined);
+  assert.deepEqual(
+    trainerBattle.players.a.snapshot.pokemons,
+    trainerOriginal.pokemons,
+  );
+  assert.deepEqual(
+    trainerBattle.trainer.team.pokemons.map((capture) => [
+      capture.pokemon.id,
+      capture.pokemon.level,
+      capture.moves.map((move) => move.id),
+    ]),
+    [
+      [74, 12, [33, 111, 300, 317]],
+      [95, 14, [33, 20, 106, 317]],
+    ],
+  );
+  assert.equal((await partyState(playerB)).pvpLock, null);
+  await waitArgs(
+    playerA,
+    () =>
+      document.body.innerText.includes("Brock") &&
+      !!document.querySelector('[data-testid="pvp-party-lock"]'),
+    "player sees Trainer reservation",
+  );
+  await evalArgs(playerA, async () => {
+    const [{ store }, actions] = await Promise.all([
+      import("/src/store/store.ts"),
+      import("/src/slices/partySlice.ts"),
+    ]);
+    const before = JSON.stringify(store.getState().party);
+    store.dispatch(actions.resetGame());
+    store.dispatch(actions.changeBagMoney({ amount: 999, direction: "add" }));
+    if (JSON.stringify(store.getState().party) !== before)
+      throw new Error("Trainer reservation allowed a party mutation");
+  });
+  await clickButton(admin, "Iniciar Trainer Battle");
+  await waitArgs(
+    admin,
+    () => !!document.querySelector('[aria-label="NPC Brock"]'),
+    "NPC has automatic controls",
+  );
+  assert.equal(
+    await evalArgs(
+      admin,
+      () =>
+        document.querySelectorAll('section[aria-label^="Controles de"]').length,
+    ),
+    1,
+  );
+  trainerBattle = await pvpRepository.get(trainerBattleId);
+  const trainerSerial = trainerBattle.session.runtime.serial;
+  await cdp.request("Page.navigate", { url: "about:blank" }, playerA);
+  for (const socket of gateway.namespace.sockets.values())
+    if (socket.data.identity?.user.id === 2) socket.disconnect(true);
+  await waitArgs(
+    admin,
+    () => document.body.innerText.includes("Combate en pausa"),
+    "Trainer battle pauses for its sole player",
+  );
+  assert.equal(
+    (await pvpRepository.get(trainerBattleId)).session.runtime.serial,
+    trainerSerial,
+  );
+  await cdp.request(
+    "Page.navigate",
+    { url: frontendUrl + "/dashboard" },
+    playerA,
+  );
+  await waitArgs(
+    playerA,
+    () => !!document.querySelector('[data-testid="pvp-party-lock"]'),
+    "Trainer reservation survives player reconnect",
+  );
+  await cdp.request("Page.reload", {}, admin);
+  await waitArgs(
+    admin,
+    () =>
+      !!document.querySelector('[aria-label="NPC Brock"]') &&
+      [...document.querySelectorAll("button[data-move-id]")].some(
+        (button) => !button.disabled,
+      ),
+    "admin reload recovers Trainer tab and checkpoint",
+  );
+  assert.equal(
+    (await pvpRepository.get(trainerBattleId)).session.runtime.serial,
+    trainerSerial,
+  );
+  await evalArgs(admin, () =>
+    document.querySelector('button[data-move-id="150"]').click(),
+  );
+  await waitArgs(
+    admin,
+    () => !!document.querySelector('[role="dialog"]'),
+    "NPC automatically chooses a real action and resolves the turn",
+  );
+  trainerBattle = await pvpRepository.get(trainerBattleId);
+  assert.ok(trainerBattle.session.runtime.turn >= 2);
+  assert.ok(
+    trainerBattle.session.runtime.requests.b.moves.some(
+      (move) => move.pp < move.maxpp,
+    ),
+  );
+  await clickButton(admin, "Volver al combate", "[role=dialog]");
+  await waitArgs(
+    admin,
+    () => !document.querySelector('[role="dialog"]'),
+    "close Trainer turn summary",
+  );
+  await evalArgs(admin, () =>
+    [...document.querySelectorAll("button")]
+      .find((button) => button.textContent.trim().startsWith("Rendirse:"))
+      .click(),
+  );
+  await clickButton(admin, "Confirmar rendición", "[role=dialog]");
+  await waitArgs(
+    admin,
+    () => document.body.innerText.includes("¡Victoria de Brock!"),
+    "Trainer wins after player forfeit",
+  );
+  trainerBattle = await pvpRepository.get(trainerBattleId);
+  const trainerExpected = trainerBattle.session.teams.a.pokemons;
+  assert.deepEqual(
+    (await partyState(playerA)).pokemons,
+    trainerOriginal.pokemons,
+    "Trainer result only applies on exit",
+  );
+  await waitArgs(
+    admin,
+    () => !!document.querySelector('[role="dialog"]'),
+    "Trainer forfeit summary",
+  );
+  await clickButton(admin, "Volver al combate", "[role=dialog]");
+  await waitArgs(
+    admin,
+    () => !document.querySelector('[role="dialog"]'),
+    "close Trainer forfeit summary",
+  );
+  await cdp.request("Page.navigate", { url: "about:blank" }, playerA);
+  for (const socket of gateway.namespace.sockets.values())
+    if (socket.data.identity?.user.id === 2) socket.disconnect(true);
+  await clickButton(admin, "Salir y actualizar Party");
+  await waitArgs(
+    admin,
+    () => document.body.innerText.includes("Esperando el guardado del jugador"),
+    "offline result remains durable until its sole owner saves",
+  );
+  trainerBattle = await pvpRepository.get(trainerBattleId);
+  assert.equal(trainerBattle.lockHeld, true);
+  assert.deepEqual(trainerBattle.applied, { a: false, b: true });
+  assert.equal(trainerBattle.results.b, undefined);
+  await cdp.request(
+    "Page.navigate",
+    { url: frontendUrl + "/dashboard" },
+    playerA,
+  );
+  await waitArgs(
+    playerA,
+    () =>
+      !document.querySelector('[data-testid="pvp-party-lock"]') &&
+      !!document.querySelector('a[href="/mensajes-prueba"]'),
+    "single player saves and releases Trainer reservation",
+  );
+  trainerBattle = await pvpRepository.get(trainerBattleId);
+  assert.equal(trainerBattle.phase, "finalized");
+  const trainerFinal = await partyState(playerA);
+  assert.deepEqual(trainerFinal.bag, trainerOriginal.bag);
+  assert.equal(
+    trainerFinal.pvpReceipts.length,
+    trainerOriginal.pvpReceipts.length + 1,
+  );
+  for (const capture of trainerFinal.pokemons) {
+    const expected = trainerExpected.find(
+      (entry) => entry.captureId === capture.captureId,
+    );
+    assert.equal(
+      capture.pokemon.stats.find((stat) => stat.name === "hp").value,
+      expected.pokemon.stats.find((stat) => stat.name === "hp").value,
+    );
+    assert.deepEqual(capture.statuses, expected.statuses);
+    assert.deepEqual(
+      capture.moves,
+      trainerOriginal.pokemons.find(
+        (entry) => entry.captureId === capture.captureId,
+      ).moves,
+    );
+  }
+  assert.deepEqual(
+    await partyState(playerB),
+    unrelatedBefore,
+    "NPC result does not change another real account",
+  );
+  await gateway.publish();
+  await pause(300);
+  assert.equal(
+    (await partyState(playerA)).pvpRevision,
+    trainerFinal.pvpRevision,
+  );
   assert.deepEqual(cdp.exceptions, [], "Unexpected browser exception");
   console.log(
-    "PASS: real admin-controlled PvP round and forfeit, snapshots 1..6, private player locks, disconnect/reload recovery, exit-only result patch, unchanged inventory and idempotent saved results.",
+    "PASS: PvP and automatic Kanto Trainer Battle, exact presets, 1..6 snapshots, party locks, pause/reconnect/admin reload, real turns, forfeit, offline result delivery, unchanged inventory, sole-owner ACK and idempotent receipts.",
   );
 } catch (error) {
   console.error("FAIL: " + error.message);

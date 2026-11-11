@@ -31,6 +31,10 @@ import {
   type PvpSnapshot,
 } from "../src/lib/pvp/types";
 import { GAME_DATA_VERSION } from "../src/lib/gameVersion";
+import { buildNpcTrainerTeam } from "../src/lib/trainerBattle/kantoPresets";
+import { chooseNpcTrainerAction } from "../src/lib/trainerBattle/npcAi";
+import { readEmeraldRequest } from "../src/lib/emerald/engine";
+import { pvpPlayersOnline } from "../src/lib/pvp/types";
 import type { CapturedPokemon } from "../src/types/pokemon";
 
 const seed: [number, number, number, number] = [1, 2, 3, 4];
@@ -152,7 +156,7 @@ test("PvP imports distinct HP multipliers, current stats/types and cross-player 
   );
   assert.equal(
     sim.p2.active[0].maxhp,
-    getMaxHp(state.players.b.snapshot!.pokemons[0].pokemon),
+    getMaxHp(state.players.b!.snapshot!.pokemons[0].pokemon),
   );
   assert.equal(
     sim.p1.active[0].storedStats.atk,
@@ -374,4 +378,145 @@ test("checkpoint proposals are durable and scoped to battle/admin/tab; failures 
   assert.equal(data.size, 1);
   clearPvpCheckpointOutbox(storage, session.id, 99, "admin-tab");
   assert.equal(data.size, 0);
+});
+
+function trainerView(): PvpBattleView {
+  const state = view();
+  state.mode = "trainer";
+  delete state.players.b;
+  state.trainer = {
+    presetId: "kanto-brock",
+    region: "kanto",
+    name: "Brock",
+    team: buildNpcTrainerTeam(
+      "kanto-brock",
+      state.players.a.snapshot!.hpMultiplier,
+    ),
+  };
+  state.applied.b = true;
+  return state;
+}
+
+test("Trainer Battle imports only the real owner snapshot and the confirmed NPC preset without changing either", () => {
+  const state = trainerView(),
+    original = clone(state);
+  assert.equal(pvpPlayersOnline(state), true);
+  const setup = createPvpTrainerSession(state);
+  assert.deepEqual(setup.teams.a.pokemons, state.players.a.snapshot!.pokemons);
+  assert.deepEqual(setup.teams.b, state.trainer!.team);
+  assert.deepEqual(state, original);
+  const started = startTrainerBattle(setup, seed);
+  assert(validTrainerBattleSession(started));
+  assert.equal(getCurrentHp(started.teams.a.pokemons[0].pokemon), 17);
+  assert.equal(started.teams.b.pokemons[0].pokemon.level, 12);
+  assert.equal(
+    getCurrentHp(started.teams.b.pokemons[0].pokemon),
+    getMaxHp(started.teams.b.pokemons[0].pokemon),
+  );
+  const restored = clone(started);
+  const choice = chooseNpcTrainerAction(restored)!;
+  assert.equal(choice.kind, "move");
+  const afterNpc = chooseTrainerAction(restored, "b", choice);
+  const ended = forfeitTrainerBattle(afterNpc, "a");
+  assert.equal(ended.runtime!.winner, "b");
+  assert.equal(
+    pvpTeamPatches(ended, "a").length,
+    state.players.a.snapshot!.pokemons.length,
+  );
+  state.players.a.online = false;
+  assert.equal(pvpPlayersOnline(state), false);
+  const missingPreset = trainerView();
+  delete missingPreset.trainer!.team;
+  assert.throws(() => createPvpTrainerSession(missingPreset), /Trainer/);
+});
+
+test("NPC decisions ignore the player's pending action, respect disabled moves and preserve the checkpoint", () => {
+  const started = startTrainerBattle(
+    createPvpTrainerSession(trainerView()),
+    seed,
+  );
+  const before = structuredClone(started);
+  const choice = chooseNpcTrainerAction(started)!;
+  assert.deepEqual(started, before);
+  const anotherChoice = clone(started);
+  anotherChoice.runtime!.pending.a = {
+    kind: "switch",
+    captureId: "does-not-matter",
+  };
+  assert.deepEqual(chooseNpcTrainerAction(anotherChoice), choice);
+  const blocked = clone(started);
+  const selected = blocked.runtime!.requests.b.moves.find(
+    (move) => choice.kind === "move" && move.id === choice.moveId,
+  )!;
+  selected.disabled = true;
+  const alternative = chooseNpcTrainerAction(blocked)!;
+  assert.equal(alternative.kind, "move");
+  if (alternative.kind === "move")
+    assert.notEqual(alternative.moveId, selected.id);
+  blocked.runtime!.pending.b = alternative;
+  assert.equal(chooseNpcTrainerAction(blocked), null);
+  blocked.runtime!.pending = {};
+  blocked.runtime!.requests.b.waiting = true;
+  assert.equal(chooseNpcTrainerAction(blocked), null);
+});
+
+test("NPC forced replacement uses a living reserve and cannot invent moves when no legal request exists", () => {
+  const started = startTrainerBattle(
+    createPvpTrainerSession(trainerView()),
+    seed,
+  );
+  const request = started.runtime!.requests.b;
+  request.forceSwitch = true;
+  request.trapped = true;
+  started.teams.b.pokemons[0].pokemon.stats.find(
+    (stat) => stat.name === "hp",
+  )!.value = 0;
+  assert.deepEqual(chooseNpcTrainerAction(started), {
+    kind: "switch",
+    captureId: started.teams.b.pokemons[1].captureId,
+  });
+  started.teams.b.pokemons[1].pokemon.stats.find(
+    (stat) => stat.name === "hp",
+  )!.value = 0;
+  assert.equal(chooseNpcTrainerAction(started), null);
+  request.forceSwitch = false;
+  request.moves = [];
+  assert.equal(chooseNpcTrainerAction(started), null);
+});
+
+test("NPC uses native Struggle when PP are exhausted instead of waiting or inventing a normal move", () => {
+  const started = startTrainerBattle(createPvpTrainerSession(view()), seed);
+  const native = Battle.fromJSON(started.runtime!.engine);
+  for (const move of native.p2.active[0].moveSlots) move.pp = 0;
+  native.makeRequest("move");
+  started.runtime!.engine = JSON.stringify(native.toJSON());
+  started.runtime!.requests.b = readEmeraldRequest(native.p2);
+  const choice = chooseNpcTrainerAction(started);
+  assert.deepEqual(choice, { kind: "move", moveId: 165 });
+  const pending = chooseTrainerAction(started, "b", choice!);
+  assert.deepEqual(pending.runtime!.pending.b, choice);
+});
+
+test("NPC completes native Hyper Beam recharge using the forced zero-PP move", () => {
+  const setup = createPvpTrainerSession(view());
+  for (const side of ["a", "b"] as const) {
+    const capture = setup.teams[side].pokemons[0];
+    capture.statuses = [];
+    capture.pokemon.stats.find((stat) => stat.name === "hp")!.value = getMaxHp(
+      capture.pokemon,
+    )!;
+  }
+  setup.teams.b.pokemons[0].pokemon.stats.find(
+    (stat) => stat.name === "attack",
+  )!.value = 10;
+  setup.teams.b.pokemons[0].moves = [
+    clone(trainerMoves.find((move) => move.id === 63)!),
+  ];
+  let session = startTrainerBattle(setup, seed);
+  session = chooseTrainerAction(session, "a", { kind: "move", moveId: 150 });
+  session = chooseTrainerAction(session, "b", { kind: "move", moveId: 63 });
+  assert.equal(session.runtime!.requests.b.locked, true);
+  const choice = chooseNpcTrainerAction(session);
+  assert.deepEqual(choice, { kind: "move", moveId: 0 });
+  assert.doesNotThrow(() => chooseTrainerAction(session, "b", choice!));
 });

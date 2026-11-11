@@ -14,6 +14,7 @@ import type {
   TrainerSide,
 } from "@/lib/trainerBattle/types";
 import {
+  isTrainerBattle,
   pvpRequestKey,
   type PvpBattleView,
   type PvpCommand,
@@ -26,14 +27,17 @@ export function createPvpTrainerSession(
   state: PvpBattleView,
 ): TrainerBattleSession {
   if (state.phase !== "ready")
-    throw new Error("Espera las instantáneas de ambos jugadores.");
+    throw new Error("Espera a que los equipos estén preparados.");
   const session = createTrainerBattleSession();
   session.id = state.battleId;
   session.networkBattleId = state.battleId;
-  for (const side of ["a", "b"] as const) {
+  const trainerBattle = isTrainerBattle(state);
+  const humanSides = trainerBattle ? (["a"] as const) : (["a", "b"] as const);
+  for (const side of humanSides) {
     const player = state.players[side];
-    const snapshot = player.snapshot;
+    const snapshot = player?.snapshot;
     if (
+      !player ||
       !snapshot ||
       snapshot.battleId !== state.battleId ||
       snapshot.userId !== player.user.id ||
@@ -55,6 +59,16 @@ export function createPvpTrainerSession(
       activeCaptureId: snapshot.activeCaptureId,
     };
     if (side === "a") session.hpMultiplier = snapshot.hpMultiplier;
+  }
+  if (trainerBattle) {
+    if (
+      state.players.b ||
+      state.trainer?.region !== "kanto" ||
+      !state.trainer.presetId ||
+      !state.trainer.team
+    )
+      throw new Error("Falta el equipo confirmado del Trainer seleccionado.");
+    session.teams.b = clone(state.trainer.team);
   }
   const errors = trainerSetupErrors(session);
   if (errors.length || !validTrainerBattleSession(session))

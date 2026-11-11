@@ -18,7 +18,9 @@
     "test:accounts": "node tools/test-account-storage.mjs",
     "test:pvp:engine": "node --import tsx --test tests/pvp-engine.test.ts",
     "test:pvp:party": "node tools/test-account-storage.mjs --pvp",
-    "test:pvp:browser": "node tools/test-pvp-browser.mjs"
+    "test:pvp:browser": "node tools/test-pvp-browser.mjs",
+    "test:trainer:catalog": "node --import tsx --test tests/kanto-trainers.test.ts",
+    "test:trainer:browser": "node tools/test-pvp-browser.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.2.0",
