@@ -1,12 +1,17 @@
 import { useEffect } from "react";
 import { useAppContext } from "@/context/AppContext";
+import { useAppSelector } from "@/store/hooks";
+import { getPvpLock } from "@/lib/pvpParty";
 
 const IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 
 const IdleTimer = ({ children }) => {
   const { logout, setIsIdle } = useAppContext();
+  const reserved = useAppSelector((state) => !!getPvpLock(state.party));
 
   useEffect(() => {
+    // Players watch while the administrator acts; watching a reserved battle is active use.
+    if (reserved) return;
     let timer;
     let lastActivity = Date.now();
     let closing = false;
@@ -61,7 +66,7 @@ const IdleTimer = ({ children }) => {
       window.removeEventListener("focus", checkIdle);
       window.clearTimeout(timer);
     };
-  }, [logout, setIsIdle]);
+  }, [logout, setIsIdle, reserved]);
 
   return <div>{children}</div>;
 };

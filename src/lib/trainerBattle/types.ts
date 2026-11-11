@@ -6,6 +6,7 @@ import type { EmeraldChoice, EmeraldRequest } from "@/lib/emerald/types";
 export type TrainerSide = "a" | "b";
 export type TrainerChoice =
   | EmeraldChoice
+  | { kind: "forfeit" }
   | { kind: "item"; item: "full-restore"; captureId: string };
 export type TrainerPokemon = CapturedPokemon & {
   trainerStatusContext?: {
@@ -39,6 +40,7 @@ export type TrainerTurnSummary = {
 export type TrainerBattleSession = {
   version: 1;
   id: string;
+  networkBattleId?: string;
   phase: "setup" | "battle" | "finished";
   hpMultiplier: number;
   teams: Record<TrainerSide, TrainerTeam>;

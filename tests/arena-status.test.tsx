@@ -16,6 +16,7 @@ import Arena from "../src/components/pokemon/PokemonBattleArena";
 import Own from "../src/components/pokemon/PokemonStatusControl";
 import Rival from "../src/components/pokemon/PokemonOpponentStatusControl";
 import Picker from "../src/components/pokemon/PokemonStatusPicker";
+import { BattleMusicProvider } from "../src/context/BattleMusicContext";
 const pokemon = createLeveledPokemon({
   id: 4,
   name: "charmander",
@@ -88,16 +89,22 @@ test("own selector changes own states and enforces primary exclusivity", () => {
     );
   });
   const picker = root!.root.findByType(Picker);
-  act(() => picker.props.onToggle("asleep"));
+  act(() => picker.props.onSetTurns("asleep", 3));
+  assert.deepEqual(store.getState().party.pokemons[0].statuses, ["asleep"]);
+  assert.equal(store.getState().party.pokemons[0].statusTurns?.asleep, 3);
   act(() => picker.props.onToggle("burned"));
-  act(() => picker.props.onToggle("confused"));
+  act(() => picker.props.onSetTurns("confused", 2));
   assert.deepEqual(store.getState().party.pokemons[0].statuses, [
     "burned",
     "confused",
   ]);
+  assert.deepEqual(store.getState().party.pokemons[0].statusTurns, {
+    confused: 2,
+  });
   assert.deepEqual(store.getState().party.opponent?.statuses, []);
   act(() => picker.props.onClear());
   assert.deepEqual(store.getState().party.pokemons[0].statuses, []);
+  assert.deepEqual(store.getState().party.pokemons[0].statusTurns, {});
   act(() => root!.unmount());
 });
 test("rival uses the same picker and preserves exclusivity", () => {
@@ -114,12 +121,16 @@ test("rival uses the same picker and preserves exclusivity", () => {
     );
   });
   const picker = root!.root.findByType(Picker);
-  act(() => picker.props.onToggle("asleep"));
+  act(() => picker.props.onSetTurns("asleep", 3));
+  assert.deepEqual(current!.statuses, ["asleep"]);
+  assert.equal(current!.statusTurns?.asleep, 3);
   act(() => picker.props.onToggle("paralyzed"));
-  act(() => picker.props.onToggle("confused"));
+  act(() => picker.props.onSetTurns("confused", 2));
   assert.deepEqual(current!.statuses, ["paralyzed", "confused"]);
+  assert.deepEqual(current!.statusTurns, { confused: 2 });
   act(() => picker.props.onClear());
   assert.deepEqual(current!.statuses, []);
+  assert.deepEqual(current!.statusTurns, {});
   act(() => root!.unmount());
 });
 test("stale rival popover cannot modify a different encounter", () => {
@@ -147,16 +158,20 @@ for (const view of [false, true])
     act(() => {
       root = TestRenderer.create(
         <Provider store={store}>
-          <Arena
-            capturedPokemon={capture}
-            opponent={rival}
-            field={emptyBattleField()}
-            opponentView={view}
-            onTogglePerspective={() => {}}
-            onPlayCry={() => {}}
-            onOpenHp={(side) => opened.push(side)}
-            rivalStatusControl={<Rival opponent={rival} onChange={() => {}} />}
-          />
+          <BattleMusicProvider>
+            <Arena
+              capturedPokemon={capture}
+              opponent={rival}
+              field={emptyBattleField()}
+              opponentView={view}
+              onTogglePerspective={() => {}}
+              onPlayCry={() => {}}
+              onOpenHp={(side) => opened.push(side)}
+              rivalStatusControl={
+                <Rival opponent={rival} onChange={() => {}} />
+              }
+            />
+          </BattleMusicProvider>
         </Provider>,
       );
     });

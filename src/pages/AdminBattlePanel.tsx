@@ -14,6 +14,8 @@ import {
 } from "@/components/ui/dialog";
 import TrainerTeamEditor from "@/components/admin/TrainerTeamEditor";
 import TrainerBattleView from "@/components/admin/TrainerBattleView";
+import PvpBattlePanel from "@/components/admin/PvpBattlePanel";
+import { usePvpContext } from "@/context/PvpContext";
 import { startTrainerBattle } from "@/lib/trainerBattle/engine";
 import {
   createTrainerBattleSession,
@@ -54,7 +56,7 @@ function loadBattle() {
   }
 }
 
-export default function AdminBattlePanel() {
+function ManualAdminBattlePanel() {
   const [loaded] = useState(loadBattle);
   const [session, setSession] = useState(loaded.session);
   const [storageError, setStorageError] = useState(loaded.error);
@@ -348,5 +350,42 @@ export default function AdminBattlePanel() {
         </DialogContent>
       </Dialog>
     </main>
+  );
+}
+
+export default function AdminBattlePanel() {
+  const pvp = usePvpContext();
+  const [mode, setMode] = useState<"pvp" | "manual">("pvp");
+  const reserved =
+    !!pvp.state && !["finalized", "cancelled"].includes(pvp.state.phase);
+  const selectedMode = reserved ? "pvp" : mode;
+  return (
+    <div>
+      <nav
+        aria-label="Modo de batalla"
+        className="mx-auto flex max-w-7xl flex-wrap gap-2 border-b px-3 py-3 sm:px-6"
+      >
+        <Button
+          variant={selectedMode === "pvp" ? "default" : "outline"}
+          onClick={() => setMode("pvp")}
+        >
+          Jugadores conectados · PvP
+        </Button>
+        <Button
+          variant={selectedMode === "manual" ? "default" : "outline"}
+          disabled={reserved}
+          onClick={() => setMode("manual")}
+        >
+          Batalla manual
+        </Button>
+      </nav>
+      {selectedMode === "pvp" ? (
+        <main className="mx-auto w-full max-w-7xl px-3 py-5 sm:px-6">
+          <PvpBattlePanel />
+        </main>
+      ) : (
+        <ManualAdminBattlePanel />
+      )}
+    </div>
   );
 }

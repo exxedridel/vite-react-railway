@@ -1,9 +1,11 @@
+/// <reference types="vite/client" />
+
 interface ImportMetaEnv {
-    VITE_BASE_MIDDLEWARE: string;
-    VITE_BASE_SERVICES: string;
-    VITE_WEBSOCKET_URL?: string;
-  }
-  
-  interface ImportMeta {
-    env: ImportMetaEnv;
-  }
+  readonly VITE_BASE_MIDDLEWARE: string;
+  readonly VITE_BASE_SERVICES: string;
+  readonly VITE_WEBSOCKET_URL?: string;
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv;
+}

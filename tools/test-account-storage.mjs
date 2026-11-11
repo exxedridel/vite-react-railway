@@ -8,6 +8,7 @@ import vm from "node:vm";
 import { build } from "esbuild";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const pvpMode = process.argv.includes("--pvp");
 const timers = new Set();
 let networkCalls = 0;
 class FakeStorage {
@@ -42,7 +43,7 @@ class FakeStorage {
   }
 }
 const storage = new FakeStorage();
-let lockQueue = Promise.resolve();
+const lockQueues = new Map();
 const trackedTimeout = (callback, delay, ...args) => {
   const timer = setTimeout(() => {
     timers.delete(timer);
@@ -86,10 +87,15 @@ const context = vm.createContext({
   navigator: {
     locks: {
       request: (_name, _options, callback) => {
-        const next = lockQueue.then(() => callback({ name: _name }));
-        lockQueue = next.then(
-          () => undefined,
-          () => undefined,
+        const next = (lockQueues.get(_name) ?? Promise.resolve()).then(() =>
+          callback({ name: _name }),
+        );
+        lockQueues.set(
+          _name,
+          next.then(
+            () => undefined,
+            () => undefined,
+          ),
         );
         return next;
       },
@@ -112,7 +118,9 @@ let deadline;
 try {
   const { outputFiles } = await build({
     absWorkingDir: root,
-    entryPoints: ["tests/account-storage-entry.ts"],
+    entryPoints: [
+      pvpMode ? "tests/pvp-party-entry.ts" : "tests/account-storage-entry.ts",
+    ],
     bundle: true,
     platform: "node",
     format: "cjs",
@@ -159,7 +167,7 @@ try {
   );
   for (const description of passed) console.log(`PASS: ${description}`);
   console.log(
-    `Account storage: ${passed.length} integration cases passed; fake storage only, zero network requests.`,
+    `${pvpMode ? "PvP party" : "Account storage"}: ${passed.length} integration cases passed; fake storage only, zero network requests.`,
   );
 } catch (error) {
   console.error(`${error.name}: ${error.message}`);

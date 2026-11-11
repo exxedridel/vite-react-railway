@@ -1,5 +1,9 @@
 # Pokémon Master Trainer — v2.0.0
 
+> Nota de continuidad (2026-11-10): este documento describe la entrega original.
+> El saneamiento posterior resolvió los 16 errores TypeScript mencionados abajo;
+> consulta el README para los comandos y la configuración actuales.
+
 ## Instalación
 
 1. Conserva una copia de tu proyecto actual y tu archivo `.env`.

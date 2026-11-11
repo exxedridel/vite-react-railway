@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/context/AppContext";
 import Layout from "@/layout/Layout";
 import AdminShopPage from "@/pages/AdminShopPage";
+import PvpPartyGate from "@/components/pvp/PvpPartyGate";
 
 const AdminBattlePanel = lazy(() => import("@/pages/AdminBattlePanel"));
 const ADMIN_PANEL_KEY = "pokemon-admin-active-panel:v1";
@@ -99,5 +100,9 @@ export default function AppExperience({ children }: { children: ReactNode }) {
       </div>
     );
   if (user.role === "admin") return <AdminWorkspace />;
-  return <Layout>{children}</Layout>;
+  return (
+    <PvpPartyGate>
+      <Layout>{children}</Layout>
+    </PvpPartyGate>
+  );
 }

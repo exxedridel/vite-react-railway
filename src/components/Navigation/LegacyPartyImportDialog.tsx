@@ -10,12 +10,18 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { hasLegacyPartyForImport, importLegacyParty } from "@/store/store";
+import { usePvpContext } from "@/context/PvpContext";
+import { useAppSelector } from "@/store/hooks";
+import { getPvpLock } from "@/lib/pvpParty";
 
 export default function LegacyPartyImportDialog({
   user,
 }: {
   user: { id: number; email: string } | null;
 }) {
+  const pvp = usePvpContext();
+  const locked = useAppSelector((state) => !!getPvpLock(state.party));
+  const allowed = pvp.user?.role === "admin" || (pvp.synced && !locked);
   const [open, setOpen] = useState(false);
   const [available, setAvailable] = useState(false);
   const [error, setError] = useState("");
@@ -32,7 +38,7 @@ export default function LegacyPartyImportDialog({
     setError("");
     setBusy(false);
     submitting.current = false;
-    if (!user) return;
+    if (!user || !allowed) return;
     void hasLegacyPartyForImport(user.id)
       .then((found) => {
         if (cancelled) return;
@@ -51,7 +57,7 @@ export default function LegacyPartyImportDialog({
     return () => {
       cancelled = true;
     };
-  }, [user?.id, checkVersion]);
+  }, [user?.id, checkVersion, allowed]);
 
   async function importParty() {
     if (!user || submitting.current) return;
@@ -81,7 +87,7 @@ export default function LegacyPartyImportDialog({
 
   return (
     <Dialog
-      open={!!user && open}
+      open={!!user && allowed && open}
       onOpenChange={(next) => {
         if (!submitting.current) setOpen(next);
       }}

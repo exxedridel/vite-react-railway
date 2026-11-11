@@ -1,13 +1,27 @@
----
-title: Vite + React
-description: The default Vite + React starter, utilizing `serve` to serve the built app
-tags:
-  - node
-  - vite
-  - react
----
+# Pokémon Master Trainer
 
-# Vite + React + Serve
+Frontend del juego con React, TypeScript y Vite. `mysql-restapi` autentica y
+administra usuarios; `nest-mongo-pokedex` comunica jugadores y conserva las
+batallas PvP. El motor de combate se ejecuta en el panel administrador.
+
+## Desarrollo y comprobaciones
+
+```bash
+npm ci
+npm run dev
+npm run typecheck
+npm run build
+```
+
+`npm run typecheck` revisa aplicación y pruebas con TypeScript estricto.
+`npm run audit:source` muestra el grafo de imports y posibles módulos huérfanos;
+no elimina archivos automáticamente. Las referencias dinámicas a assets deben
+revisarse antes de eliminar recursos. `npm run test:arena-status` ejecuta las
+pruebas de estados/sprites de la arena con React Test Renderer.
+
+Railway ejecuta `npm start` para servir `dist` con soporte de rutas SPA y el
+puerto `PORT`. Variables locales de ejemplo en `.env.example`; las variables
+`VITE_*` se incorporan al compilar. Las instrucciones de cada flujo siguen abajo.
 
 ## Usuarios: `/users`
 
@@ -33,6 +47,77 @@ reserva impide asignarla a varias cuentas del mismo navegador. La importación
 requiere Web Locks (navegador compatible y contexto seguro). Si no está disponible
 o falla el guardado, se muestra el error y se conserva la partida original.
 Los datos del escenario administrador siguen siendo locales al dispositivo.
+
+## Batallas PvP con jugadores conectados
+
+En **Panel batalla → Jugadores conectados · PvP**, el administrador selecciona
+dos cuentas de jugador que estén conectadas. La conexión PvP se mantiene desde
+las páginas de la aplicación; no hace falta dejar abierto `/mensajes-prueba`.
+El administrador elige las acciones de ambos equipos; los jugadores observan.
+La pestaña **Batalla manual** conserva el escenario anterior.
+
+1. Cada jugador inicia sesión con su correo en su navegador/dispositivo. Su
+   Party debe contener de 1 a 6 Pokémon, al menos uno con HP, con 1–4 movimientos
+   válidos de Gen III por Pokémon y sin otro encuentro local activo.
+2. El administrador selecciona **Jugador A / Jugador B** y pulsa **Solicitar ambos
+   equipos**. Se guardan las reservas antes de enviar los snapshots. Se importa
+   todo el equipo con HP, estados, niveles, movimientos y stats actuales; los
+   dos usuarios pueden tener multiplicadores de HP distintos.
+3. Cuando ambos equipos están recibidos y sus propietarios están conectados,
+   pulsa **Iniciar batalla PvP**. El panel maneja movimientos, cambios, acciones
+   obligatorias y **Rendirse**. La rendición requiere confirmación y solo se
+   acepta cuando ese lado tiene una solicitud de acción propia disponible.
+4. Tras declarar ganador, **Salir y actualizar Partys** publica el resultado.
+   Cada navegador guarda HP y condiciones finales junto con un recibo de resultado;
+   ambos confirman ese guardado y entonces se liberan los equipos. Los estados
+   temporales y modificadores se limpian al finalizar. Dinero, medallas, especie,
+   nivel y movimientos permanecen en sus respectivas partidas.
+
+No hay existencias de objetos en la mochila actual, solo dinero y medallas.
+Por eso Full Restore del simulador manual no aparece en PvP. Los PP se consumen
+en el runtime de esta batalla; `moves[].pp` sigue siendo información del catálogo.
+No se añade XP, premios o intercambio de Pokémon en este flujo.
+
+Durante la reserva se bloquean globalmente las acciones `party/*`: curación,
+edición, captura, evolución, cambios de mochila, reinicio y resultados asíncronos
+del juego local. El bloqueo y los recibos se guardan por cuenta; cerrar sesión,
+recargar o desconectarse no los elimina. Un equipo distinto en otro dispositivo
+se conserva y queda bloqueado con un aviso: debe recuperarse el navegador que
+envió el equipo. No se sobreescribe una partida divergente.
+
+Al detectar que falta un propietario, el panel pausa las acciones hasta que
+vuelva. Si el admin recarga, recupera el checkpoint confirmado y el azar del
+motor. Una pestaña admin diferente debe reclamar el control explícitamente;
+los mensajes de un anfitrión anterior se rechazan. Solo se puede cancelar la
+preparación: una batalla activa termina por resultado o rendición. Si un jugador
+no vuelve para guardar su resultado, ambos equipos siguen reservados.
+
+El navegador necesita HTTPS (localhost también funciona), Web Crypto y Web Locks
+para las operaciones PvP. Tras el primer chequeo de reservas, una partida sin
+batalla pendiente puede seguir usándose localmente si se pierde la conexión.
+Una partida con reserva exige reconectar y completar el cierre.
+
+### Desplegar esta etapa
+
+Desplegar **Nest primero y React después**. Se reutilizan `JWT_SECRET`,
+`AUTH_API_URL`, `FRONTEND_ORIGINS`, `MONGODB` y las URLs `VITE_*` ya configuradas.
+No añadir `/pvp` a la variable: el cliente construye el namespace desde el origen.
+Nest crea la colección `pvp_battles` y sus índices de reservas al arrancar. Los
+checkpoints/resultados de combate se guardan en Mongo; el guardado general del
+jugador continúa en su navegador. Usar una sola réplica Nest en esta etapa.
+
+### Pruebas PvP
+
+```bash
+npm run test:pvp:engine
+npm run test:pvp:party
+npm run test:pvp:browser
+```
+
+La prueba Chrome requiere compilar primero Nest. Usa Express con repositorio en
+memoria, Nest aislado sin Mongo y tres sesiones reales de navegador; prueba
+importación 1/6, bloqueo, desconexión y recargas, un turno, rendición, salida,
+guardado de ambos resultados e idempotencia. No modifica Railway ni bases reales.
 
 ## Cierre de sesión
 
@@ -110,31 +195,6 @@ ejecutable mediante `CHROME_PATH`. Cierra los procesos temporales al terminar.
 con almacenamiento simulado, incluyendo errores de escritura y datos corruptos;
 no abre el navegador ni realiza peticiones de red.
 
-Validación local de la etapa de usuarios: build de producción correcto, 7 casos
-de almacenamiento y prueba Chrome aprobados. El `tsc --noEmit` global conserva
-16 errores previos (módulos antiguos ausentes, objetivo ES5 y pruebas anteriores);
-no está limpio aunque esta etapa no añade diagnósticos.
-
-## Plantilla original
-
-This is a [Vite + React](https://vitejs.dev/guide/#trying-vite-online) starter that uses [serve](https://www.npmjs.com/package/serve).
-
-[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/NeiLty?referralCode=ySCnWl)
-
-## ✨ Features
-
-- Vite + React
-- Serve
-
-## 💁‍♀️ How to use
-
-- Install required dependencies with `npm install`
-- Start the server for local development `npm run dev`
-
-## ❓ Why use `serve`
-
-By default Railway will use the `start` script defined in package.json to run your app, the default Vite + React starter project does not come with any `start` script, so I have added `serve` as the start script, there are many benefits to using serve over just running the vite command. 
-
- - `serve` is more suited to run single page apps
- - Uses less ram than `vite` or `vite preview` (<100mb)
- - Far more performant and stable
+La etapa de saneamiento retira módulos de seguros, APIs y componentes sin
+consumidores, dependencias sobrantes y configuración Next/ES5. La aplicación
+usa el proveedor de tema local y conserva los recursos y herramientas del juego.

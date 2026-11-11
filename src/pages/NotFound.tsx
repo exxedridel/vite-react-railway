@@ -3,7 +3,7 @@ import { AlertCircle } from "lucide-react";
 
 function NotFound() {
   return (
-    <div className="h-screen flex flex-col items-center justify-center p-3 bg-[url('/back-office/pattern-insuranceservices.svg')]">
+    <div className="h-screen flex flex-col items-center justify-center p-3 bg-gradient-to-b from-background to-muted">
       <div className="card p-9 shadow-xl">
         <h2 className="text-5xl font-bold uppercase text-center py-2">404</h2>
         <hr className="my-4" />

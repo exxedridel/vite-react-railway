@@ -1,4 +1,14 @@
 import type { PartyState } from "@/slices/partySlice";
+import { stablePvpJson } from "@/lib/pvp/types";
+
+export const PVP_PARTY_COMMIT = "party/pvpCommit";
+let pvpSyncBlocked = false;
+export function setPvpSyncBlocked(blocked: boolean): void {
+  pvpSyncBlocked = blocked;
+}
+export function isPvpSyncBlocked(): boolean {
+  return pvpSyncBlocked;
+}
 
 export const LEGACY_PARTY_KEY = "persist:root";
 export const LEGACY_PARTY_BACKUP_KEY = "pokemon-legacy-party-backup:v1";
@@ -61,15 +71,12 @@ export const accountStorage = {
     }
   },
   setItem(_key: string, value: string): Promise<void> {
-    // Capture the owner and perform the local write before returning a promise.
+    // Capture the owner now; waiting on another tab must not redirect this write.
     const owner = activeAccountId;
     if (owner === null) return Promise.resolve();
-    try {
-      writeLocalValue(accountStorageKey(owner), value);
-      return Promise.resolve();
-    } catch (error) {
-      return Promise.reject(error);
-    }
+    return withAccountStorageLock(owner, async () => {
+      writeNormalAccountRoot(owner, value);
+    });
   },
   removeItem(_key: string): Promise<void> {
     // Account transitions and logout must never purge a saved party.
@@ -128,6 +135,24 @@ export function decodeAccountParty(
       (!isRecord(party.opponent) || !validPokemon(party.opponent.pokemon))
     )
       throw new Error();
+    if (
+      party.pvpRevision !== undefined &&
+      (!Number.isSafeInteger(party.pvpRevision) ||
+        (party.pvpRevision as number) < 0)
+    )
+      throw new Error();
+    if (party.pvpLock !== undefined && party.pvpLock !== null) {
+      const lock = party.pvpLock;
+      if (
+        !isRecord(lock) ||
+        lock.version !== 1 ||
+        typeof lock.battleId !== "string" ||
+        !Number.isSafeInteger(lock.userId) ||
+        typeof lock.clientId !== "string" ||
+        !["held", "reserved", "saved"].includes(String(lock.phase))
+      )
+        throw new Error();
+    }
     return {
       party: { ...party, opponent: party.opponent ?? null } as PartyState,
     };
@@ -152,7 +177,68 @@ export function readAccountParty(
 }
 
 export function writeAccountParty(userId: number, party: PartyState): void {
-  writeLocalValue(accountStorageKey(userId), encodeAccountParty(party));
+  writeNormalAccountRoot(userId, encodeAccountParty(party));
+}
+
+export function pvpPartyRevision(party: PartyState | undefined): number {
+  return party?.pvpRevision ?? 0;
+}
+
+function writeNormalAccountRoot(userId: number, raw: string): void {
+  const incoming = decodeAccountParty(raw)?.party;
+  if (!incoming) return;
+  const key = accountStorageKey(userId);
+  const previousRaw = readLocalValue(key);
+  if (previousRaw === raw) return;
+  const previous = decodeAccountParty(previousRaw)?.party;
+  if (previous) {
+    if (pvpPartyRevision(previous) > pvpPartyRevision(incoming)) return;
+    if (
+      previous.pvpLock &&
+      pvpPartyRevision(previous) === pvpPartyRevision(incoming) &&
+      stablePvpJson(previous) !== stablePvpJson(incoming)
+    )
+      return;
+  }
+  writeLocalValue(key, raw);
+}
+
+/** Only the PvP coordinator writes here, while holding the account Web Lock. */
+export function writePvpAccountParty(userId: number, party: PartyState): void {
+  const raw = encodeAccountParty(party);
+  if (readLocalValue(accountStorageKey(userId)) !== raw)
+    writeLocalValue(accountStorageKey(userId), raw);
+}
+
+export async function withAccountStorageLock<T>(
+  userId: number,
+  operation: () => Promise<T>,
+  required = false,
+): Promise<T> {
+  accountStorageKey(userId);
+  if (typeof navigator !== "undefined" && navigator.locks?.request)
+    return navigator.locks.request(
+      `pokemon-account-party:${userId}`,
+      { mode: "exclusive" },
+      operation,
+    );
+  if (required)
+    throw new Error(
+      "Este navegador no permite proteger la partida entre pestañas. PvP requiere un navegador compatible y una conexión segura.",
+    );
+  return operation();
+}
+
+export function isLocalPartyMutationBlocked(party: PartyState): boolean {
+  if (pvpSyncBlocked || party.pvpLock || activeAccountId === null) return true;
+  try {
+    const saved = readAccountParty(activeAccountId)?.party;
+    return (
+      !!saved?.pvpLock || pvpPartyRevision(saved) > pvpPartyRevision(party)
+    );
+  } catch {
+    return true;
+  }
 }
 
 export function getStoredNickname(userId: number): string {

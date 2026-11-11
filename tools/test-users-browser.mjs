@@ -614,7 +614,16 @@ try {
     join(nestRoot, "dist/messages/messages.module.js"),
   );
   class BrowserUsersRoot {}
-  Module({ imports: [MessagesModule] })(BrowserUsersRoot);
+  const { PvpModule } = requireNest(join(nestRoot, "dist/pvp/pvp.module.js"));
+  const { MemoryPvpRepository } = requireNest(
+    join(nestRoot, "dist/pvp/pvp.repository.js"),
+  );
+  Module({
+    imports: [
+      MessagesModule,
+      PvpModule.withRepository(new MemoryPvpRepository()),
+    ],
+  })(BrowserUsersRoot);
   app = await bounded(
     NestFactory.create(BrowserUsersRoot, { logger: false }),
     10000,

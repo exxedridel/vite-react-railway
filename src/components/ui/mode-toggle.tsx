@@ -19,11 +19,11 @@ export function ModeToggle() {
     setBrandColor("347 77% 50%");
     setBrandForeColor("0 0% 98%");
   };
-  const changePrimaryWoow = () => {
+  const changePrimaryGold = () => {
     setBrandColor("46 82% 47.5%");
     setBrandForeColor("0 0% 0%");
   };
-  const changePrimaryInsuranceServices = () => {
+  const changePrimaryCyan = () => {
     setBrandColor("191.45 100% 29.8%");
     setBrandForeColor("0 0% 98%");
   };
@@ -92,18 +92,17 @@ export function ModeToggle() {
               <div className="flex items-center justify-center">
                 <button
                   className="bg-[#e9ba24] hover:bg-[#e9ba24]/70 w-5 h-5 rounded-full"
-                  onClick={changePrimaryWoow}
+                  onClick={changePrimaryGold}
                 ></button>
               </div>
               <div className="flex items-center justify-center">
                 <button
                   className="bg-[#007b98] hover:bg-[#007b98]/70 w-5 h-5 rounded-full"
-                  onClick={changePrimaryInsuranceServices}
+                  onClick={changePrimaryCyan}
                 ></button>
               </div>
             </div>
             <div className="w-full mt-1 flex flex-row gap-1 justify-between items-center">
-             
               <div className="flex items-center justify-center">
                 <button
                   className="bg-[#FF7F50] hover:bg-[#FF7F50]/70 w-5 h-5 rounded-full"
@@ -122,8 +121,8 @@ export function ModeToggle() {
                   onClick={changePrimaryPurple}
                 ></button>
               </div>
-               <div className="flex items-center justify-center">
-                 <button
+              <div className="flex items-center justify-center">
+                <button
                   className="bg-[#c4de61] hover:bg-[#c4de61]/70 w-5 h-5 rounded-full"
                   onClick={changeYellowgreen}
                 ></button>

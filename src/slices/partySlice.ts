@@ -101,6 +101,8 @@ import {
   validBaseStats,
   neutralBattleStages,
 } from "@/lib/pokemonStats";
+import { PVP_PARTY_COMMIT } from "@/store/accountStorage";
+import type { PvpPartyLock, PvpPartyReceipt } from "@/lib/pvpParty";
 type ExecuteMoveInput = {
   options?: MoveExecutionOptions;
   actorSide?: "player" | "opponent";
@@ -111,6 +113,9 @@ type ExecuteMoveInput = {
   conditionsConfirmed: boolean;
 };
 export type PartyState = {
+  pvpLock?: PvpPartyLock | null;
+  pvpRevision?: number;
+  pvpReceipts?: PvpPartyReceipt[];
   emerald?: EmeraldRuntime;
   lastEmeraldBatch?: {
     id: string;
@@ -906,8 +911,10 @@ const partySlice = createSlice({
       capture.moves = [...moves, { ...move, source: "starter" }];
       capture.initialMovesChosen = used + 1;
     },
-    resetGame() {
+    resetGame(state) {
       return {
+        pvpRevision: state.pvpRevision,
+        pvpReceipts: state.pvpReceipts,
         bag: emptyTrainerBag(),
         battleField: emptyBattleField(),
         dataVersion: GAME_DATA_VERSION,
@@ -1368,12 +1375,22 @@ export default function partyReducer(
   state: PartyState | undefined,
   action: UnknownAction,
 ): PartyState {
+  if (action.type === PVP_PARTY_COMMIT) return action.payload as PartyState;
+  if (state?.pvpLock && action.type.startsWith("party/")) return state;
   // redux-persist autoMergeLevel1 conserva un slice si cambió durante REHYDRATE.
   // Reiniciamos solo party: no tokens, nickname, colores ni datos de otras apps.
   if (action.type === "persist/REHYDRATE" && action.key === "root") {
     const payload = action.payload;
     if (payload && typeof payload === "object" && "party" in payload) {
       const saved = payload.party;
+      // A ruleset migration must not erase an unresolved, persisted PvP lock.
+      if (
+        saved &&
+        typeof saved === "object" &&
+        "pvpLock" in saved &&
+        saved.pvpLock
+      )
+        return { ...initialState, ...saved } as PartyState;
       if (
         !saved ||
         typeof saved !== "object" ||

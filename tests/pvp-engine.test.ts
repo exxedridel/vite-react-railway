@@ -1,0 +1,377 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { Battle } from "@pkmn/sim";
+import { trainerMoves, trainerSpecies } from "../src/lib/trainerBattle/catalog";
+import {
+  chooseTrainerAction,
+  forfeitTrainerBattle,
+  startTrainerBattle,
+} from "../src/lib/trainerBattle/engine";
+import {
+  trainerSetupErrors,
+  validTrainerBattleSession,
+} from "../src/lib/trainerBattle/model";
+import {
+  createLeveledPokemon,
+  getCurrentHp,
+  getMaxHp,
+} from "../src/lib/pokemonStats";
+import {
+  applyPvpTrainerCommand,
+  applyPvpTrainerCommands,
+  clearPvpCheckpointOutbox,
+  createPvpTrainerSession,
+  pvpTeamPatches,
+  readPvpCheckpointOutbox,
+  writePvpCheckpointOutbox,
+} from "../src/lib/pvp/battleAdapter";
+import {
+  pvpRequestKey,
+  type PvpBattleView,
+  type PvpSnapshot,
+} from "../src/lib/pvp/types";
+import { GAME_DATA_VERSION } from "../src/lib/gameVersion";
+import type { CapturedPokemon } from "../src/types/pokemon";
+
+const seed: [number, number, number, number] = [1, 2, 3, 4];
+const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
+
+function member(
+  captureId: string,
+  multiplier: number,
+  hp: number,
+  modern = false,
+): CapturedPokemon {
+  const species = trainerSpecies.find((value) => value.id === 35)!;
+  const bases = clone(species.baseStats);
+  if (modern) bases.find((stat) => stat.name === "special-attack")!.value += 15;
+  const pokemon = createLeveledPokemon(
+    {
+      id: 35,
+      name: "clefairy",
+      image: null,
+      types: modern ? ["fairy"] : [...species.types],
+      stats: clone(bases),
+    },
+    bases,
+    50,
+    multiplier,
+  );
+  pokemon.stats.find((stat) => stat.name === "hp")!.value = hp;
+  if (modern) pokemon.stats.find((stat) => stat.name === "attack")!.value += 7;
+  return {
+    captureId,
+    pokemon,
+    moves: [clone(trainerMoves.find((move) => move.id === 150)!)],
+    statuses: ["poisoned"],
+    statusTurns: {},
+  };
+}
+
+function view(): PvpBattleView {
+  const snapshot = (side: "a" | "b"): PvpSnapshot => ({
+    version: 1,
+    battleId: "pvp-test",
+    snapshotId: `snapshot-${side}`,
+    userId: side === "a" ? 1 : 2,
+    clientId: `player-${side}`,
+    dataVersion: GAME_DATA_VERSION,
+    baseHash: side.repeat(64),
+    pokemons: [
+      member(
+        "same-capture-id",
+        side === "a" ? 1 : 2,
+        side === "a" ? 17 : 29,
+        side === "a",
+      ),
+      member(`reserve-${side}`, side === "a" ? 1.1 : 1.9, 0),
+    ],
+    activeCaptureId: "same-capture-id",
+    hpMultiplier: side === "a" ? 1 : 2,
+  });
+  const a = snapshot("a"),
+    b = snapshot("b");
+  return {
+    battleId: "pvp-test",
+    phase: "ready",
+    revision: 3,
+    checkpointRevision: 0,
+    host: { userId: 99, clientId: "admin-tab", epoch: 1, online: true },
+    players: {
+      a: {
+        user: {
+          id: 1,
+          email: "a@example.test",
+          first_name: "A",
+          last_name: "Player",
+          role: "player",
+        },
+        clientId: a.clientId,
+        online: true,
+        snapshot: a,
+      },
+      b: {
+        user: {
+          id: 2,
+          email: "b@example.test",
+          first_name: "B",
+          last_name: "Player",
+          role: "player",
+        },
+        clientId: b.clientId,
+        online: true,
+        snapshot: b,
+      },
+    },
+    applied: { a: false, b: false },
+    commands: [],
+    session: null,
+  };
+}
+
+test("PvP imports distinct HP multipliers, current stats/types and cross-player capture IDs without healing or mutating snapshots", () => {
+  const state = view(),
+    original = clone(state);
+  const session = createPvpTrainerSession(state);
+  assert(validTrainerBattleSession(session));
+  assert.deepEqual(trainerSetupErrors(session), []);
+  const started = startTrainerBattle(session, seed);
+  assert(validTrainerBattleSession(started));
+  assert.deepEqual(state, original);
+  assert.equal(getCurrentHp(started.teams.a.pokemons[0].pokemon), 17);
+  assert.equal(getCurrentHp(started.teams.b.pokemons[0].pokemon), 29);
+  assert.equal(getCurrentHp(started.teams.a.pokemons[1].pokemon), 0);
+  assert.equal(
+    started.teams.a.pokemons[0].captureId,
+    started.teams.b.pokemons[0].captureId,
+  );
+  const sim = Battle.fromJSON(started.runtime!.engine);
+  assert.equal(
+    sim.p1.active[0].maxhp,
+    getMaxHp(state.players.a.snapshot!.pokemons[0].pokemon),
+  );
+  assert.equal(
+    sim.p2.active[0].maxhp,
+    getMaxHp(state.players.b.snapshot!.pokemons[0].pokemon),
+  );
+  assert.equal(
+    sim.p1.active[0].storedStats.atk,
+    session.teams.a.pokemons[0].pokemon.stats.find(
+      (stat) => stat.name === "attack",
+    )!.value,
+  );
+  assert.deepEqual(sim.p1.active[0].types, ["Fairy"]);
+  assert.equal(sim.p1.active[0].status, "psn");
+  assert.equal(sim.p2.pokemon[1].fainted, true);
+});
+
+test("manual trainer validation remains strict; PvP still rejects duplicate IDs in one party, impossible HP and invalid moves", () => {
+  const source = createPvpTrainerSession(view());
+  const manual = clone(source);
+  delete manual.networkBattleId;
+  assert.equal(validTrainerBattleSession(manual), false);
+  const duplicate = clone(source);
+  duplicate.teams.a.pokemons[1].captureId =
+    duplicate.teams.a.pokemons[0].captureId;
+  assert.equal(validTrainerBattleSession(duplicate), false);
+  const hp = clone(source);
+  hp.teams.a.pokemons[0].pokemon.stats[0].value =
+    getMaxHp(hp.teams.a.pokemons[0].pokemon)! + 1;
+  assert.equal(validTrainerBattleSession(hp), false);
+  const wrongMove = clone(source);
+  wrongMove.teams.a.pokemons[0].moves![0].id = 9999;
+  assert.equal(validTrainerBattleSession(wrongMove), false);
+  const wrongOwner = view();
+  wrongOwner.players.a.snapshot!.userId = 2;
+  assert.throws(() => createPvpTrainerSession(wrongOwner), /propietario/);
+});
+
+test("forfeit resolves a winner without running queued attacks, consuming PP or healing HP and primary statuses", () => {
+  const started = startTrainerBattle(createPvpTrainerSession(view()), seed);
+  const pending = chooseTrainerAction(started, "b", {
+    kind: "move",
+    moveId: 150,
+  });
+  const before = Battle.fromJSON(pending.runtime!.engine);
+  const finished = forfeitTrainerBattle(pending, "a");
+  const after = Battle.fromJSON(finished.runtime!.engine);
+  assert.equal(finished.phase, "finished");
+  assert.equal(finished.runtime!.winner, "b");
+  assert.equal(finished.runtime!.turn, pending.runtime!.turn);
+  assert.deepEqual(finished.runtime!.pending, {});
+  assert.equal(
+    after.p1.active[0].moveSlots[0].pp,
+    before.p1.active[0].moveSlots[0].pp,
+  );
+  assert.equal(
+    after.p2.active[0].moveSlots[0].pp,
+    before.p2.active[0].moveSlots[0].pp,
+  );
+  assert.equal(getCurrentHp(finished.teams.a.pokemons[0].pokemon), 17);
+  assert.deepEqual(finished.teams.a.pokemons[0].statuses, ["poisoned"]);
+  assert.equal(getCurrentHp(finished.teams.a.pokemons[1].pokemon), 0);
+  assert(validTrainerBattleSession(finished));
+  assert.match(finished.history[0].events[0], /se rindió/);
+  assert.throws(() => forfeitTrainerBattle(pending, "b"), /rendición/);
+  assert.throws(
+    () => chooseTrainerAction(finished, "a", { kind: "move", moveId: 150 }),
+    /activo/,
+  );
+  const patches = pvpTeamPatches(finished, "a");
+  assert.equal(patches.length, 2);
+  assert.deepEqual(Object.keys(patches[0]).sort(), [
+    "captureId",
+    "hp",
+    "statusTurns",
+    "statuses",
+  ]);
+  assert.equal(patches[0].hp, 17);
+  assert.equal(patches[1].hp, 0);
+});
+
+test("PvP commands preserve native serialized state/PRNG, own request identity and PP only inside runtime", () => {
+  const setup = createPvpTrainerSession(view());
+  for (const team of Object.values(setup.teams))
+    for (const capture of team.pokemons) capture.statuses = [];
+  const started = startTrainerBattle(setup, seed);
+  const first = {
+    commandId: "cmd-a",
+    userId: 99,
+    side: "a" as const,
+    requestKey: pvpRequestKey(started, "a"),
+    choice: { kind: "move" as const, moveId: 150 },
+  };
+  const second = {
+    commandId: "cmd-b",
+    userId: 99,
+    side: "b" as const,
+    requestKey: pvpRequestKey(started, "b"),
+    choice: { kind: "move" as const, moveId: 150 },
+  };
+  const pending = applyPvpTrainerCommand(started, first);
+  const resumed = applyPvpTrainerCommand(clone(pending), second);
+  assert.deepEqual(resumed, applyPvpTrainerCommand(pending, second));
+  assert.equal(resumed.runtime!.turn, 2);
+  assert.equal(
+    resumed.runtime!.requests.a.moves[0].pp,
+    started.runtime!.requests.a.moves[0].pp - 1,
+  );
+  assert.equal(
+    resumed.teams.a.pokemons[0].moves![0].pp,
+    started.teams.a.pokemons[0].moves![0].pp,
+  );
+  assert.throws(() => applyPvpTrainerCommand(pending, first), /anterior/);
+  assert.throws(
+    () =>
+      chooseTrainerAction(started, "a", {
+        kind: "item",
+        item: "full-restore",
+        captureId: "same-capture-id",
+      }),
+    /objetos/,
+  );
+  assert.throws(() => pvpTeamPatches(started, "a"), /terminar/);
+});
+
+test("one checkpoint consumes double forfeits and commands made stale by earlier turn resolution without deadlocking", () => {
+  const setup = createPvpTrainerSession(view());
+  for (const team of Object.values(setup.teams))
+    for (const capture of team.pokemons) capture.statuses = [];
+  const session = startTrainerBattle(setup, seed);
+  const command = (
+    id: string,
+    side: "a" | "b",
+    choice: { kind: "forfeit" } | { kind: "move"; moveId: number },
+  ) => ({
+    commandId: id,
+    userId: 99,
+    side,
+    requestKey: pvpRequestKey(session, side),
+    choice,
+  });
+  const ended = applyPvpTrainerCommands(session, [
+    command("forfeit-a", "a", { kind: "forfeit" }),
+    command("forfeit-b", "b", { kind: "forfeit" }),
+  ]);
+  assert.equal(ended.session.phase, "finished");
+  assert.equal(ended.session.runtime!.winner, "b");
+  assert.deepEqual(ended.processedCommandIds, ["forfeit-a", "forfeit-b"]);
+  assert.equal(ended.session.runtime!.serial, session.runtime!.serial + 1);
+  const resolved = applyPvpTrainerCommands(session, [
+    command("a-move", "a", { kind: "move", moveId: 150 }),
+    command("b-move", "b", { kind: "move", moveId: 150 }),
+    command("old-a-request", "a", { kind: "move", moveId: 150 }),
+  ]);
+  assert.equal(resolved.session.runtime!.turn, 2);
+  assert.deepEqual(resolved.session.runtime!.pending, {});
+  assert.deepEqual(resolved.processedCommandIds, [
+    "a-move",
+    "b-move",
+    "old-a-request",
+  ]);
+  assert.throws(() =>
+    applyPvpTrainerCommands(session, [
+      command("invalid-current", "a", { kind: "move", moveId: 9999 }),
+    ]),
+  );
+});
+
+test("checkpoint proposals are durable and scoped to battle/admin/tab; failures do not pretend a transition was saved", () => {
+  const session = startTrainerBattle(createPvpTrainerSession(view()), seed);
+  const entry = {
+    version: 1 as const,
+    battleId: session.id,
+    adminUserId: 99,
+    clientId: "admin-tab",
+    hostEpoch: 1,
+    expectedCheckpointRevision: 0,
+    session,
+    processedCommandIds: ["command-1"],
+  };
+  const data = new Map<string, string>();
+  const storage = {
+    getItem: (key: string) => data.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      data.set(key, value);
+    },
+    removeItem: (key: string) => {
+      data.delete(key);
+    },
+  };
+  writePvpCheckpointOutbox(storage, entry);
+  assert.deepEqual(
+    readPvpCheckpointOutbox(storage, session.id, 99, "admin-tab"),
+    clone(entry),
+  );
+  assert.equal(
+    readPvpCheckpointOutbox(storage, session.id, 99, "another-tab"),
+    null,
+  );
+  assert.equal(
+    readPvpCheckpointOutbox(storage, session.id, 100, "admin-tab"),
+    null,
+  );
+  assert.throws(
+    () =>
+      writePvpCheckpointOutbox(
+        {
+          setItem: () => {
+            throw new Error("QuotaExceededError");
+          },
+        },
+        entry,
+      ),
+    /QuotaExceeded/,
+  );
+  assert.throws(
+    () =>
+      writePvpCheckpointOutbox(storage, {
+        ...entry,
+        session: { ...session, networkBattleId: "another-battle" },
+      }),
+    /guardado/,
+  );
+  assert.equal(data.size, 1);
+  clearPvpCheckpointOutbox(storage, session.id, 99, "admin-tab");
+  assert.equal(data.size, 0);
+});

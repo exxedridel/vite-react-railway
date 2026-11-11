@@ -9,9 +9,23 @@ Acuerdo del usuario confirmado el 2026-11-08:
 
 Si esta disponible, leer [la memoria compartida](../PROJECT_MEMORY.md). Este resumen se conserva tambien aqui para sesiones que abran solo este repositorio.
 
+Saneamiento autorizado 2026-11-10: retirados 20 archivos huerfanos/legacy, 14
+dependencias directas y APIs de seguros del store/contexto. Configuracion Vite
+ES2022/Bundler strict con tests incluidos; TypeScript global CERO errores.
+Los 16 errores anteriores estan resueltos. `npm run typecheck` y audit:source
+permiten comprobarlo; test:arena-status ejecuta 8 pruebas con renderer React18.
+Build y Chrome PvP pasan tras la limpieza; no se tocaron .env ni datos reales.
+
 Conservar el panel administrador como centro de las batallas. El usuario confirmo
 limitar WebSocket a PvP: instantaneas de equipos al admin y resultados de vuelta;
-cada jugador conserva su partida. La sincronizacion de batalla sigue pendiente.
+cada jugador conserva su partida. Etapa PvP autorizada y local implementada:
+ADMIN controla ambos equipos; jugadores observan. Panel batalla ofrece PvP y
+manual. Locks por cuenta/Web Locks, guardia party/*, rendicion en turno propio,
+patch HP/estados tras salir y recibo+ACK antes de liberar ambos. Reconexion no
+desbloquea; equipo divergente exige dispositivo original. Ver README/protocolo.
+No convertir moves[].pp de catalogo en PP gastados; Full Restore solo manual
+porque mochila no tiene existencias. No se agregan XP ni premios.
+Desplegar Nest primero y React despues; coleccion Mongo real no verificada.
 
 Etapa autorizada 2026-11-10: CRUD en `/users`, solo rol admin verificado por
 MySQL, login por correo propio y contactos dinamicos en `/mensajes-prueba`.

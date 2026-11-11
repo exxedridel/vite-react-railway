@@ -50,6 +50,7 @@ export function createTrainerBattleSession(): TrainerBattleSession {
 function validMember(
   value: unknown,
   multiplier: number,
+  network = false,
 ): value is CapturedPokemon {
   if (
     !isRecord(value) ||
@@ -62,7 +63,10 @@ function validMember(
     !integer(pokemon.id, 1, 386) ||
     !text(pokemon.name) ||
     !integer(pokemon.level, 1, 100) ||
-    pokemon.hpMultiplier !== multiplier ||
+    (network
+      ? typeof pokemon.hpMultiplier !== "number" ||
+        !validHpMultiplier(pokemon.hpMultiplier)
+      : pokemon.hpMultiplier !== multiplier) ||
     pokemon.progressionVersion !== 1
   )
     return false;
@@ -84,16 +88,20 @@ function validMember(
       return (
         actual.length === 1 &&
         isRecord(actual[0]) &&
-        actual[0].value ===
-          species.baseStats.find((s) => s.name === name)?.value
+        (network
+          ? integer(actual[0].value, 1, 10000)
+          : actual[0].value ===
+            species.baseStats.find((s) => s.name === name)?.value)
       );
     })
   )
     return false;
   const expected = calculateStats(
-    species.baseStats,
+    network
+      ? (pokemon.baseStats as typeof species.baseStats)
+      : species.baseStats,
     pokemon.level as number,
-    multiplier,
+    network ? Number(pokemon.hpMultiplier) : multiplier,
   );
   if (
     !STAT_NAMES.every((name) => {
@@ -109,7 +117,9 @@ function validMember(
               0,
               expected.find((s) => s.name === "hp")!.value,
             )
-          : actual[0].value === expected.find((s) => s.name === name)!.value)
+          : network
+            ? integer(actual[0].value, 1, 100000)
+            : actual[0].value === expected.find((s) => s.name === name)!.value)
       );
     })
   )
@@ -130,7 +140,33 @@ function validMember(
     return false;
   if (
     !Array.isArray(pokemon.types) ||
-    pokemon.types.join(",") !== species.types.join(",")
+    (network
+      ? pokemon.types.length < 1 ||
+        pokemon.types.length > 2 ||
+        new Set(pokemon.types).size !== pokemon.types.length ||
+        !pokemon.types.every((type) =>
+          [
+            "normal",
+            "fire",
+            "water",
+            "electric",
+            "grass",
+            "ice",
+            "fighting",
+            "poison",
+            "ground",
+            "flying",
+            "psychic",
+            "bug",
+            "rock",
+            "ghost",
+            "dragon",
+            "dark",
+            "steel",
+            "fairy",
+          ].includes(String(type)),
+        )
+      : pokemon.types.join(",") !== species.types.join(","))
   )
     return false;
   if (
@@ -196,7 +232,11 @@ export function trainerSetupErrors(session: TrainerBattleSession): string[] {
       errors.push(`${label}: agrega entre 1 y 6 Pokémon.`);
     for (const member of team.pokemons) {
       if (
-        !validMember(member, session.hpMultiplier) ||
+        !validMember(
+          member,
+          session.hpMultiplier,
+          Boolean(session.networkBattleId),
+        ) ||
         !isLeveled(member.pokemon) ||
         getMaxHp(member.pokemon) === undefined
       )
@@ -254,7 +294,15 @@ export function trainerSetupErrors(session: TrainerBattleSession): string[] {
   const ids = sides.flatMap((side) =>
     session.teams[side].pokemons.map((p) => p.captureId),
   );
-  if (new Set(ids).size !== ids.length)
+  if (
+    session.networkBattleId
+      ? sides.some(
+          (side) =>
+            new Set(session.teams[side].pokemons.map((p) => p.captureId))
+              .size !== session.teams[side].pokemons.length,
+        )
+      : new Set(ids).size !== ids.length
+  )
     errors.push(
       "Hay Pokémon con identificadores repetidos. Vuelve a agregarlos.",
     );
@@ -268,6 +316,9 @@ export function validTrainerBattleSession(
     !isRecord(value) ||
     value.version !== 1 ||
     !text(value.id, 100) ||
+    (value.networkBattleId !== undefined &&
+      (value.networkBattleId !== value.id ||
+        !text(value.networkBattleId, 100))) ||
     !["setup", "battle", "finished"].includes(String(value.phase)) ||
     typeof value.hpMultiplier !== "number" ||
     !validHpMultiplier(value.hpMultiplier) ||
@@ -283,10 +334,17 @@ export function validTrainerBattleSession(
       team.name.length > 60 ||
       !Array.isArray(team.pokemons) ||
       team.pokemons.length > 6 ||
-      !team.pokemons.every((p) => validMember(p, value.hpMultiplier as number))
+      !team.pokemons.every((p) =>
+        validMember(
+          p,
+          value.hpMultiplier as number,
+          Boolean(value.networkBattleId),
+        ),
+      )
     )
       return false;
     const memberIds = team.pokemons.map((p) => p.captureId as string);
+    if (new Set(memberIds).size !== memberIds.length) return false;
     if (
       team.activeCaptureId !== null &&
       !memberIds.includes(String(team.activeCaptureId))
@@ -294,7 +352,7 @@ export function validTrainerBattleSession(
       return false;
     ids.push(...memberIds);
   }
-  if (new Set(ids).size !== ids.length) return false;
+  if (!value.networkBattleId && new Set(ids).size !== ids.length) return false;
   if (
     value.weather !== null &&
     (!isRecord(value.weather) ||

@@ -12,6 +12,8 @@ import { PartyPopper } from "lucide-react";
 import { loginReq, logoutReq, profileReq } from "@/services/login.api";
 import { activateAccountStore, clearAccountStore } from "@/store/store";
 import LegacyPartyImportDialog from "@/components/Navigation/LegacyPartyImportDialog";
+import PvpProvider from "@/context/PvpContext";
+import { setPvpSyncBlocked } from "@/lib/pvpParty";
 
 /** @type {import("react").Context<any>} */
 export const AppContext = createContext(null);
@@ -54,8 +56,6 @@ export const AppContextProvider = ({ children }) => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [isIdle, setIsIdle] = useState(false);
-  const [polizasData, setPolizasData] = useState();
-  const [currentPoliza, setCurrentPoliza] = useState();
   const [user, setUser] = useState(null);
   const [sessionStatus, setSessionStatus] = useState("checking");
   const [sessionError, setSessionError] = useState("");
@@ -92,8 +92,6 @@ export const AppContextProvider = ({ children }) => {
     requestRef.current?.abort();
     setUser(null);
     setPokemonDialogOpen(false);
-    setPolizasData(undefined);
-    setCurrentPoliza(undefined);
     setSessionError(message);
     setSessionStatus("anonymous");
     try {
@@ -131,6 +129,7 @@ export const AppContextProvider = ({ children }) => {
         if (!current()) return null;
         await activateAccountStore(profile.id);
         if (!current()) return null;
+        setPvpSyncBlocked(profile.role === "player");
         setUser(profile);
         setSessionStatus("authenticated");
         return profile;
@@ -259,10 +258,6 @@ export const AppContextProvider = ({ children }) => {
         sessionError,
         isIdle,
         setIsIdle,
-        polizasData,
-        setPolizasData,
-        currentPoliza,
-        setCurrentPoliza,
         user,
         setUser,
         brandColor,
@@ -273,8 +268,10 @@ export const AppContextProvider = ({ children }) => {
         setPokemonDialogOpen,
       }}
     >
-      {children}
-      {user && <LegacyPartyImportDialog user={user} />}
+      <PvpProvider user={user} onSessionExpired={logout}>
+        {children}
+        {user && <LegacyPartyImportDialog user={user} />}
+      </PvpProvider>
     </AppContext.Provider>
   );
 };

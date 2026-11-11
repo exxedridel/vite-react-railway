@@ -2,6 +2,7 @@ import {
   configureStore,
   combineReducers,
   type UnknownAction,
+  type Middleware,
 } from "@reduxjs/toolkit";
 import { persistStore, persistReducer } from "redux-persist";
 import { GAME_DATA_VERSION } from "@/lib/gameVersion";
@@ -24,23 +25,20 @@ import {
   LEGACY_PARTY_OWNER_KEY,
   LEGACY_PARTY_RESERVATION_KEY,
   LEGACY_NICKNAME_KEY,
+  PVP_PARTY_COMMIT,
+  isLocalPartyMutationBlocked,
+  isPvpSyncBlocked,
+  withAccountStorageLock,
+  writePvpAccountParty,
 } from "./accountStorage";
 
 import partyReducer from "@/slices/partySlice";
 
-import { elegirClienteApi } from "@/api/elegirClienteApi";
-
-import { elegirClienteApiNoToken } from "@/api/elegirClienteApiNoToken";
-import { creditsApi } from "@/api/creditsApi";
 import { pokeApi } from "@/api/pokeApi";
 
 const rootReducer = combineReducers({
   party: partyReducer,
 
-  [elegirClienteApi.reducerPath]: elegirClienteApi.reducer,
-
-  [elegirClienteApiNoToken.reducerPath]: elegirClienteApiNoToken.reducer,
-  [creditsApi.reducerPath]: creditsApi.reducer,
   [pokeApi.reducerPath]: pokeApi.reducer,
 });
 
@@ -60,6 +58,21 @@ const persistConfig = {
 
 const persistedReducer = persistReducer(persistConfig, resettableReducer);
 
+const pvpPartyGuard: Middleware<{}, { party: AppState["party"] }> =
+  (api) => (next) => (action) => {
+    if (
+      action &&
+      typeof action === "object" &&
+      "type" in action &&
+      typeof action.type === "string" &&
+      action.type.startsWith("party/") &&
+      action.type !== PVP_PARTY_COMMIT &&
+      isLocalPartyMutationBlocked(api.getState().party)
+    )
+      return action;
+    return next(action);
+  };
+
 export const store = configureStore({
   reducer: persistedReducer,
 
@@ -76,10 +89,7 @@ export const store = configureStore({
         ],
       },
     }).concat(
-      elegirClienteApi.middleware,
-
-      elegirClienteApiNoToken.middleware,
-      creditsApi.middleware,
+      pvpPartyGuard,
       pokeApi.middleware,
     ),
 });
@@ -112,24 +122,55 @@ async function flushCurrentAccount(): Promise<void> {
   const owner = getActiveAccountId();
   // redux-persist catches storage failures internally; this checked write makes
   // account transitions fail explicitly instead of pretending they were saved.
-  if (owner !== null) writeAccountParty(owner, store.getState().party);
+  if (owner !== null)
+    await withAccountStorageLock(owner, async () => {
+      writeAccountParty(owner, store.getState().party);
+    });
+}
+
+/** Serializes account changes and cross-tab PvP writes; never waits on a lock while flushing. */
+export function transactPvpParty<T>(
+  userId: number,
+  operation: (
+    latest: AppState["party"],
+  ) => Promise<{ party: AppState["party"]; value: T }>,
+): Promise<T> {
+  return serializeAccountChange(async () => {
+    await waitForBootstrap();
+    if (getActiveAccountId() !== userId)
+      throw new Error(
+        "La cuenta cambió. Vuelve a conectar PvP desde la cuenta correspondiente.",
+      );
+    persistor.pause();
+    try {
+      await persistor.flush();
+      return await withAccountStorageLock(
+        userId,
+        async () => {
+          const latest =
+            readAccountParty(userId)?.party ?? store.getState().party;
+          store.dispatch({ type: PVP_PARTY_COMMIT, payload: latest });
+          const update = await operation(latest);
+          if (update.party !== latest)
+            writePvpAccountParty(userId, update.party);
+          store.dispatch({ type: PVP_PARTY_COMMIT, payload: update.party });
+          return update.value;
+        },
+        true,
+      );
+    } finally {
+      resumeWithParty({ party: store.getState().party });
+      await persistor.flush();
+    }
+  });
 }
 
 function resetAccountUi(): void {
   [
-    store.dispatch(elegirClienteApi.util.getRunningQueriesThunk()),
-    store.dispatch(elegirClienteApiNoToken.util.getRunningQueriesThunk()),
-    store.dispatch(creditsApi.util.getRunningQueriesThunk()),
     store.dispatch(pokeApi.util.getRunningQueriesThunk()),
-    store.dispatch(elegirClienteApi.util.getRunningMutationsThunk()),
-    store.dispatch(elegirClienteApiNoToken.util.getRunningMutationsThunk()),
-    store.dispatch(creditsApi.util.getRunningMutationsThunk()),
     store.dispatch(pokeApi.util.getRunningMutationsThunk()),
   ].forEach((requests) => requests.forEach((request) => request.abort()));
   [
-    elegirClienteApi.util.resetApiState(),
-    elegirClienteApiNoToken.util.resetApiState(),
-    creditsApi.util.resetApiState(),
     pokeApi.util.resetApiState(),
   ].forEach((action) => store.dispatch(action));
   store.dispatch({ type: RESET_ACCOUNT });
@@ -203,6 +244,7 @@ export function hasLegacyPartyForImport(userId: number): Promise<boolean> {
   return serializeAccountChange(async () => {
     if (getActiveAccountId() !== userId || !legacyAvailableTo(userId))
       return false;
+    if (isPvpSyncBlocked() || store.getState().party.pvpLock) return false;
     const legacy = legacyParty();
     if (!legacy) return false;
     const current = store.getState().party;
@@ -223,6 +265,10 @@ export function importLegacyParty(userId: number): Promise<void> {
       if (getActiveAccountId() !== userId)
         throw new Error(
           "La cuenta cambió. Vuelve a abrir la importación desde tu cuenta.",
+        );
+      if (isPvpSyncBlocked() || store.getState().party.pvpLock)
+        throw new Error(
+          "La partida está reservada para PvP o esperando sincronización. La importación anterior se conserva.",
         );
       if (!legacyAvailableTo(userId))
         throw new Error(

@@ -217,6 +217,13 @@ export function startTrainerBattle(
         (entry) => entry.key === pokemon.set.name,
       )!.capture;
       applyEmeraldStats(pokemon, capture.pokemon);
+      if (session.networkBattleId) {
+        const types = capture.pokemon.types.map(
+          (type) => dex.types.get(type).name,
+        );
+        pokemon.setType(types, true);
+        pokemon.baseTypes = [...types];
+      }
       applyEmeraldStages(pokemon, capture.pokemon.battleStages);
       const fainted = pokemon.hp === 0;
       // Imported board state can retain primary conditions on a fainted reserve.
@@ -549,6 +556,9 @@ export function chooseTrainerAction(
   side: TrainerSide,
   choice: TrainerChoice,
 ): TrainerBattleSession {
+  if (choice.kind === "forfeit") return forfeitTrainerBattle(input, side);
+  if (input.networkBattleId && choice.kind === "item")
+    throw new Error("Los objetos del modo manual no se usan en PvP.");
   const session = clone(input);
   const battle = loadBattle(session);
   const runtime = session.runtime!;
@@ -636,6 +646,36 @@ export function chooseTrainerAction(
     session.history = [summary, ...session.history].slice(0, 50);
   }
   return exportSession(session, battle, pending, runtime.serial + 1);
+}
+
+export function forfeitTrainerBattle(
+  input: TrainerBattleSession,
+  side: TrainerSide,
+): TrainerBattleSession {
+  const session = clone(input);
+  const battle = loadBattle(session);
+  const runtime = session.runtime!;
+  if (
+    runtime.pending[side] ||
+    readEmeraldRequest(simSide(battle, side)).waiting
+  )
+    throw new Error("La rendición debe elegirse durante tu acción disponible.");
+  const winner = side === "a" ? "b" : "a";
+  battle.win(simSide(battle, winner));
+  session.history = [
+    {
+      id: `${session.id}:${runtime.serial + 1}`,
+      turn: runtime.turn,
+      completed: true,
+      results: [],
+      events: [
+        `${session.teams[side].name} se rindió. Victoria de ${session.teams[winner].name}.`,
+      ],
+      highlights: [`Rendición de ${session.teams[side].name}.`],
+    },
+    ...session.history,
+  ].slice(0, 50);
+  return exportSession(session, battle, {}, runtime.serial + 1);
 }
 
 export function cancelTrainerAction(

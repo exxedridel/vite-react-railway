@@ -1,7 +1,15 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { History, Settings2, Swords } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import PokemonTypeBadges from "@/components/pokemon/PokemonTypeBadges";
 import BattleTurnHighlightsDialog from "@/components/pokemon/BattleTurnHighlightsDialog";
 import TrainerBattleArena from "./TrainerBattleArena";
@@ -26,6 +34,14 @@ type Props = {
   session: TrainerBattleSession;
   onChange: (next: TrainerBattleSession) => void;
   onEditSetup: () => void;
+  onAction?: (
+    side: TrainerSide,
+    choice: TrainerChoice | "cancel",
+  ) => void | Promise<void>;
+  disabled?: boolean;
+  allowItems?: boolean;
+  allowForfeit?: boolean;
+  onExit?: () => void | Promise<void>;
 };
 
 function CombatDetails({ capture }: { capture: CapturedPokemon }) {
@@ -92,14 +108,19 @@ function TrainerControls({
   disabled,
   onChoose,
   onCancel,
+  allowItems,
+  allowForfeit,
 }: {
   session: TrainerBattleSession;
   side: TrainerSide;
   disabled: boolean;
   onChoose: (side: TrainerSide, choice: TrainerChoice) => void;
   onCancel: (side: TrainerSide) => void;
+  allowItems: boolean;
+  allowForfeit: boolean;
 }) {
   const [choosingRestore, setChoosingRestore] = useState(false);
+  const [confirmForfeit, setConfirmForfeit] = useState(false);
   const team = session.teams[side];
   const runtime = session.runtime!;
   const request = runtime.requests[side];
@@ -111,7 +132,8 @@ function TrainerControls({
   const canChoose = !disabled && !finished && !pending && !request.waiting;
   const canSwitch =
     canChoose && (request.forceSwitch || (!request.trapped && !request.locked));
-  const canUseItem = canChoose && !request.forceSwitch && !request.locked;
+  const canUseItem =
+    allowItems && canChoose && !request.forceSwitch && !request.locked;
   function chooseAction(choice: TrainerChoice) {
     setChoosingRestore(false);
     onChoose(side, choice);
@@ -181,6 +203,7 @@ function TrainerControls({
             return (
               <Button
                 key={move.id}
+                data-move-id={move.id}
                 type="button"
                 variant="outline"
                 className="h-auto min-h-16 min-w-0 flex-col items-start whitespace-normal px-3 py-2 text-left"
@@ -202,80 +225,84 @@ function TrainerControls({
         </div>
       ) : null}
 
-      {!pending && !finished && !request.waiting && !request.forceSwitch && (
-        <div
-          className="space-y-2 rounded-xl border p-3"
-          aria-label={`Objetos de ${team.name}`}
-        >
-          <Button
-            type="button"
-            variant="outline"
-            className="min-h-11 w-full gap-2"
-            disabled={!canUseItem}
-            aria-expanded={choosingRestore}
-            aria-controls={`full-restore-targets-${side}`}
-            onClick={() => setChoosingRestore((open) => !open)}
+      {allowItems &&
+        !pending &&
+        !finished &&
+        !request.waiting &&
+        !request.forceSwitch && (
+          <div
+            className="space-y-2 rounded-xl border p-3"
+            aria-label={`Objetos de ${team.name}`}
           >
-            <img
-              src="/admin-shop/full-restore.png"
-              alt=""
-              className="h-6 w-6 object-contain [image-rendering:pixelated]"
-            />
-            Full restore
-          </Button>
-          <p className="text-xs text-muted-foreground">
-            {request.locked
-              ? "Completa la acción obligatoria antes de usar un objeto."
-              : "Recupera todo el HP, cura los estados negativos y restablece los modificadores a 0. Consume tu acción del turno."}
-          </p>
-          {choosingRestore && (
-            <div id={`full-restore-targets-${side}`} className="space-y-2">
-              <p className="text-sm font-medium">
-                Elige el Pokémon que recibirá Full restore
-              </p>
-              <div
-                className="grid grid-cols-2 gap-2 sm:grid-cols-3"
-                aria-label={`Objetivos de Full restore de ${team.name}`}
-              >
-                {team.pokemons.map((capture) => (
-                  <Button
-                    key={capture.captureId}
-                    type="button"
-                    variant="outline"
-                    className="h-auto min-h-16 min-w-0 flex-col whitespace-normal px-2 py-2"
-                    disabled={!canUseItem}
-                    aria-label={`Usar Full restore en ${capture.pokemon.name}`}
-                    onClick={() =>
-                      chooseAction({
-                        kind: "item",
-                        item: "full-restore",
-                        captureId: capture.captureId,
-                      })
-                    }
-                  >
-                    <span className="break-words text-xs font-semibold capitalize">
-                      {capture.pokemon.name}
-                    </span>
-                    <span className="mt-1 text-[10px] font-normal tabular-nums text-muted-foreground">
-                      {getCurrentHp(capture.pokemon)}/
-                      {getMaxHp(capture.pokemon) ?? "—"} HP
-                    </span>
-                  </Button>
-                ))}
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-11 w-full gap-2"
+              disabled={!canUseItem}
+              aria-expanded={choosingRestore}
+              aria-controls={`full-restore-targets-${side}`}
+              onClick={() => setChoosingRestore((open) => !open)}
+            >
+              <img
+                src="/admin-shop/full-restore.png"
+                alt=""
+                className="h-6 w-6 object-contain [image-rendering:pixelated]"
+              />
+              Full restore
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              {request.locked
+                ? "Completa la acción obligatoria antes de usar un objeto."
+                : "Recupera todo el HP, cura los estados negativos y restablece los modificadores a 0. Consume tu acción del turno."}
+            </p>
+            {choosingRestore && (
+              <div id={`full-restore-targets-${side}`} className="space-y-2">
+                <p className="text-sm font-medium">
+                  Elige el Pokémon que recibirá Full restore
+                </p>
+                <div
+                  className="grid grid-cols-2 gap-2 sm:grid-cols-3"
+                  aria-label={`Objetivos de Full restore de ${team.name}`}
+                >
+                  {team.pokemons.map((capture) => (
+                    <Button
+                      key={capture.captureId}
+                      type="button"
+                      variant="outline"
+                      className="h-auto min-h-16 min-w-0 flex-col whitespace-normal px-2 py-2"
+                      disabled={!canUseItem}
+                      aria-label={`Usar Full restore en ${capture.pokemon.name}`}
+                      onClick={() =>
+                        chooseAction({
+                          kind: "item",
+                          item: "full-restore",
+                          captureId: capture.captureId,
+                        })
+                      }
+                    >
+                      <span className="break-words text-xs font-semibold capitalize">
+                        {capture.pokemon.name}
+                      </span>
+                      <span className="mt-1 text-[10px] font-normal tabular-nums text-muted-foreground">
+                        {getCurrentHp(capture.pokemon)}/
+                        {getMaxHp(capture.pokemon) ?? "—"} HP
+                      </span>
+                    </Button>
+                  ))}
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="min-h-10 w-full"
+                  onClick={() => setChoosingRestore(false)}
+                >
+                  Volver a las acciones
+                </Button>
               </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="min-h-10 w-full"
-                onClick={() => setChoosingRestore(false)}
-              >
-                Volver a las acciones
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
+            )}
+          </div>
+        )}
 
       {(!pending || finished) && (
         <div className="space-y-2">
@@ -326,6 +353,46 @@ function TrainerControls({
           )}
         </div>
       )}
+      {allowForfeit && !finished && (
+        <Button
+          type="button"
+          variant="destructive"
+          className="min-h-11 w-full"
+          disabled={!canChoose}
+          onClick={() => setConfirmForfeit(true)}
+        >
+          Rendirse: {team.name}
+        </Button>
+      )}
+      <Dialog
+        open={confirmForfeit && !finished}
+        onOpenChange={setConfirmForfeit}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rendición de {team.name}</DialogTitle>
+            <DialogDescription>
+              El otro equipo ganará y se conservarán los HP y estados actuales.
+              Esta acción termina el combate.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmForfeit(false)}>
+              Seguir combatiendo
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={!canChoose}
+              onClick={() => {
+                setConfirmForfeit(false);
+                chooseAction({ kind: "forfeit" });
+              }}
+            >
+              Confirmar rendición
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {(!pending || finished) && active && <CombatDetails capture={active} />}
     </section>
   );
@@ -335,6 +402,11 @@ export default function TrainerBattleView({
   session,
   onChange,
   onEditSetup,
+  onAction,
+  disabled = false,
+  allowItems = true,
+  allowForfeit = false,
+  onExit,
 }: Props) {
   const [flipped, setFlipped] = useState(false);
   const [summary, setSummary] = useState<TrainerTurnSummary | null>(null);
@@ -342,16 +414,27 @@ export default function TrainerBattleView({
   const actionLock = useRef(false);
   const arenaRef = useRef<HTMLDivElement>(null);
   const runtime = session.runtime;
+  const previousSummary = useRef(session.history[0]?.id);
+  useEffect(() => {
+    const latest = session.history[0];
+    if (onAction && latest?.completed && latest.id !== previousSummary.current)
+      setSummary(latest);
+    previousSummary.current = latest?.id;
+  }, [session.history, onAction]);
 
   function returnToArena() {
     arenaRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     arenaRef.current?.focus({ preventScroll: true });
   }
-  function act(side: TrainerSide, choice: TrainerChoice | "cancel") {
-    if (actionLock.current) return;
+  async function act(side: TrainerSide, choice: TrainerChoice | "cancel") {
+    if (actionLock.current || disabled) return;
     actionLock.current = true;
     setBusy(true);
     try {
+      if (onAction) {
+        await onAction(side, choice);
+        return;
+      }
       const next =
         choice === "cancel"
           ? cancelTrainerAction(session, side)
@@ -393,16 +476,22 @@ export default function TrainerBattleView({
             {session.teams.a.name} contra {session.teams.b.name}
           </p>
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          className="min-h-11 gap-2"
-          onClick={onEditSetup}
-          disabled={busy}
-        >
-          <Settings2 className="h-4 w-4" />{" "}
-          {finished ? "Volver a configuración" : "Configuración"}
-        </Button>
+        {(!onAction || (finished && onExit)) && (
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-11 gap-2"
+            onClick={onAction ? () => void onExit?.() : onEditSetup}
+            disabled={busy || disabled}
+          >
+            <Settings2 className="h-4 w-4" />{" "}
+            {onAction
+              ? "Salir y actualizar Partys"
+              : finished
+                ? "Volver a configuración"
+                : "Configuración"}
+          </Button>
+        )}
       </header>
       {finished && (
         <div
@@ -444,7 +533,9 @@ export default function TrainerBattleView({
             key={side}
             session={session}
             side={side}
-            disabled={busy}
+            disabled={busy || disabled}
+            allowItems={allowItems}
+            allowForfeit={allowForfeit}
             onChoose={act}
             onCancel={(target) => act(target, "cancel")}
           />
