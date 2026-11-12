@@ -233,7 +233,7 @@ export function holdPvpParty(input: PvpReservation): Promise<void> {
 export function reservePvpParty(input: PvpReservation): Promise<PvpSnapshot> {
   validateReservation(input);
   return transactPvpParty(input.userId, async (party) => {
-    if (party.shopLock || party.resetLock)
+    if (party.shopLock || party.resetLock || party.itemUseLock)
       throw new Error(
         "Recupera la compra o el reinicio pendiente antes de ingresar a PvP.",
       );

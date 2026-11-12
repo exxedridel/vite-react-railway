@@ -87,10 +87,12 @@ export default function EmeraldTurnPanel({ captureId }: { captureId: string }) {
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={busy}
+                  disabled={busy || pending.kind === "item"}
                   onClick={() => void act(side, "cancel")}
                 >
-                  Cancelar elección
+                  {pending.kind === "item"
+                    ? "Full Restore confirmado"
+                    : "Cancelar elección"}
                 </Button>
               ) : (
                 <>

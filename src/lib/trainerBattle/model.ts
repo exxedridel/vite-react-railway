@@ -353,6 +353,40 @@ export function validTrainerBattleSession(
     ids.push(...memberIds);
   }
   if (!value.networkBattleId && new Set(ids).size !== ids.length) return false;
+  if (value.networkItems !== undefined) {
+    const items = value.networkItems;
+    if (
+      !value.networkBattleId ||
+      !isRecord(items) ||
+      Object.keys(items).some((key) => !["pending", "used"].includes(key)) ||
+      !isRecord(items.pending) ||
+      Object.keys(items.pending).some(
+        (key) => !sides.includes(key as TrainerSide),
+      ) ||
+      !Array.isArray(items.used) ||
+      items.used.length > 8192 ||
+      !items.used.every((id) => text(id, 128)) ||
+      new Set(items.used).size !== items.used.length
+    )
+      return false;
+    for (const side of sides) {
+      const pending = items.pending[side];
+      if (pending === undefined) continue;
+      const team = value.teams[side] as { pokemons: CapturedPokemon[] };
+      if (
+        !isRecord(pending) ||
+        Object.keys(pending).some(
+          (key) => !["commandId", "captureId"].includes(key),
+        ) ||
+        !text(pending.commandId, 128) ||
+        !text(pending.captureId, 128) ||
+        !team.pokemons.some(
+          (capture) => capture.captureId === pending.captureId,
+        )
+      )
+        return false;
+    }
+  }
   if (
     value.weather !== null &&
     (!isRecord(value.weather) ||

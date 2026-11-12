@@ -16,7 +16,9 @@ import {
   isLocalPartyMutationBlocked,
   setResetSyncBlocked,
   setShopSyncBlocked,
+  setItemUseSyncBlocked,
 } from "@/store/accountStorage";
+import { applyItemUse, prepareItemUse, validItemUse } from "@/lib/shop/itemUse";
 import {
   applyShopWallet,
   applyGameReset,
@@ -34,6 +36,7 @@ import type {
   ShopPurchase,
   ShopState,
   GameReset,
+  ItemUse,
   Wallet,
 } from "@/lib/shop/types";
 
@@ -47,10 +50,13 @@ type ShopContextValue = {
   purchases: ShopPurchase[];
   resets: GameReset[];
   restarting: boolean;
+  uses: ItemUse[];
+  usingItem: boolean;
   error: string;
   busy: boolean;
   sync: () => Promise<void>;
   restartGame: () => Promise<void>;
+  useFullRestore: (captureId: string) => Promise<void>;
   purchase: (
     player: ShopPlayer,
     itemId: ShopItemId,
@@ -111,6 +117,9 @@ function validState(value: unknown): value is ShopState {
     (!state.reset || validGameReset(state.reset)) &&
     (!state.resets ||
       (Array.isArray(state.resets) && state.resets.every(validGameReset))) &&
+    (!state.use || validItemUse(state.use)) &&
+    (!state.uses ||
+      (Array.isArray(state.uses) && state.uses.every(validItemUse))) &&
     (!state.players ||
       (Array.isArray(state.players) &&
         state.players.every(
@@ -144,6 +153,8 @@ export default function ShopProvider({
   const [purchases, setPurchases] = useState<ShopPurchase[]>([]);
   const [resets, setResets] = useState<GameReset[]>([]);
   const [restarting, setRestarting] = useState(false);
+  const [uses, setUses] = useState<ItemUse[]>([]);
+  const [usingItem, setUsingItem] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const socketRef = useRef<Socket | null>(null);
@@ -164,6 +175,14 @@ export default function ShopProvider({
     throw new Error("Inicia sesión para reiniciar la partida.");
   });
   const restartGame = useCallback(() => restartRef.current(), []);
+  const recoverItemUseRef = useRef<() => Promise<void>>(async () => {});
+  const useItemRef = useRef<(captureId: string) => Promise<void>>(async () => {
+    throw new Error("Inicia sesión para usar Full Restore.");
+  });
+  const useFullRestore = useCallback(
+    (captureId: string) => useItemRef.current(captureId),
+    [],
+  );
 
   const emit = useCallback(
     async (
@@ -258,6 +277,7 @@ export default function ShopProvider({
     const response = await emit("shop:sync", {});
     await queueState.current(response, { abortUnlockRequestId });
     await recoverResetRef.current();
+    await recoverItemUseRef.current();
   }, [emit]);
 
   useEffect(() => {
@@ -270,12 +290,15 @@ export default function ShopProvider({
     setPurchases([]);
     setResets([]);
     setRestarting(false);
+    setUses([]);
+    setUsingItem(false);
     setError("");
     setBusy(false);
     mutation.current = false;
     if (!user) {
       setShopSyncBlocked(false);
       setResetSyncBlocked(false);
+      setItemUseSyncBlocked(false);
       return;
     }
     const actor = user;
@@ -313,6 +336,9 @@ export default function ShopProvider({
     let latestResets: GameReset[] = [];
     let resetRecovery: Promise<void> | null = null;
     let resetStarting = false;
+    let latestUses: ItemUse[] = [];
+    let itemRecovery: Promise<void> | null = null;
+    let itemStarting = false;
     let presenceTimer: number | undefined;
     let presenceKey = "";
     const current = () =>
@@ -329,7 +355,9 @@ export default function ShopProvider({
         !localBattle &&
         !party.shopLock &&
         !party.resetLock &&
-        !latestResets.some((reset) => reset.status === "pending");
+        !party.itemUseLock &&
+        !latestResets.some((reset) => reset.status === "pending") &&
+        !latestUses.some((use) => use.status === "pending");
       const next = JSON.stringify([ready, localBattle]);
       if (next === presenceKey) return;
       presenceKey = next;
@@ -401,6 +429,28 @@ export default function ShopProvider({
         }
         setResets(latestResets);
       }
+      if (next.uses || next.use) {
+        const previous = new Map(latestUses.map((use) => [use.requestId, use]));
+        latestUses = (next.uses ?? latestUses).map((use) => {
+          const saved = previous.get(use.requestId);
+          return saved && saved.status !== "pending" && use.status === "pending"
+            ? saved
+            : use;
+        });
+        if (next.use) {
+          const use = next.use;
+          const index = latestUses.findIndex(
+            (entry) => entry.requestId === use.requestId,
+          );
+          if (index < 0) latestUses.push(use);
+          else if (
+            latestUses[index].status === "pending" ||
+            use.status !== "pending"
+          )
+            latestUses[index] = use;
+        }
+        setUses(latestUses);
+      }
       if (!latestWallet)
         throw new Error("Falta recuperar el saldo de Pokedollars.");
       const resetLock = store.getState().party.resetLock;
@@ -421,6 +471,27 @@ export default function ShopProvider({
             revision: receipt.walletRevision,
           });
           // Reconcile the ACK inline, rather than waiting on our own queue.
+          await reconcile(confirmed);
+          return;
+        }
+      }
+      const itemLock = store.getState().party.itemUseLock;
+      const itemReceipt =
+        itemLock &&
+        latestUses.find(
+          (use) =>
+            use.requestId === itemLock.requestId &&
+            use.userId === actor.id &&
+            use.clientId === id,
+        );
+      if (itemReceipt) {
+        const itemStatus = await applyItemUse(latestWallet, itemReceipt, id);
+        if (!current()) return;
+        if (itemStatus === "pending") {
+          const confirmed = await emit("shop:use-applied", {
+            requestId: itemReceipt.requestId,
+            revision: itemReceipt.walletRevision,
+          });
           await reconcile(confirmed);
           return;
         }
@@ -448,6 +519,10 @@ export default function ShopProvider({
       setResetSyncBlocked(
         !!store.getState().party.resetLock ||
           latestResets.some((reset) => reset.status === "pending"),
+      );
+      setItemUseSyncBlocked(
+        !!store.getState().party.itemUseLock ||
+          latestUses.some((use) => use.status === "pending"),
       );
       schedulePresence();
       for (const purchase of pending) {
@@ -486,6 +561,10 @@ export default function ShopProvider({
           setResetSyncBlocked(
             !!store.getState().party.resetLock ||
               latestResets.some((reset) => reset.status === "pending"),
+          );
+          setItemUseSyncBlocked(
+            !!store.getState().party.itemUseLock ||
+              latestUses.some((use) => use.status === "pending"),
           );
         }
       });
@@ -600,6 +679,133 @@ export default function ShopProvider({
           setResetSyncBlocked(
             !!store.getState().party.resetLock ||
               latestResets.some((reset) => reset.status === "pending"),
+          );
+        }
+      }
+    };
+    async function sendItemIntent() {
+      const lock = store.getState().party.itemUseLock;
+      if (!lock) return;
+      if (
+        !current() ||
+        !socket.connected ||
+        actor.role !== "player" ||
+        lock.userId !== actor.id ||
+        lock.clientId !== id
+      )
+        throw new Error(
+          "Reconecta el navegador original para recuperar Full Restore.",
+        );
+      const payload = {
+        requestId: lock.requestId,
+        captureId: lock.captureId,
+        context: lock.context,
+        planHash: lock.planHash,
+        expectedWalletRevision: lock.expectedWalletRevision,
+      };
+      let response: Extract<ShopAck, { ok: true }>;
+      let rejected: unknown;
+      try {
+        response = await emit("shop:use", payload);
+      } catch (reason) {
+        if (
+          !(reason instanceof ShopResponseError) ||
+          !current() ||
+          !socket.connected
+        )
+          throw reason;
+        rejected = reason;
+        response = await emit("shop:use-cancel", payload);
+      }
+      await receive(response);
+      if (!current())
+        throw new Error("La sesión cambió durante el uso de Full Restore.");
+      const receipt =
+        response.use ??
+        response.uses?.find((entry) => entry.requestId === lock.requestId);
+      if (store.getState().party.itemUseLock)
+        throw new Error(
+          "Full Restore sigue pendiente. Recupera la operación desde este navegador.",
+        );
+      if (receipt?.status === "cancelled")
+        throw (
+          rejected ??
+          new Error(
+            "El uso de Full Restore se canceló; tu inventario y Pokémon se conservan.",
+          )
+        );
+    }
+    function recoverItemUse(): Promise<void> {
+      if (actor.role !== "player" || !store.getState().party.itemUseLock)
+        return Promise.resolve();
+      if (itemRecovery) return itemRecovery;
+      setUsingItem(true);
+      const operation = sendItemIntent();
+      itemRecovery = operation;
+      void operation
+        .catch((reason) => {
+          if (current()) setError(message(reason));
+        })
+        .finally(() => {
+          if (itemRecovery === operation) itemRecovery = null;
+          if (current()) setUsingItem(false);
+        });
+      return operation;
+    }
+    recoverItemUseRef.current = recoverItemUse;
+    useItemRef.current = async (captureId) => {
+      if (itemStarting || itemRecovery)
+        throw new Error("Espera a que termine el Full Restore anterior.");
+      if (
+        !current() ||
+        !socket.connected ||
+        !applied ||
+        !latestWallet ||
+        actor.role !== "player"
+      )
+        throw new Error(
+          "Conecta y sincroniza tu inventario antes de usar Full Restore.",
+        );
+      if (isLocalPartyMutationBlocked(store.getState().party))
+        throw new Error(
+          "Termina la batalla reservada o la operación pendiente antes de usar Full Restore.",
+        );
+      if ((latestWallet.items["full-restore"] ?? 0) < 1)
+        throw new Error("No tienes Full Restore en tu Bag.");
+      itemStarting = true;
+      setUsingItem(true);
+      setError("");
+      setItemUseSyncBlocked(true);
+      try {
+        // Load before the storage transaction. The resulting effects are planned
+        // once against its latest state and persisted before any server debit.
+        const planner = await import("@/lib/fullRestorePlan");
+        await planner.loadFullRestoreEngine();
+        if (!current() || !socket.connected)
+          throw new Error("La conexión cambió antes de preparar Full Restore.");
+        await prepareItemUse(
+          actor.id,
+          id,
+          crypto.randomUUID(),
+          captureId,
+          latestWallet.revision,
+          planner.prepareFullRestoreParty,
+        );
+        if (!current() || !socket.connected)
+          throw new Error(
+            "Recupera Full Restore desde este navegador al volver a conectar.",
+          );
+        await recoverItemUse();
+      } catch (reason) {
+        if (current()) setError(message(reason));
+        throw reason;
+      } finally {
+        itemStarting = false;
+        if (current()) {
+          setUsingItem(false);
+          setItemUseSyncBlocked(
+            !!store.getState().party.itemUseLock ||
+              latestUses.some((use) => use.status === "pending"),
           );
         }
       }
@@ -719,6 +925,7 @@ export default function ShopProvider({
     window.addEventListener("storage", onStorage);
     setShopSyncBlocked(!!store.getState().party.shopLock);
     setResetSyncBlocked(!!store.getState().party.resetLock);
+    setItemUseSyncBlocked(!!store.getState().party.itemUseLock);
     socket.connect();
     return () => {
       unsubscribe();
@@ -733,9 +940,14 @@ export default function ShopProvider({
         restartRef.current = async () => {
           throw new Error("Inicia sesión para reiniciar la partida.");
         };
+        recoverItemUseRef.current = async () => {};
+        useItemRef.current = async () => {
+          throw new Error("Inicia sesión para usar Full Restore.");
+        };
       }
       setShopSyncBlocked(false);
       setResetSyncBlocked(false);
+      setItemUseSyncBlocked(false);
     };
   }, [user?.id, user?.role, sync, emit]);
 
@@ -788,10 +1000,13 @@ export default function ShopProvider({
         purchases,
         resets,
         restarting,
+        uses,
+        usingItem,
         error,
         busy,
         sync,
         restartGame,
+        useFullRestore,
         purchase,
       }}
     >

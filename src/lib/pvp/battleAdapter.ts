@@ -90,9 +90,40 @@ export function applyPvpTrainerCommand(
     throw new Error(
       "La acción pertenece a una solicitud anterior del combate. Actualiza la conexión.",
     );
-  return command.choice.kind === "cancel"
-    ? cancelTrainerAction(session, command.side)
-    : chooseTrainerAction(session, command.side, command.choice);
+  const networkItems = clone(session.networkItems ?? { pending: {}, used: [] });
+  if (command.choice.kind === "item") {
+    if (!command.inventoryAuthorized)
+      throw new Error(
+        "Nest debe autorizar las existencias del objeto antes de usarlo.",
+      );
+    networkItems.pending[command.side] = {
+      commandId: command.commandId,
+      captureId: command.choice.captureId,
+    };
+  }
+  const input = { ...session, networkItems };
+  const next =
+    command.choice.kind === "cancel"
+      ? cancelTrainerAction(input, command.side)
+      : chooseTrainerAction(input, command.side, command.choice, {
+          allowNetworkItem:
+            command.choice.kind === "item" && !!command.inventoryAuthorized,
+          onItemUsed: (side, captureId) => {
+            const pending = networkItems.pending[side];
+            if (!pending || pending.captureId !== captureId)
+              throw new Error(
+                "La curación no tiene una reserva de inventario correspondiente.",
+              );
+            if (!networkItems.used.includes(pending.commandId))
+              networkItems.used.push(pending.commandId);
+            delete networkItems.pending[side];
+          },
+        });
+  if (command.choice.kind === "cancel")
+    delete networkItems.pending[command.side];
+  if (next.phase === "finished" || next.runtime?.ended)
+    networkItems.pending = {};
+  return { ...next, networkItems };
 }
 
 export function applyPvpTrainerCommands(

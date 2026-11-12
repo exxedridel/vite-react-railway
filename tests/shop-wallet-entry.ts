@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import reducer, {
+  applyFullRestoreToParty,
   changeBagMoney,
   addPokemon,
   configureGame,
@@ -15,6 +16,7 @@ import {
   setShopSyncBlocked,
   setResetSyncBlocked,
   isLocalPartyMutationBlocked,
+  isAccountTransactionBlocked,
 } from "../src/store/accountStorage";
 import {
   applyShopWallet,
@@ -26,7 +28,9 @@ import {
   validGameReset,
   validWallet,
 } from "../src/lib/shop/wallet";
-import type { GameReset, Wallet } from "../src/lib/shop/types";
+import type { GameReset, ItemUse, Wallet } from "../src/lib/shop/types";
+import { applyItemUse, prepareItemUse } from "../src/lib/shop/itemUse";
+import { getCurrentHp, getMaxHp } from "../src/lib/pokemonStats";
 declare const testStorage: {
   getItem(key: string): string | null;
   failWritesFor: Set<string>;
@@ -45,8 +49,13 @@ function saved(userId: number) {
 }
 
 export async function runAccountStorageTests() {
-  const { store, persistor, activateAccountStore, clearAccountStore } =
-    await import("../src/store/store");
+  const {
+    store,
+    persistor,
+    activateAccountStore,
+    clearAccountStore,
+    transactPvpParty,
+  } = await import("../src/store/store");
   const passed: string[] = [];
   const id = 601,
     other = 602;
@@ -473,6 +482,91 @@ export async function runAccountStorageTests() {
   );
   setShopSyncBlocked(false);
   setResetSyncBlocked(false);
+  await activateAccountStore(606);
+  const itemParty = clone(partyBeforeReset);
+  itemParty.pvpReceipts = [];
+  itemParty.opponent = null;
+  itemParty.pvpRevision = 0;
+  itemParty.bag = {
+    money: 200,
+    badges: [],
+    items: { "full-restore": 2 },
+    currencyVersion: 1,
+    walletUserId: 606,
+    walletRevision: 0,
+  };
+  itemParty.pokemons[0].pokemon.stats.find((s) => s.name === "hp")!.value = 1;
+  store.dispatch({ type: PVP_PARTY_COMMIT, payload: itemParty });
+  await persistor.flush();
+  const targetId = itemParty.pokemons[0].captureId;
+  const plan = async (party: typeof itemParty, captureId: string) =>
+    applyFullRestoreToParty(party, captureId);
+  testStorage.failWritesFor.add(accountStorageKey(606));
+  await assert.rejects(
+    prepareItemUse(606, "item-client", "use-item", targetId, 0, plan),
+    /guardar/,
+  );
+  testStorage.failWritesFor.clear();
+  assert.equal(saved(606).itemUseLock, undefined);
+  await prepareItemUse(606, "item-client", "use-item", targetId, 0, plan);
+  assert.equal(getCurrentHp(saved(606).pokemons[0].pokemon), 1);
+  assert.equal(saved(606).bag.items["full-restore"], 2);
+  const lock = store.getState().party.itemUseLock!;
+  const receipt: ItemUse = {
+    requestId: lock.requestId,
+    userId: 606,
+    clientId: lock.clientId,
+    itemId: "full-restore",
+    captureId: targetId,
+    context: "party",
+    planHash: lock.planHash,
+    expectedWalletRevision: 0,
+    walletRevision: 1,
+    status: "pending",
+  };
+  const consumed = wallet(606, 1, 200, { "full-restore": 1 });
+  testStorage.failWritesFor.add(accountStorageKey(606));
+  await assert.rejects(
+    applyItemUse(consumed, receipt, "item-client"),
+    /guardar/,
+  );
+  testStorage.failWritesFor.clear();
+  assert.equal(saved(606).itemUseLock.appliedWalletRevision, undefined);
+  await applyItemUse(consumed, receipt, "item-client");
+  assert.equal(
+    getCurrentHp(saved(606).pokemons[0].pokemon),
+    getMaxHp(itemParty.pokemons[0].pokemon),
+  );
+  assert.equal(saved(606).bag.items["full-restore"], 1);
+  assert.equal(saved(606).bag.money, 200);
+  const healed = JSON.stringify(store.getState().party);
+  await applyItemUse(consumed, receipt, "item-client");
+  assert.equal(JSON.stringify(store.getState().party), healed);
+  await clearAccountStore();
+  await activateAccountStore(606);
+  await applyItemUse(
+    consumed,
+    { ...receipt, status: "applied" },
+    "item-client",
+  );
+  assert.equal(saved(606).itemUseLock, undefined);
+  assert.equal(saved(606).bag.items["full-restore"], 1);
+  await applyItemUse(consumed, receipt, "item-client");
+  assert.equal(saved(606).itemUseLock, undefined);
+  passed.push(
+    "Full Restore saves its exact effect before debit, heals and consumes once before ACK, and recovers storage/ACK loss without reusing stock",
+  );
+  await transactPvpParty(606, async (party) => {
+    const before = JSON.stringify(store.getState().party);
+    assert.equal(isAccountTransactionBlocked(), true);
+    store.dispatch(toggleGymBadge("cascade"));
+    assert.equal(JSON.stringify(store.getState().party), before);
+    return { party, value: undefined };
+  });
+  assert.equal(isAccountTransactionBlocked(), false);
+  passed.push(
+    "checked inventory writes fence concurrent normal actions until persistence resumes; no late wallet reconciliation overwrites a local turn",
+  );
   await clearAccountStore();
   persistor.pause();
   await persistor.flush();

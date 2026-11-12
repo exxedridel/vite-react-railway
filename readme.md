@@ -3,7 +3,7 @@
 Frontend del juego con React, TypeScript y Vite. `mysql-restapi` autentica y
 administra usuarios; `nest-mongo-pokedex` comunica jugadores y conserva las
 batallas PvP, las carteras y los recibos del Poké Mart. El motor de combate se
-ejecuta en el panel administrador. Versión de la aplicación: **2.2.1**.
+ejecuta en el panel administrador. Versión de la aplicación: **2.3.0**.
 
 ## Desarrollo y comprobaciones
 
@@ -116,8 +116,37 @@ No se permite comprar durante PvP, Trainer Battle ni un encuentro local activo.
 Una compra en curso también bloquea temporalmente las acciones de la Party y
 una nueva reserva de batalla. Una respuesta antigua no retira ese bloqueo. Si
 falla el guardado local, la pantalla ofrece **Recuperar compra** y conserva el
-recibo pendiente. Esta etapa guarda las cantidades de objetos; su uso y consumo
-desde el inventario se implementarán después.
+recibo pendiente. Full Restore ya consume existencias; los demás objetos todavía
+conservan sus cantidades sin uso desde el inventario.
+
+### Full Restore desde la Bag
+
+En la Party, **Acciones → Full Restore** muestra las existencias y consume una
+unidad para recuperar todo el HP, retirar estados/contadores negativos y dejar
+los modificadores de combate a0. Conserva el comportamiento del tablero existente,
+incluida la recuperación de un Pokémon debilitado. No cambia niveles, movimientos
+ni PP. Sin existencias, sin conexión o con una compra, reinicio, consumo o batalla
+administrada pendiente no se puede usar. Un objetivo que no necesita curación
+no gasta el objeto.
+
+En el combate individual aparece también en **BATTLE MOVES**. En un encuentro
+salvaje ocupa la acción del jugador y se resuelve junto con la acción rival en
+la cola nativa. No permite atacar además ni cancelar el objeto ya confirmado.
+En el encuentro local antiguo, bloquea la acción hasta **Finalizar turno**.
+
+En PvP y Trainer Battle, el administrador sólo puede elegir Full Restore con
+existencias del jugador de ese lado. Puede cancelar la elección antes de que se
+resuelva; el consumo se confirma cuando el motor ejecuta la curación. Rendirse
+antes de ejecutar un objeto pendiente tampoco lo gasta. El NPC no utiliza la
+mochila de ningún jugador.
+
+Nest conserva las existencias. Para el uso individual el dispositivo guarda un
+plan local antes de solicitar el consumo y guarda la cura/acción junto con la
+wallet antes del ACK. Si falla Storage o la red, **Recuperar Full Restore** continúa
+la misma operación sin volver a consumir ni ejecutar un turno. Para los combates
+admin, un checkpoint pendiente se guarda antes del débito; la recuperación
+completa ese mismo checkpoint y deduplica por batalla/comando. Se conserva el
+motor y su azar en React. No se traslada la Party general al servidor.
 
 La cartera es la autoridad para saldo y objetos comprados; el resto de la partida
 sigue en el navegador. No hay sondeo periódico de saldos: se publican cambios por
@@ -194,8 +223,8 @@ este frontend y recargar los navegadores originales. No requiere variables nueva
    temporales y modificadores se limpian al finalizar. Pokedollars, medallas, especie,
    nivel y movimientos permanecen en sus respectivas partidas.
 
-La mochila conserva cantidades de objetos comprados, pero todavía no permite
-consumirlas en combate. Full Restore del simulador no aparece en PvP. Los PP se consumen
+La mochila conserva cantidades de objetos comprados. Full Restore puede usarse
+en combate con existencias y consume la acción de ese lado. Los PP se consumen
 en el runtime de esta batalla; `moves[].pp` sigue siendo información del catálogo.
 No se añade XP, premios o intercambio de Pokémon en este flujo.
 

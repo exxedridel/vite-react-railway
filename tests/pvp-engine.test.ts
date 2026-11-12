@@ -520,3 +520,68 @@ test("NPC completes native Hyper Beam recharge using the forced zero-PP move", (
   assert.deepEqual(choice, { kind: "move", moveId: 0 });
   assert.doesNotThrow(() => chooseTrainerAction(session, "b", choice!));
 });
+test("authorized Full Restore is reserved until native execution; cancelled and forfeited choices do not consume stock", () => {
+  const started = startTrainerBattle(createPvpTrainerSession(view()), seed);
+  const item = {
+    commandId: "item-a",
+    userId: 99,
+    side: "a" as const,
+    requestKey: pvpRequestKey(started, "a"),
+    inventoryAuthorized: true as const,
+    choice: {
+      kind: "item" as const,
+      item: "full-restore" as const,
+      captureId: "same-capture-id",
+    },
+  };
+  assert.throws(
+    () =>
+      applyPvpTrainerCommand(started, {
+        ...item,
+        inventoryAuthorized: undefined,
+      }),
+    /Nest/,
+  );
+  const queued = applyPvpTrainerCommand(started, item);
+  assert.deepEqual(queued.networkItems!.used, []);
+  assert.equal(queued.networkItems!.pending.a!.commandId, "item-a");
+  assert.equal(getCurrentHp(queued.teams.a.pokemons[0].pokemon), 17);
+  const cancelled = applyPvpTrainerCommand(queued, {
+    commandId: "cancel",
+    userId: 99,
+    side: "a",
+    requestKey: pvpRequestKey(queued, "a"),
+    choice: { kind: "cancel" },
+  });
+  assert.deepEqual(cancelled.networkItems, { pending: {}, used: [] });
+  const forfeited = applyPvpTrainerCommand(queued, {
+    commandId: "forfeit",
+    userId: 99,
+    side: "b",
+    requestKey: pvpRequestKey(queued, "b"),
+    choice: { kind: "forfeit" },
+  });
+  assert.deepEqual(forfeited.networkItems, { pending: {}, used: [] });
+  const done = applyPvpTrainerCommand(clone(queued), {
+    commandId: "resolve",
+    userId: 99,
+    side: "b",
+    requestKey: pvpRequestKey(queued, "b"),
+    choice: { kind: "move", moveId: 150 },
+  });
+  assert.deepEqual(done.networkItems!.used, ["item-a"]);
+  assert.deepEqual(done.networkItems!.pending, {});
+  assert.equal(
+    getCurrentHp(done.teams.a.pokemons[0].pokemon),
+    getMaxHp(done.teams.a.pokemons[0].pokemon),
+  );
+  assert.deepEqual(
+    Battle.fromJSON(done.runtime!.engine).p1.pokemon[0].moveSlots.map(
+      (m) => m.pp,
+    ),
+    Battle.fromJSON(started.runtime!.engine).p1.pokemon[0].moveSlots.map(
+      (m) => m.pp,
+    ),
+  );
+  assert.ok(validTrainerBattleSession(done));
+});

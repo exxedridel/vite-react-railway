@@ -18,6 +18,7 @@ export type PvpPhase =
 export type PvpChoice =
   | { kind: "move"; moveId: number }
   | { kind: "switch"; captureId: string }
+  | { kind: "item"; item: "full-restore"; captureId: string }
   | { kind: "wait" }
   | { kind: "cancel" }
   | { kind: "forfeit" };
@@ -72,6 +73,7 @@ export type PvpCommand = {
   side: TrainerSide;
   requestKey: string;
   choice: PvpChoice;
+  inventoryAuthorized?: true;
 };
 export type PvpTrainer = {
   presetId: string;
@@ -93,6 +95,7 @@ export type PvpBattleView = {
   applied: Record<TrainerSide, boolean>;
   session?: TrainerBattleSession | null;
   commands?: PvpCommand[];
+  inventory?: Partial<Record<TrainerSide, number>>;
   side?: TrainerSide;
   snapshot?: PvpSnapshot;
   team?: TrainerTeam;

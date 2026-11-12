@@ -10,12 +10,15 @@ export default function ShopPartyGate({ children }: { children: ReactNode }) {
   const shop = useShopContext();
   const lock = useAppSelector((state) => state.party.shopLock);
   const resetLock = useAppSelector((state) => state.party.resetLock);
+  const itemLock = useAppSelector((state) => state.party.itemUseLock);
+  const pendingUse = shop.uses.find((use) => use.status === "pending");
+  const usingItem = !!itemLock || !!pendingUse;
   const [retrying, setRetrying] = useState(false);
   const [localError, setLocalError] = useState("");
   const pendingReset = shop.resets.find((reset) => reset.status === "pending");
   const resetting = !!resetLock || !!pendingReset;
   const otherBrowser = pendingReset && pendingReset.clientId !== shop.clientId;
-  if (!lock && !resetting) return <>{children}</>;
+  if (!lock && !resetting && !usingItem) return <>{children}</>;
   async function retry() {
     if (retrying) return;
     setRetrying(true);
@@ -35,18 +38,30 @@ export default function ShopPartyGate({ children }: { children: ReactNode }) {
   return (
     <main
       className="mx-auto flex min-h-[70dvh] max-w-2xl flex-col justify-center gap-4 px-4 py-8"
-      data-testid={resetting ? "shop-reset-lock" : "shop-party-lock"}
+      data-testid={
+        usingItem
+          ? "item-use-lock"
+          : resetting
+            ? "shop-reset-lock"
+            : "shop-party-lock"
+      }
     >
       <h1 className="flex items-center gap-2 text-2xl font-bold">
         <Coins className="text-brand" />{" "}
-        {resetting ? "Reiniciando partida" : "Procesando compra del Poké Mart"}
+        {usingItem
+          ? "Confirmando Full Restore"
+          : resetting
+            ? "Reiniciando partida"
+            : "Procesando compra del Poké Mart"}
       </h1>
       <p>
-        {resetting
-          ? otherBrowser
-            ? "Esta cuenta tiene un reinicio pendiente en otro navegador. Vuelve al navegador que lo solicitó para terminarlo."
-            : "Tu partida está protegida mientras confirmamos y guardamos el reinicio con 500 Pokedollars y la mochila de objetos vacía."
-          : "Tu partida está protegida mientras guardamos el saldo y los objetos de la compra confirmada por el administrador."}
+        {usingItem
+          ? "Guardamos el consumo y su efecto una sola vez. Reconecta el navegador que solicitó Full Restore para recuperar la operación."
+          : resetting
+            ? otherBrowser
+              ? "Esta cuenta tiene un reinicio pendiente en otro navegador. Vuelve al navegador que lo solicitó para terminarlo."
+              : "Tu partida está protegida mientras confirmamos y guardamos el reinicio con 500 Pokedollars y la mochila de objetos vacía."
+            : "Tu partida está protegida mientras guardamos el saldo y los objetos de la compra confirmada por el administrador."}
       </p>
       <p className="text-sm text-muted-foreground">
         Si se interrumpe la conexión, vuelve a conectar este navegador. La
@@ -66,9 +81,11 @@ export default function ShopPartyGate({ children }: { children: ReactNode }) {
           <RefreshCw className="mr-2 h-4 w-4" />
           {retrying
             ? "Recuperando…"
-            : resetting
-              ? "Recuperar reinicio"
-              : "Recuperar compra"}
+            : usingItem
+              ? "Recuperar Full Restore"
+              : resetting
+                ? "Recuperar reinicio"
+                : "Recuperar compra"}
         </Button>
         <Button asChild variant="outline">
           <Link to="/mensajes-prueba">Mensajes</Link>

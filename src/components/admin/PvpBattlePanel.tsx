@@ -3,7 +3,10 @@ import { RefreshCw, Swords } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import TrainerBattleView from "./TrainerBattleView";
 import { usePvpContext } from "@/context/PvpContext";
-import { startTrainerBattle } from "@/lib/trainerBattle/engine";
+import {
+  startTrainerBattle,
+  chooseTrainerAction,
+} from "@/lib/trainerBattle/engine";
 import { validTrainerBattleSession } from "@/lib/trainerBattle/model";
 import type { TrainerChoice, TrainerSide } from "@/lib/trainerBattle/types";
 import {
@@ -354,11 +357,13 @@ export default function PvpBattlePanel({
   ): Promise<void> {
     if (contextRef.current.state?.mode === "trainer" && side === "b")
       throw new Error("El Trainer elige sus acciones automáticamente.");
-    if (choice !== "cancel" && choice.kind === "item")
-      throw new Error("Los objetos no están disponibles en estas batallas.");
     const view = contextRef.current.state;
     if (!view || workRef.current) return;
     requireHost(view);
+    if (choice !== "cancel" && choice.kind === "item" && view.session)
+      chooseTrainerAction(view.session, side, choice, {
+        allowNetworkItem: true,
+      });
     await contextRef.current.sendCommand(
       side,
       choice === "cancel" ? { kind: "cancel" } : choice,
@@ -687,7 +692,8 @@ export default function PvpBattlePanel({
               onChange={() => {}}
               onEditSetup={() => {}}
               onAction={action}
-              allowItems={false}
+              allowItems
+              itemStock={state.inventory ?? { a: 0, b: 0 }}
               allowForfeit
               automaticSide={state.mode === "trainer" ? "b" : undefined}
               disabled={

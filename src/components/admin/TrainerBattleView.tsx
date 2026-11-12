@@ -40,6 +40,7 @@ type Props = {
   ) => void | Promise<void>;
   disabled?: boolean;
   allowItems?: boolean;
+  itemStock?: Partial<Record<TrainerSide, number>>;
   allowForfeit?: boolean;
   automaticSide?: TrainerSide;
   onExit?: () => void | Promise<void>;
@@ -110,6 +111,7 @@ function TrainerControls({
   onChoose,
   onCancel,
   allowItems,
+  itemStock,
   allowForfeit,
 }: {
   session: TrainerBattleSession;
@@ -118,6 +120,7 @@ function TrainerControls({
   onChoose: (side: TrainerSide, choice: TrainerChoice) => void;
   onCancel: (side: TrainerSide) => void;
   allowItems: boolean;
+  itemStock?: number;
   allowForfeit: boolean;
 }) {
   const [choosingRestore, setChoosingRestore] = useState(false);
@@ -134,7 +137,11 @@ function TrainerControls({
   const canSwitch =
     canChoose && (request.forceSwitch || (!request.trapped && !request.locked));
   const canUseItem =
-    allowItems && canChoose && !request.forceSwitch && !request.locked;
+    allowItems &&
+    canChoose &&
+    !request.forceSwitch &&
+    !request.locked &&
+    (itemStock === undefined || itemStock > 0);
   function chooseAction(choice: TrainerChoice) {
     setChoosingRestore(false);
     onChoose(side, choice);
@@ -249,12 +256,14 @@ function TrainerControls({
                 alt=""
                 className="h-6 w-6 object-contain [image-rendering:pixelated]"
               />
-              Full restore
+              Full Restore{itemStock !== undefined ? ` · ${itemStock}` : ""}
             </Button>
             <p className="text-xs text-muted-foreground">
-              {request.locked
-                ? "Completa la acción obligatoria antes de usar un objeto."
-                : "Recupera todo el HP, cura los estados negativos y restablece los modificadores a 0. Consume tu acción del turno."}
+              {itemStock === 0
+                ? "Este jugador no tiene Full Restore en su Bag."
+                : request.locked
+                  ? "Completa la acción obligatoria antes de usar un objeto."
+                  : "Recupera todo el HP, cura los estados negativos y restablece los modificadores a 0. Consume tu acción del turno."}
             </p>
             {choosingRestore && (
               <div id={`full-restore-targets-${side}`} className="space-y-2">
@@ -406,6 +415,7 @@ export default function TrainerBattleView({
   onAction,
   disabled = false,
   allowItems = true,
+  itemStock,
   allowForfeit = false,
   automaticSide,
   onExit,
@@ -585,6 +595,7 @@ export default function TrainerBattleView({
               side={side}
               disabled={busy || disabled}
               allowItems={allowItems}
+              itemStock={itemStock?.[side]}
               allowForfeit={allowForfeit}
               onChoose={act}
               onCancel={(target) => act(target, "cancel")}

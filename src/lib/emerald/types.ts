@@ -4,6 +4,7 @@ export type BattleSide = "player" | "opponent";
 export type EmeraldChoice =
   | { kind: "move"; moveId: number }
   | { kind: "switch"; captureId: string }
+  | { kind: "item"; item: "full-restore"; captureId: string }
   | { kind: "wait" };
 export type EmeraldRequest = {
   moves: {

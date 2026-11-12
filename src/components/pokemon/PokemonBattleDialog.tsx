@@ -10,6 +10,7 @@ import PokemonOpponentStatusControl from "./PokemonOpponentStatusControl";
 import PokemonLastMoveSummary from "./PokemonLastMoveSummary";
 import { getBattlePresence } from "@/lib/battlePresence";
 import PokemonMovesPanel from "./PokemonMovesPanel";
+import FullRestoreBattleControl from "./FullRestoreBattleControl";
 import {
   useEffect,
   useRef,
@@ -408,20 +409,24 @@ function BattleDialogContent({ captureId, onClose }: Props) {
                     BATTLE MOVES
                   </summary>
                   <div className="mt-3 [&>section]:border-0 [&>section]:p-0">
-                    {field.playerSwitchedThisTurn ? (
+                    {field.playerSwitchedThisTurn ||
+                    field.playerItemUsedThisTurn ? (
                       <p
                         role="status"
                         className="text-sm text-muted-foreground"
                       >
-                        El cambio de Pokémon consumió tu acción. Resuelve la
+                        Tu acción de este turno ya fue utilizada. Resuelve la
                         acción del rival y pulsa «Finalizar turno» manualmente
                         para poder atacar de nuevo.
                       </p>
                     ) : (
-                      <PokemonMovesPanel
-                        captureId={capturedPokemon.captureId}
-                        showLastResult={false}
-                      />
+                      <>
+                        <FullRestoreBattleControl captureId={captureId!} />
+                        <PokemonMovesPanel
+                          captureId={capturedPokemon.captureId}
+                          showLastResult={false}
+                        />
+                      </>
                     )}
                   </div>
                 </details>

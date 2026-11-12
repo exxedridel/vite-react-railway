@@ -53,6 +53,78 @@ export {
 };
 
 const dex = Dex.forGen(3);
+const FULL_RESTORE_EVENT = "wildfullrestore";
+const restoredVolatiles = [
+  "confusion",
+  "attract",
+  "taunt",
+  "torment",
+  "flinch",
+  "partiallytrapped",
+  "trapped",
+  "disable",
+  "encore",
+  "perishsong",
+  "leechseed",
+  "curse",
+  "nightmare",
+  "yawn",
+  "foresight",
+] as const;
+
+/** The existing board Full Restore rules include revival and neutral boosts. */
+export function emeraldFullRestoreNeeded(target: SimPokemon): boolean {
+  return (
+    target.hp < target.maxhp ||
+    !!target.status ||
+    restoredVolatiles.some((effect) => !!target.volatiles[effect]) ||
+    Object.values(target.boosts).some((stage) => stage !== 0)
+  );
+}
+
+/** Applies an already selected item inside the native action queue. It never
+ * advances the turn or PRNG independently, and leaves spent PP untouched. */
+export function applyEmeraldFullRestore(
+  battle: Battle,
+  target: SimPokemon,
+  trainerName: string,
+  targetName: string,
+): boolean {
+  if (!emeraldFullRestoreNeeded(target)) return false;
+  battle.add("message", `${trainerName} usó Full restore en ${targetName}.`);
+  target.hp = target.maxhp;
+  target.fainted = false;
+  target.faintQueued = false;
+  target.subFainted = false;
+  const oldStatus = target.status;
+  target.clearStatus();
+  if (oldStatus)
+    battle.add("-curestatus", target, oldStatus, "[from] item: Full restore");
+  for (const effect of restoredVolatiles) {
+    if (!target.volatiles[effect]) continue;
+    // Their End callbacks inflict harm instead of curing the condition.
+    if (effect === "perishsong" || effect === "yawn")
+      delete target.volatiles[effect];
+    else target.removeVolatile(effect);
+  }
+  applyStages(target, neutralBattleStages());
+  target.side.pokemonLeft = target.side.pokemon.filter(
+    (pokemon) => pokemon.hp > 0 && !pokemon.fainted,
+  ).length;
+  battle.add(
+    "-heal",
+    target,
+    `${target.hp}/${target.maxhp}`,
+    "[from] item: Full restore",
+  );
+  battle.add("-clearboost", target, "[from] item: Full restore");
+  battle.add(
+    "message",
+    `${targetName}: estados negativos y contadores eliminados; todos los modificadores de combate restablecidos a 0.`,
+  );
+  battle.add("boardend");
+  return true;
+}
 const primary: Partial<Record<PokemonStatus, string>> = {
   burned: "brn",
   frozen: "frz",
@@ -430,6 +502,37 @@ function request(side: Side): EmeraldRequest {
   };
 }
 function choose(b: Battle, side: Side, choice: EmeraldChoice) {
+  if (choice.kind === "item") {
+    const current = request(side);
+    if (choice.item !== "full-restore")
+      throw new Error("Este objeto no está disponible.");
+    if (b.requestState !== "move" || current.waiting || current.forceSwitch)
+      throw new Error(
+        "Elige el reemplazo obligatorio antes de usar un objeto.",
+      );
+    if (current.locked)
+      throw new Error(
+        "Debes completar el movimiento forzado o la recarga antes de usar un objeto.",
+      );
+    const target = side.pokemon.find(
+      (pokemon) => pokemon.set.name === choice.captureId,
+    );
+    if (!target)
+      throw new Error(
+        "El objeto solo puede usarse en un Pokémon de tu equipo.",
+      );
+    if (!emeraldFullRestoreNeeded(target))
+      throw new Error("Este Pokémon no necesita Full Restore.");
+    side.clearChoice();
+    side.choice.actions.push({
+      choice: "event",
+      event: FULL_RESTORE_EVENT,
+      pokemon: side.active[0],
+      order: 102,
+      priority: 8,
+    } as unknown as (typeof side.choice.actions)[number]);
+    return;
+  }
   if (choice.kind === "wait") {
     if (request(side).locked)
       throw new Error("Debes completar el movimiento forzado o la recarga.");
@@ -729,6 +832,8 @@ export function runEmeraldAction(
     throw new Error(
       "La automatización solo está disponible para encuentros salvajes.",
     );
+  if (choice.kind === "item" && side !== "player")
+    throw new Error("El rival salvaje no puede usar objetos de tu mochila.");
   const existing =
     state.emerald?.version === 1 &&
     state.emerald.encounterKey === encounterKey(state)
@@ -830,6 +935,20 @@ export function runEmeraldAction(
     };
     const run = b.runAction;
     b.runAction = function (action) {
+      if (action.choice === "event" && action.event === FULL_RESTORE_EVENT) {
+        const itemChoice = pending.player;
+        if (itemChoice?.kind !== "item")
+          throw new Error("El objeto pendiente ya no es válido.");
+        const target = this.p1.pokemon.find(
+          (pokemon) => pokemon.set.name === itemChoice.captureId,
+        );
+        const entry = state.pokemons.find(
+          (capture) => capture.captureId === itemChoice.captureId,
+        );
+        if (!target || !entry)
+          throw new Error("El objetivo del objeto ya no pertenece al equipo.");
+        applyEmeraldFullRestore(this, target, "Tu equipo", entry.pokemon.name);
+      }
       const value = run.call(this, action);
       if (action.choice === "move") this.add("boardend");
       return value;
@@ -914,6 +1033,10 @@ export function cancelEmeraldChoice(
   const state = clone(input);
   const runtime = state.emerald;
   if (!runtime?.pending[side]) return state;
+  if (runtime.pending[side]?.kind === "item")
+    throw new Error(
+      "El uso de Full Restore ya fue confirmado y no se puede cancelar.",
+    );
   const b = Battle.fromJSON(runtime.engine);
   b.undoChoice(side === "player" ? "p1" : "p2");
   const player = side === "player" ? b.p1 : b.p2;

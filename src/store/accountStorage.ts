@@ -5,6 +5,17 @@ export const PVP_PARTY_COMMIT = "party/pvpCommit";
 let pvpSyncBlocked = false;
 let shopSyncBlocked = false;
 let resetSyncBlocked = false;
+let itemUseSyncBlocked = false;
+let accountTransactionBlocked = false;
+export function setAccountTransactionBlocked(blocked: boolean): void {
+  accountTransactionBlocked = blocked;
+}
+export function isAccountTransactionBlocked(): boolean {
+  return accountTransactionBlocked;
+}
+export function setItemUseSyncBlocked(blocked: boolean): void {
+  itemUseSyncBlocked = blocked;
+}
 export function setResetSyncBlocked(blocked: boolean): void {
   resetSyncBlocked = blocked;
 }
@@ -196,6 +207,39 @@ export function decodeAccountParty(
       )
         throw new Error();
     }
+    if (party.itemUseLock !== undefined) {
+      const lock = party.itemUseLock;
+      if (
+        !isRecord(lock) ||
+        typeof lock.requestId !== "string" ||
+        !/^[\w.:-]{1,128}$/.test(lock.requestId) ||
+        typeof lock.clientId !== "string" ||
+        !/^[\w.:-]{1,128}$/.test(lock.clientId) ||
+        typeof lock.captureId !== "string" ||
+        !lock.captureId ||
+        !["party", "local-battle"].includes(String(lock.context)) ||
+        typeof lock.planHash !== "string" ||
+        !/^[a-f0-9]{64}$/.test(lock.planHash) ||
+        typeof lock.expectedCombatHash !== "string" ||
+        !/^[a-f0-9]{64}$/.test(lock.expectedCombatHash) ||
+        !Number.isSafeInteger(lock.userId) ||
+        Number(lock.userId) <= 0 ||
+        !Number.isSafeInteger(lock.expectedWalletRevision) ||
+        Number(lock.expectedWalletRevision) < 0 ||
+        (lock.appliedWalletRevision !== undefined &&
+          lock.appliedWalletRevision !==
+            Number(lock.expectedWalletRevision) + 1) ||
+        !isRecord(lock.prepared) ||
+        lock.prepared.itemUseLock ||
+        lock.prepared.pvpLock ||
+        lock.prepared.shopLock ||
+        lock.prepared.resetLock
+      )
+        throw new Error();
+      // Prepared effects are local, never sent to Nest. Reject corrupt snapshots
+      // before a pending consumption could overwrite the saved party.
+      decodeAccountParty(encodeAccountParty(lock.prepared as PartyState));
+    }
     return {
       party: { ...party, opponent: party.opponent ?? null } as PartyState,
     };
@@ -237,7 +281,10 @@ function writeNormalAccountRoot(userId: number, raw: string): void {
   if (previous) {
     if (pvpPartyRevision(previous) > pvpPartyRevision(incoming)) return;
     if (
-      (previous.pvpLock || previous.shopLock || previous.resetLock) &&
+      (previous.pvpLock ||
+        previous.shopLock ||
+        previous.resetLock ||
+        previous.itemUseLock) &&
       pvpPartyRevision(previous) === pvpPartyRevision(incoming) &&
       stablePvpJson(previous) !== stablePvpJson(incoming)
     )
@@ -277,9 +324,11 @@ export function isLocalPartyMutationBlocked(party: PartyState): boolean {
     pvpSyncBlocked ||
     shopSyncBlocked ||
     resetSyncBlocked ||
+    itemUseSyncBlocked ||
     party.pvpLock ||
     party.shopLock ||
     party.resetLock ||
+    party.itemUseLock ||
     activeAccountId === null
   )
     return true;
@@ -289,6 +338,7 @@ export function isLocalPartyMutationBlocked(party: PartyState): boolean {
       !!saved?.pvpLock ||
       !!saved?.shopLock ||
       !!saved?.resetLock ||
+      !!saved?.itemUseLock ||
       pvpPartyRevision(saved) > pvpPartyRevision(party)
     );
   } catch {

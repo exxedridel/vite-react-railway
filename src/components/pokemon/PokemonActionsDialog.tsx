@@ -12,8 +12,10 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { usePokemonProgression } from "@/hooks/usePokemonProgression";
-import { useAppDispatch, useAppSelector } from "@/store/hooks";
-import { fullRestorePokemon } from "@/slices/partySlice";
+import { useAppSelector } from "@/store/hooks";
+import { useShopContext } from "@/context/ShopContext";
+import { isLocalPartyMutationBlocked } from "@/store/accountStorage";
+import { localBattleActive } from "@/lib/shop/wallet";
 import type { CapturedPokemon } from "@/types/pokemon";
 
 type Props = {
@@ -29,12 +31,31 @@ export default function PokemonActionsDialog({
   onOpenChange,
   onRelease,
 }: Props) {
-  const dispatch = useAppDispatch();
-  const partySize = useAppSelector((state) => state.party.pokemons.length);
+  const party = useAppSelector((state) => state.party);
+  const shop = useShopContext();
+  const partySize = party.pokemons.length;
+  const stock = party.bag?.items?.["full-restore"] ?? 0;
+  const nativeTurn =
+    party.emerald && !party.emerald.ended ? party.emerald : null;
+  const turnUnavailable =
+    !!nativeTurn &&
+    (!!nativeTurn.pending.player ||
+      nativeTurn.requests.player.waiting ||
+      nativeTurn.requests.player.forceSwitch ||
+      nativeTurn.requests.player.locked);
+  const restoreUnavailable =
+    stock < 1 ||
+    !shop.connected ||
+    !shop.synced ||
+    isLocalPartyMutationBlocked(party) ||
+    turnUnavailable ||
+    (localBattleActive(party) && !!party.battleField?.playerItemUsedThisTurn);
   const [confirmingRelease, setConfirmingRelease] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const cancelReleaseRef = useRef<HTMLButtonElement>(null);
-  const { ready, isError, retry } = usePokemonProgression(capturedPokemon.pokemon);
+  const { ready, isError, retry } = usePokemonProgression(
+    capturedPokemon.pokemon,
+  );
   const { pokemon, captureId } = capturedPokemon;
 
   useEffect(() => {
@@ -45,11 +66,11 @@ export default function PokemonActionsDialog({
   }, [confirmingRelease]);
 
   async function restore() {
-    if (!ready || restoring) return;
+    if (!ready || restoring || restoreUnavailable) return;
     setRestoring(true);
     try {
-      await dispatch(fullRestorePokemon(captureId));
-      toast.success(`Full restore aplicado a ${pokemon.name}.`);
+      await shop.useFullRestore(captureId);
+      toast.success(`Full Restore confirmado para ${pokemon.name}.`);
       onOpenChange(false);
     } catch (error: unknown) {
       toast.error(
@@ -123,12 +144,16 @@ export default function PokemonActionsDialog({
                 type="button"
                 variant="outline"
                 className="w-full gap-2"
-                disabled={!ready || restoring}
+                disabled={!ready || restoring || restoreUnavailable}
                 aria-busy={restoring}
+                aria-label={`Usar Full Restore en ${pokemon.name}`}
                 onClick={() => void restore()}
               >
                 {restoring ? (
-                  <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+                  <Loader2
+                    className="h-5 w-5 animate-spin"
+                    aria-hidden="true"
+                  />
                 ) : (
                   <img
                     src="/admin-shop/full-restore.png"
@@ -136,12 +161,30 @@ export default function PokemonActionsDialog({
                     className="h-6 w-6 object-contain [image-rendering:pixelated]"
                   />
                 )}
-                {restoring ? "Aplicando…" : "Full restore"}
+                {restoring ? "Aplicando…" : `Full Restore · ${stock}`}
               </Button>
               <p className="text-xs text-muted-foreground">
                 Recupera todo el HP, elimina los estados negativos y restablece
                 los modificadores de combate a 0.
+                {nativeTurn || party.opponent
+                  ? " En combate consume tu acción del turno."
+                  : " Consume 1 unidad de tu Bag."}
               </p>
+              {stock < 1 && (
+                <p role="status" className="text-xs text-muted-foreground">
+                  No tienes Full Restore en la Bag.
+                </p>
+              )}
+              {stock > 0 && (!shop.connected || !shop.synced) && (
+                <p role="status" className="text-xs text-muted-foreground">
+                  Conecta y sincroniza tu Bag para usar este objeto.
+                </p>
+              )}
+              {turnUnavailable && (
+                <p role="status" className="text-xs text-muted-foreground">
+                  Espera una acción libre de tu turno antes de usar el objeto.
+                </p>
+              )}
               {!ready && (
                 <p role="status" className="text-xs text-muted-foreground">
                   {isError

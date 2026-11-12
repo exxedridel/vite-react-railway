@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { fullRestoreBrowserScenario } from "./full-restore-browser-scenarios.mjs";
 
 /** Real UI scenarios, using the identity/Nest/Chrome harness in test-pvp-browser. */
 export async function runShopBrowserScenario({
@@ -791,6 +792,21 @@ export async function runShopBrowserScenario({
     "a second reload does not repeat or re-credit the reset",
   );
   assert.equal((await shopRepository.get(2)).revision, resetPending.revision);
+  await fullRestoreBrowserScenario({
+    admin,
+    playerA,
+    cdp,
+    evalArgs,
+    waitArgs,
+    clickButton,
+    field,
+    seedPvpTeam,
+    shopRepository,
+    shopGateway,
+    select,
+    openItem,
+    closeDialog,
+  });
   assert.deepEqual(cdp.exceptions, [], "Unexpected browser exception");
   console.log(
     "PASS: live Poké Mart, 600/Great Ball quantity2, read-only cash, live objects/balances, battle locks, durable purchase recovery, and player new games: 500 Pokedollars, empty purchased inventory/team, cancel/offline guards, double-click deduplication, checked-save recovery and no repeated reset on reload.",

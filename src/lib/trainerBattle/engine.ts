@@ -3,7 +3,7 @@ import { Battle, Dex, toID } from "@pkmn/sim";
 import type { Side, Pokemon as SimPokemon } from "@pkmn/sim";
 import type { BattleResult } from "@/types/battle";
 import { STATUS_OPTIONS } from "@/types/pokemon";
-import { getCurrentHp, neutralBattleStages } from "@/lib/pokemonStats";
+import { getCurrentHp } from "@/lib/pokemonStats";
 import { clearBattleConditions } from "@/lib/pokemonCondition";
 import { installRollAudit } from "@/lib/emerald/audit";
 import { turnHighlights } from "@/lib/emerald/highlights";
@@ -18,6 +18,8 @@ import {
   chooseEmeraldAction,
   emeraldPublicLines,
   describeEmeraldLine,
+  applyEmeraldFullRestore,
+  emeraldFullRestoreNeeded,
 } from "@/lib/emerald/engine";
 import type {
   TrainerBattleSession,
@@ -38,23 +40,6 @@ const weatherIds = {
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 const actorKey = (value = "") => value.replace(/^p[12][a-z]?: /, "");
 const FULL_RESTORE_EVENT = "trainerfullrestore";
-const restoredVolatiles = [
-  "confusion",
-  "attract",
-  "taunt",
-  "torment",
-  "flinch",
-  "partiallytrapped",
-  "trapped",
-  "disable",
-  "encore",
-  "perishsong",
-  "leechseed",
-  "curse",
-  "nightmare",
-  "yawn",
-  "foresight",
-] as const;
 function entries(session: TrainerBattleSession) {
   return sides.flatMap((side) =>
     session.teams[side].pokemons.map((capture, index) => ({
@@ -339,6 +324,15 @@ function chooseTrainerItem(
     )
   )
     throw new Error("El objeto solo puede usarse en un Pokémon de tu equipo.");
+  const entry = entries(session).find(
+    (entry) =>
+      entry.side === side && entry.capture.captureId === choice.captureId,
+  );
+  const target = simulated.pokemon.find(
+    (pokemon) => pokemon.set.name === entry?.key,
+  );
+  if (!target || !emeraldFullRestoreNeeded(target))
+    throw new Error("Este Pokémon no necesita Full Restore.");
   simulated.clearChoice();
   // The native queue accepts serializable event actions. Side's public choice
   // type is narrower than the queue's supported ActionChoice union.
@@ -359,6 +353,7 @@ function applyTrainerFullRestore(
   battle: Battle,
   actingPokemon: SimPokemon,
   pending: Partial<Record<TrainerSide, TrainerChoice>>,
+  onItemUsed?: (side: TrainerSide, captureId: string) => void,
 ) {
   const side: TrainerSide = actingPokemon.side.id === "p1" ? "a" : "b";
   const choice = pending[side];
@@ -373,41 +368,15 @@ function applyTrainerFullRestore(
   );
   if (!entry || !target)
     throw new Error("El objetivo del objeto ya no pertenece al equipo.");
-  battle.add(
-    "message",
-    `${session.teams[side].name} usó Full restore en ${entry.capture.pokemon.name}.`,
-  );
-  target.hp = target.maxhp;
-  target.fainted = false;
-  target.faintQueued = false;
-  target.subFainted = false;
-  const oldStatus = target.status;
-  target.clearStatus();
-  if (oldStatus)
-    battle.add("-curestatus", target, oldStatus, "[from] item: Full restore");
-  for (const effect of restoredVolatiles) {
-    if (!target.volatiles[effect]) continue;
-    // These native End callbacks apply the condition's harm instead of curing it.
-    if (effect === "perishsong" || effect === "yawn")
-      delete target.volatiles[effect];
-    else target.removeVolatile(effect);
-  }
-  applyEmeraldStages(target, neutralBattleStages());
-  actingPokemon.side.pokemonLeft = actingPokemon.side.pokemon.filter(
-    (pokemon) => pokemon.hp > 0 && !pokemon.fainted,
-  ).length;
-  battle.add(
-    "-heal",
-    target,
-    `${target.hp}/${target.maxhp}`,
-    "[from] item: Full restore",
-  );
-  battle.add("-clearboost", target, "[from] item: Full restore");
-  battle.add(
-    "message",
-    `${entry.capture.pokemon.name}: estados negativos y contadores eliminados; todos los modificadores de combate restablecidos a 0.`,
-  );
-  battle.add("boardend");
+  if (
+    applyEmeraldFullRestore(
+      battle,
+      target,
+      session.teams[side].name,
+      entry.capture.pokemon.name,
+    )
+  )
+    onItemUsed?.(side, choice.captureId);
 }
 
 function resultsFrom(
@@ -557,9 +526,17 @@ export function chooseTrainerAction(
   input: TrainerBattleSession,
   side: TrainerSide,
   choice: TrainerChoice,
+  options: {
+    allowNetworkItem?: boolean;
+    onItemUsed?: (side: TrainerSide, captureId: string) => void;
+  } = {},
 ): TrainerBattleSession {
   if (choice.kind === "forfeit") return forfeitTrainerBattle(input, side);
-  if (input.networkBattleId && choice.kind === "item")
+  if (
+    input.networkBattleId &&
+    choice.kind === "item" &&
+    !options.allowNetworkItem
+  )
     throw new Error("Los objetos del modo manual no se usan en PvP.");
   const session = clone(input);
   const battle = loadBattle(session);
@@ -610,7 +587,13 @@ export function chooseTrainerAction(
     const original = battle.runAction;
     battle.runAction = function (action) {
       if (action.choice === "event" && action.event === FULL_RESTORE_EVENT)
-        applyTrainerFullRestore(session, this, action.pokemon, pending);
+        applyTrainerFullRestore(
+          session,
+          this,
+          action.pokemon,
+          pending,
+          options.onItemUsed,
+        );
       const result = original.call(this, action);
       if (action.choice === "move") this.add("boardend");
       return result;

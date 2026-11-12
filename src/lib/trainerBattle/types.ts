@@ -41,6 +41,12 @@ export type TrainerBattleSession = {
   version: 1;
   id: string;
   networkBattleId?: string;
+  networkItems?: {
+    pending: Partial<
+      Record<TrainerSide, { commandId: string; captureId: string }>
+    >;
+    used: string[];
+  };
   phase: "setup" | "battle" | "finished";
   hpMultiplier: number;
   teams: Record<TrainerSide, TrainerTeam>;

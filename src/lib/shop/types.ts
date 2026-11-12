@@ -25,6 +25,19 @@ export type ShopPlayer = {
   wallet: Wallet | null;
   pending: boolean;
   pendingReset?: boolean;
+  pendingUse?: boolean;
+};
+export type ItemUse = {
+  requestId: string;
+  userId: number;
+  clientId: string;
+  itemId: "full-restore";
+  captureId: string;
+  context: "party" | "local-battle";
+  planHash: string;
+  expectedWalletRevision: number;
+  walletRevision: number;
+  status: "pending" | "applied" | "cancelled";
 };
 export type GameReset = {
   requestId: string;
@@ -55,6 +68,8 @@ export type ShopState = {
   purchase?: ShopPurchase;
   resets?: GameReset[];
   reset?: GameReset;
+  uses?: ItemUse[];
+  use?: ItemUse;
 };
 export type ShopAck =
   | ({ ok: true } & ShopState)

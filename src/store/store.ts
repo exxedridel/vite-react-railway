@@ -30,6 +30,8 @@ import {
   withAccountStorageLock,
   writePvpAccountParty,
   pvpPartyRevision,
+  setAccountTransactionBlocked,
+  isAccountTransactionBlocked,
 } from "./accountStorage";
 
 import partyReducer, { resetGame } from "@/slices/partySlice";
@@ -67,7 +69,8 @@ const pvpPartyGuard: Middleware<{}, { party: AppState["party"] }> =
       action &&
       typeof action === "object" &&
       "type" in action &&
-      action.type === resetGame.type
+      (action.type === resetGame.type ||
+        action.type === "party/fullRestorePokemon")
     )
       return action;
     if (
@@ -77,7 +80,7 @@ const pvpPartyGuard: Middleware<{}, { party: AppState["party"] }> =
       typeof action.type === "string" &&
       action.type.startsWith("party/") &&
       action.type !== PVP_PARTY_COMMIT &&
-      isLocalPartyMutationBlocked(api.getState().party)
+      (isAccountTransactionBlocked() || isLocalPartyMutationBlocked(api.getState().party))
     )
       return action;
     return next(action);
@@ -148,6 +151,7 @@ export function transactPvpParty<T>(
       throw new Error(
         "La cuenta cambió. Vuelve a conectar PvP desde la cuenta correspondiente.",
       );
+    setAccountTransactionBlocked(true);
     persistor.pause();
     try {
       await persistor.flush();
@@ -166,8 +170,12 @@ export function transactPvpParty<T>(
         true,
       );
     } finally {
-      resumeWithParty({ party: store.getState().party });
-      await persistor.flush();
+      try {
+        resumeWithParty({ party: store.getState().party });
+        await persistor.flush();
+      } finally {
+        setAccountTransactionBlocked(false);
+      }
     }
   });
 }
@@ -241,7 +249,11 @@ function legacyParty() {
     throw new Error(
       "La partida anterior usa una versión incompatible. Se conserva intacta para recuperarla antes de importar.",
     );
-  if (decoded.party.shopLock || decoded.party.resetLock)
+  if (
+    decoded.party.shopLock ||
+    decoded.party.resetLock ||
+    decoded.party.itemUseLock
+  )
     throw new Error(
       "La partida anterior contiene una compra pendiente. Recupérala desde su cuenta original antes de importar.",
     );

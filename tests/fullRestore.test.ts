@@ -5,11 +5,19 @@ import { Battle, Dex } from "@pkmn/sim";
 import reducer, {
   changePokemonHp,
   fullRestorePokemon,
+  applyFullRestoreToParty,
+  finishBattleTurn,
   type PartyState,
 } from "../src/slices/partySlice";
-import { emeraldMoves, runEmeraldAction } from "../src/lib/emerald/engine";
+import { prepareFullRestoreParty } from "../src/lib/fullRestorePlan";
+import {
+  emeraldMoves,
+  cancelEmeraldChoice,
+  runEmeraldAction,
+} from "../src/lib/emerald/engine";
 import type { EmeraldChoice } from "../src/lib/emerald/types";
 import { emptyBattleField } from "../src/lib/battleField";
+import { battleContextKey } from "../src/lib/battleEngine";
 import {
   createLeveledPokemon,
   getCurrentHp,
@@ -110,220 +118,121 @@ function makeStore(party: PartyState) {
   });
 }
 
-test("Full restore heals a fainted target, removes every status/counter and resets all seven stages", async () => {
-  const initial = fixture();
-  const target = initial.pokemons[0];
+test("pure Full Restore heals and clears conditions/stages while preserving the rest of the team", () => {
+  const initial = fixture(),
+    target = initial.pokemons[0];
   target.pokemon.stats[0].value = 0;
-  target.statuses = STATUS_OPTIONS.map((status) => status.id);
-  target.statusTurns = {
-    asleep: 3,
-    confused: 2,
-    taunted: 1,
-    bound: 4,
-    disabled: 2,
-    encored: 5,
-    "perish-song": 1,
-  };
+  target.statuses = STATUS_OPTIONS.map((s) => s.id);
+  target.statusTurns = { confused: 2, asleep: 3 };
   target.pokemon.battleStages = {
+    ...neutralBattleStages(),
     attack: 6,
     defense: -6,
-    "special-attack": 2,
-    "special-defense": -3,
-    speed: 4,
-    accuracy: -1,
-    evasiveness: 5,
   };
-  const untouched = JSON.stringify([
-    initial.pokemons[1],
-    initial.opponent,
-    initial.battleField,
-    initial.bag,
-  ]);
-  const oldStats = target.pokemon.stats.filter((stat) => stat.name !== "hp");
-  const store = makeStore(initial);
-  const result = store.dispatch(fullRestorePokemon("own"));
-  // Outside automatic combat the mutation is immediate, with no simulator load.
+  const before = JSON.stringify(initial);
+  const restored = applyFullRestoreToParty(initial, "own");
+  assert.equal(JSON.stringify(initial), before);
   assert.equal(
-    getCurrentHp(store.getState().party.pokemons[0].pokemon),
+    getCurrentHp(restored.pokemons[0].pokemon),
     getMaxHp(target.pokemon),
   );
-  await result;
-  const restored = store.getState().party;
   assert.deepEqual(restored.pokemons[0].statuses, []);
   assert.deepEqual(restored.pokemons[0].statusTurns, {});
   assert.deepEqual(
     restored.pokemons[0].pokemon.battleStages,
     neutralBattleStages(),
   );
-  assert.deepEqual(
-    restored.pokemons[0].pokemon.stats.filter((stat) => stat.name !== "hp"),
-    oldStats,
-  );
-  assert.deepEqual(restored.pokemons[0].moves, target.moves);
-  assert.equal(
-    JSON.stringify([
-      restored.pokemons[1],
-      restored.opponent,
-      restored.battleField,
-      restored.bag,
-    ]),
-    untouched,
-  );
-  assert.equal(restored.activityHistory?.length, 1);
-  assert.equal(restored.activityHistory?.[0].title, "Full restore: snorlax");
+  assert.deepEqual(restored.pokemons[1], initial.pokemons[1]);
+  assert.deepEqual(restored.bag, initial.bag);
   assert.equal(restored.activityHistory?.[0].captureId, "own");
 });
-
-test("unknown or unmigrated targets cannot change the party or log a restore", async () => {
+test("legacy thunk cannot restore for free without the inventory coordinator", async () => {
   const initial = fixture();
-  delete initial.pokemons[0].pokemon.progressionVersion;
-  const store = makeStore(initial);
-  const before = store.getState();
-  await store.dispatch(fullRestorePokemon("missing"));
-  await store.dispatch(fullRestorePokemon("own"));
-  assert.equal(store.getState(), before);
+  initial.pokemons[0].pokemon.stats[0].value = 20;
+  const store = makeStore(initial),
+    before = JSON.stringify(store.getState());
+  await assert.rejects(
+    store.dispatch(fullRestorePokemon("own")),
+    /Bag|inventario/,
+  );
+  assert.equal(JSON.stringify(store.getState()), before);
 });
-
-test("active restore preserves queued choice, PP, PRNG and turn, and the next turn stays cured", async () => {
+test("outside combat the prepared effect heals without changing inventory or another Pokemon", async () => {
   const initial = fixture();
-  initial.pokemons[0].statuses = [
-    "burned",
-    "confused",
-    "perish-song",
-    "leech-seed",
-  ];
-  initial.pokemons[0].statusTurns = { confused: 3, "perish-song": 2 };
-  initial.pokemons[0].pokemon.battleStages = {
-    ...neutralBattleStages(),
-    attack: -3,
-    speed: 4,
-    accuracy: -2,
-    evasiveness: 3,
-  };
+  initial.opponent = null;
+  initial.pokemons[0].pokemon.stats[0].value = 20;
+  const prepared = await prepareFullRestoreParty(initial, "own");
+  assert.equal(getCurrentHp(initial.pokemons[0].pokemon), 20);
+  assert.equal(
+    getCurrentHp(prepared.pokemons[0].pokemon),
+    getMaxHp(initial.pokemons[0].pokemon),
+  );
+  assert.deepEqual(prepared.bag, initial.bag);
+  assert.deepEqual(prepared.pokemons[1], initial.pokemons[1]);
+});
+test("wild Full Restore consumes the player action, survives JSON and uses no move PP", async () => {
+  const initial = fixture();
   initial.pokemons[0].pokemon.stats[0].value = 40;
-  const queued = choose(initial, "opponent", 150);
+  initial.pokemons[0].statuses = ["burned"];
+  const queued = await prepareFullRestoreParty(initial, "own");
+  assert.equal(getCurrentHp(queued.pokemons[0].pokemon), 40);
+  assert.equal(queued.emerald?.pending.player?.kind, "item");
+  assert.throws(() => cancelEmeraldChoice(queued, "player"), /confirmado/);
   const before = Battle.fromJSON(queued.emerald!.engine);
-  const store = makeStore(queued);
-  await store.dispatch(fullRestorePokemon("own"));
-  const restored = store.getState().party;
-  const after = Battle.fromJSON(restored.emerald!.engine);
-  assert.deepEqual(after.prng.getSeed(), before.prng.getSeed());
-  assert.deepEqual(after.p1.active[0].moveSlots, before.p1.active[0].moveSlots);
-  assert.deepEqual(restored.emerald!.pending, queued.emerald!.pending);
-  assert.deepEqual(restored.battleField, queued.battleField);
-  assert.equal(after.p1.active[0].status, "");
-  assert.equal(after.p1.active[0].hp, after.p1.active[0].maxhp);
-  const next = choose(restored, "player", 150);
-  assert.deepEqual(next.pokemons[0].statuses, []);
-  assert.deepEqual(next.pokemons[0].statusTurns, {});
+  const resolved = choose(JSON.parse(JSON.stringify(queued)), "opponent", 150);
+  const after = Battle.fromJSON(resolved.emerald!.engine);
+  assert.equal(
+    getCurrentHp(resolved.pokemons[0].pokemon),
+    getMaxHp(initial.pokemons[0].pokemon),
+  );
+  assert.deepEqual(resolved.pokemons[0].statuses, []);
+  assert.equal(after.turn, before.turn + 1);
   assert.deepEqual(
-    next.pokemons[0].pokemon.battleStages,
-    neutralBattleStages(),
+    after.p1.pokemon[0].moveSlots.map((m) => m.pp),
+    before.p1.pokemon[0].moveSlots.map((m) => m.pp),
   );
   assert.equal(
-    getCurrentHp(next.pokemons[0].pokemon),
-    getMaxHp(next.pokemons[0].pokemon),
+    resolved.emerald!.events.filter((e) => e.includes("Full restore en "))
+      .length,
+    1,
   );
-  assert.equal(next.battleField!.turn, queued.battleField!.turn + 1);
 });
-
-for (const [name, effect, ownMove, blockedMove] of [
-  ["Taunt", 269, 150, 150],
-  ["Disable", 50, 33, 33],
-] as const) {
-  test(`restore clears ${name} and enables its blocked move immediately`, async () => {
-    let state = fixture([150, 33], [effect, 150]);
-    // Let the player act first so Disable has a previous move to disable.
-    state.pokemons[0].pokemon.stats.find(
-      (stat) => stat.name === "speed",
-    )!.value = 999;
-    state.opponent!.stages.accuracy = 6;
-    state = turn(state, ownMove, effect);
-    assert.equal(
-      state.emerald!.requests.player.moves.find(
-        (move) => move.id === blockedMove,
-      )?.disabled,
-      true,
-    );
-    const store = makeStore(state);
-    await store.dispatch(fullRestorePokemon("own"));
-    const restored = store.getState().party;
-    assert.equal(
-      restored.emerald!.requests.player.moves.find(
-        (move) => move.id === blockedMove,
-      )?.disabled,
-      false,
-    );
-    assert.doesNotThrow(() => choose(restored, "player", blockedMove));
-  });
-}
-
-for (const [name, effect] of [
-  ["Curse", 174],
-  ["Yawn", 281],
-  ["Nightmare", 171],
-] as const) {
-  test(`restore cancels hidden ${name} without triggering residuals or consuming randomness`, async () => {
-    const initial = fixture([150], [effect, 150]);
-    if (name === "Nightmare") {
-      initial.pokemons[0].statuses = ["asleep"];
-      initial.pokemons[0].statusTurns = { asleep: 6 };
-    }
-    const affected = turn(initial, 150, effect);
-    const before = Battle.fromJSON(affected.emerald!.engine);
-    assert(before.p1.active[0].volatiles[name.toLowerCase()]);
-    const store = makeStore(affected);
-    await store.dispatch(fullRestorePokemon("own"));
-    const restored = store.getState().party;
-    const after = Battle.fromJSON(restored.emerald!.engine);
-    assert.equal(after.p1.active[0].volatiles[name.toLowerCase()], undefined);
-    assert.equal(after.p1.active[0].status, "");
-    assert.deepEqual(after.prng.getSeed(), before.prng.getSeed());
-    const next = turn(restored, 150, 150);
-    assert.equal(
-      getCurrentHp(next.pokemons[0].pokemon),
-      getMaxHp(next.pokemons[0].pokemon),
-    );
-    assert.deepEqual(next.pokemons[0].statuses, []);
-  });
-}
-
-test("restore heals a fainted benched Pokémon without changing the active participant or its PP", async () => {
+test("unknown, healthy and already chosen targets never prepare another paid action", async () => {
+  await assert.rejects(prepareFullRestoreParty(fixture(), "missing"), /v?lido/);
+  await assert.rejects(
+    prepareFullRestoreParty(fixture(), "own"),
+    /no necesita/,
+  );
   const initial = fixture();
-  initial.pokemons[1].pokemon.stats[0].value = 0;
-  initial.pokemons[1].statuses = ["poisoned"];
-  const state = turn(initial, 150, 150);
-  const store = makeStore(state);
-  await store.dispatch(fullRestorePokemon("bench"));
-  const restored = store.getState().party;
-  const battle = Battle.fromJSON(restored.emerald!.engine);
-  const bench = battle.p1.pokemon.find(
-    (pokemon) => pokemon.set.name === "bench",
-  )!;
-  assert.equal(bench.hp, bench.maxhp);
-  assert.equal(bench.fainted, false);
-  assert.equal(bench.status, "");
-  assert.equal(battle.p1.pokemonLeft, 2);
-  assert.equal(restored.battleField!.activeCaptureId, "own");
-  assert.deepEqual(
-    restored.emerald!.requests.player.moves,
-    state.emerald!.requests.player.moves,
-  );
-  assert.doesNotThrow(() =>
-    choose(restored, "player", { kind: "switch", captureId: "bench" }),
-  );
+  initial.pokemons[0].pokemon.stats[0].value = 40;
+  const queued = await prepareFullRestoreParty(initial, "own");
+  await assert.rejects(prepareFullRestoreParty(queued, "own"), /eligi?|acci?n/);
 });
-
-test("a concurrent correction rejects an outdated restore without overwriting it", async () => {
-  const store = makeStore(choose(fixture(), "opponent", 150));
-  const pending = store.dispatch(fullRestorePokemon("own"));
-  store.dispatch(changePokemonHp({ captureId: "own", amount: -10 }));
-  const corrected = store.getState();
-  await assert.rejects(pending, /combate cambió/);
-  assert.equal(store.getState(), corrected);
-  assert(
-    !corrected.party.activityHistory?.some((entry) =>
-      entry.title.startsWith("Full restore"),
-    ),
+test("legacy encounter Full Restore spends its local action until turn completion", async () => {
+  const initial = fixture();
+  initial.opponent!.kind = "trainer";
+  initial.pokemons[0].pokemon.stats[0].value = 40;
+  const restored = await prepareFullRestoreParty(initial, "own");
+  assert.equal(restored.battleField!.playerItemUsedThisTurn, true);
+  assert.equal(
+    getCurrentHp(restored.pokemons[0].pokemon),
+    getMaxHp(initial.pokemons[0].pokemon),
   );
+  const again = JSON.parse(JSON.stringify(restored));
+  again.pokemons[1].pokemon.stats[0].value = 30;
+  await assert.rejects(prepareFullRestoreParty(again, "bench"), /turno/);
+  const next = reducer(
+    restored,
+    finishBattleTurn({
+      captureId: "own",
+      expectedTurn: restored.battleField!.turn,
+      expectedContext: battleContextKey(
+        restored.pokemons[0],
+        restored.opponent!,
+        restored.battleField!,
+      ),
+    }),
+  );
+  assert.equal(next.battleField!.playerItemUsedThisTurn, false);
+  assert.equal(next.battleField!.turn, restored.battleField!.turn + 1);
 });

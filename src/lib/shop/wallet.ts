@@ -137,6 +137,12 @@ export function applyShopWallet(
       wallet.revision > party.resetLock.expectedWalletRevision
     )
       return { party, value: undefined };
+    if (
+      party.itemUseLock &&
+      party.itemUseLock.appliedWalletRevision === undefined &&
+      wallet.revision > party.itemUseLock.expectedWalletRevision
+    )
+      return { party, value: undefined };
     let next = partyWithWallet(party, wallet);
     const lock = next.shopLock;
     const confirmedApplied =
@@ -172,7 +178,7 @@ export function prepareShopParty(
   revision: number,
 ): Promise<number> {
   return transactPvpParty(userId, async (party) => {
-    if (party.resetLock)
+    if (party.resetLock || party.itemUseLock)
       throw new Error("Hay un reinicio de partida pendiente de confirmación.");
     if (localBattleActive(party))
       throw new Error("El jugador está en batalla.");
@@ -211,7 +217,7 @@ export function prepareGameReset(
   return transactPvpParty(userId, async (party) => {
     if (localBattleActive(party))
       throw new Error("Termina la batalla antes de reiniciar la partida.");
-    if (party.shopLock)
+    if (party.shopLock || party.itemUseLock)
       throw new Error(
         "Recupera la compra pendiente antes de reiniciar la partida.",
       );

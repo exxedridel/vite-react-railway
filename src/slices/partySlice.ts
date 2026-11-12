@@ -133,6 +133,18 @@ export type PartyState = {
     expectedWalletRevision: number;
     appliedWalletRevision?: number;
   };
+  itemUseLock?: {
+    requestId: string;
+    userId: number;
+    clientId: string;
+    captureId: string;
+    context: "party" | "local-battle";
+    planHash: string;
+    expectedWalletRevision: number;
+    expectedCombatHash: string;
+    prepared: PartyState;
+    appliedWalletRevision?: number;
+  };
   battleField?: BattleField;
   lastFieldEvent?: { id: string; title: string; details: string[] };
   dataVersion?: string;
@@ -242,6 +254,7 @@ function advanceBattleTurn(
   };
   field.turn += 1;
   field.playerSwitchedThisTurn = false;
+  field.playerItemUsedThisTurn = false;
 }
 const partySlice = createSlice({
   name: "party",
@@ -368,7 +381,7 @@ const partySlice = createSlice({
           ]) !== expectedContext
         )
           return;
-        if (state.emerald) return; // Switching is now an engine choice, including traps and Baton Pass.
+        if (state.emerald || state.battleField.playerItemUsedThisTurn) return; // An item consumes the local action too.
         clearSecondaryStatuses(from);
         switchFieldPokemon(state.battleField, toId);
         state.battleField.playerSwitchedThisTurn = true;
@@ -619,7 +632,11 @@ const partySlice = createSlice({
           state.battleField.activeCaptureId !== captureId
         )
           return;
-        if (actorSide === "player" && state.battleField.playerSwitchedThisTurn)
+        if (
+          actorSide === "player" &&
+          (state.battleField.playerSwitchedThisTurn ||
+            state.battleField.playerItemUsedThisTurn)
+        )
           return;
         switchFieldPokemon(state.battleField, captureId);
         const { attacker, defender } = battleParticipants(
@@ -1322,39 +1339,25 @@ export const changePokemonHp = withActivityMeta(
 const commitFullRestorePokemon = withActivityMeta(
   partySlice.actions.fullRestorePokemon,
 );
-/** Keep the simulator lazy while committing the restored card and legal choices together. */
+/** Pure planning primitive. Only the inventory coordinator commits its result. */
+export function applyFullRestoreToParty(
+  state: PartyState,
+  captureId: string,
+): PartyState {
+  return partyReducer(
+    state,
+    commitFullRestorePokemon({ captureId, expected: combatKey(state) }),
+  );
+}
+/** Legacy callers cannot bypass the authoritative inventory coordinator. */
 export function fullRestorePokemon(
   captureId: string,
 ): ThunkAction<Promise<void>, { party: PartyState }, unknown, UnknownAction> {
-  return async (dispatch, getState) => {
-    const current = getState().party;
-    const capture = current.pokemons.find(
-      (pokemon) => pokemon.captureId === captureId,
+  return async () => {
+    void captureId;
+    throw new Error(
+      "Confirma Full Restore mediante la Bag para consumir una unidad de tu inventario.",
     );
-    if (!capture || !isLeveled(capture.pokemon)) return;
-    const expected = combatKey(current);
-    let emerald = current.emerald;
-    if (emerald) {
-      const engine = await import("@/lib/emerald/engine");
-      if (combatKey(getState().party) !== expected)
-        throw new Error(
-          "El combate cambió durante la carga. Intenta otra vez.",
-        );
-      const snapshot = JSON.parse(
-        JSON.stringify({
-          pokemons: current.pokemons,
-          opponent: current.opponent,
-          battleField: current.battleField,
-          emerald,
-        }),
-      );
-      const target = snapshot.pokemons.find(
-        (pokemon: CapturedPokemon) => pokemon.captureId === captureId,
-      );
-      if (!target || !restoreCapture(target)) return;
-      emerald = engine.refreshEmeraldState(snapshot, [captureId]).emerald;
-    }
-    dispatch(commitFullRestorePokemon({ captureId, expected, emerald }));
   };
 }
 export const setPokemonLevel = withActivityMeta(
@@ -1403,7 +1406,10 @@ export default function partyReducer(
   action: UnknownAction,
 ): PartyState {
   if (action.type === PVP_PARTY_COMMIT) return action.payload as PartyState;
-  if ((state?.pvpLock || state?.resetLock) && action.type.startsWith("party/"))
+  if (
+    (state?.pvpLock || state?.resetLock || state?.itemUseLock) &&
+    action.type.startsWith("party/")
+  )
     return state;
   // redux-persist autoMergeLevel1 conserva un slice si cambió durante REHYDRATE.
   // Reiniciamos solo party: no tokens, nickname, colores ni datos de otras apps.
@@ -1417,7 +1423,8 @@ export default function partyReducer(
         typeof saved === "object" &&
         (("pvpLock" in saved && saved.pvpLock) ||
           ("shopLock" in saved && saved.shopLock) ||
-          ("resetLock" in saved && saved.resetLock))
+          ("resetLock" in saved && saved.resetLock) ||
+          ("itemUseLock" in saved && saved.itemUseLock))
       )
         return { ...initialState, ...saved } as PartyState;
       if (

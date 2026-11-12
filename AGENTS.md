@@ -9,6 +9,20 @@ Acuerdo del usuario confirmado el 2026-11-08:
 
 Si esta disponible, leer [la memoria compartida](../PROJECT_MEMORY.md). Este resumen se conserva tambien aqui para sesiones que abran solo este repositorio.
 
+Full Restore con stock Bag autorizado 2026-11-12, versión2.3.0. Acciones del
+dashboard y BATTLE MOVES usan ShopContext.useFullRestore: plan persistido antes
+del débito y ACK después de guardar efecto+wallet. itemUseLock/recibos impiden
+repetir curación/turno/consumo tras fallo Storage o reload. Wild usa evento nativo
+priority8/order102, sin PP; objeto pagado no cancelable. Legacy gasta acción
+hasta Finalizar turno. Admin PvP/Trainer usa stock humano y comandos autorizados,
+networkItems.pending/used por callback del evento y outbox Nest antes del débito.
+Cancelar/forfeit antes del efecto no consume. NPC sin objetos. Preservar RNG,
+daño y Future Sight. El thunk antiguo rechaza curas gratis. Desplegar Nest
+primero y React después, sin MySQL ni variables. Ver memoria/protocolos.
+Los turnos nativos locales usan transactPvpParty y revisión persistida. La
+guardia de escritura transitoria durante pause/flush evita que una wallet tardía
+sobrescriba la siguiente acción. No convertirla en un bloqueo visual permanente.
+
 Poké Mart2.2.0 desplegado y funcionando según usuario. Corrección autorizada
 2026-11-12 versión2.2.1: Reiniciar juego del jugador exige conexión, establece
 500 Pokedollars y vacía objetos además de equipo/progreso/medallas. ContextoShop
@@ -19,7 +33,8 @@ historial/recibos PvP se conservan. Dispatch resetGame aislado no borra Party.
 Compras y combates bloquean reinicio; reset pendiente bloquea Party/import/
 snapshotPvP/compra. Tienda sólo observa saldo500 en vivo, no reinicia al abrir.
 Otros dispositivos no borran su Party por el reset de otro navegador. Nest es
-autoridad de saldo/items; partida general permanece local. Uso de objetos futuro.
+autoridad de saldo/items; partida general permanece local. Full Restore se habilitó
+después; el uso de otros objetos continúa pendiente.
 Desplegar Nest primero y React después, sin variables nuevas ni MySQL.
 
 FutureSight global corregido 2026-11-11: auditoría native boardfuture produce
@@ -53,8 +68,8 @@ ADMIN controla ambos equipos en PvP; jugadores observan. En Trainer NPC automát
 Locks por cuenta/Web Locks, guardia party/*, rendicion en turno propio,
 patch HP/estados tras salir y recibo+ACK antes de liberar ambos. Reconexion no
 desbloquea; equipo divergente exige dispositivo original. Ver README/protocolo.
-No convertir moves[].pp de catalogo en PP gastados; Full Restore del simulador
-no consume aún los objetos comprados de mochila. No se agregan XP ni premios.
+No convertir moves[].pp de catalogo en PP gastados. Full Restore confirmado
+consume inventario y la acción de turno. No se agregan XP ni premios.
 Correccion 2026-11-11: PvpBattlePanel valida checkpoint antes de montar controles
 o procesar cola/outbox. Estado incompatible muestra aviso y permite actualizar
 conexion sin desbloquear. Causa Nest: Mongoose eliminaba pending={} (minimize).
