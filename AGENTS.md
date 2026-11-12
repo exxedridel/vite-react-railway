@@ -9,7 +9,17 @@ Acuerdo del usuario confirmado el 2026-11-08:
 
 Si esta disponible, leer [la memoria compartida](../PROJECT_MEMORY.md). Este resumen se conserva tambien aqui para sesiones que abran solo este repositorio.
 
-Etapa vigente2026-11-12 frontend2.4.0: PP persistentes y Max Ether350pd/
+Corrección vigente2026-11-12 frontend2.4.1: ShopPartyGate mantiene siempre
+children en el mismo slot al activar/desactivar itemUseLock/pendingUse; no
+desmontar Layout/BattleMusicProvider/arena/diálogo al aplicar objetos. Modal
+compacto role=alertdialog con fondo ligero, sin X/Escape/exterior, foco/acciones
+bloqueados y recuperación existente. Compra/reset mantienen su pantalla previa.
+Combate jugador: details Items separado bajo BATTLE MOVES; admin Battle moves
+abierto e Items cerrado debajo. Preservar privacidad de acciones pendientes.
+Sólo React, sin cambios de motor/PP/cartera/protocolos/Nest/MySQL/env/datos.
+Ver memoria para pruebas finales y estado de despliegue.
+
+Etapa anterior2026-11-12 frontend2.4.0: PP persistentes y Max Ether350pd/
 Max Elixir700pd. Usuario confirmó conservar PP entre batallas/reloads; missing/
 movimiento nuevo a máximo. moves[].pp sigue catálogo inmutable, currentPp guarda
 restantes. Un uso gasta1; PP0 impide elegir; Struggle nativo con todos agotados,

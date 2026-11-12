@@ -3,7 +3,7 @@
 Frontend del juego con React, TypeScript y Vite. `mysql-restapi` autentica y
 administra usuarios; `nest-mongo-pokedex` comunica jugadores y conserva las
 batallas PvP, las carteras y los recibos del Poké Mart. El motor de combate se
-ejecuta en el panel administrador. Versión de la aplicación: **2.4.0**.
+ejecuta en el panel administrador. Versión de la aplicación: **2.4.1**.
 
 ## Desarrollo y comprobaciones
 
@@ -175,6 +175,14 @@ turno y respetan los reemplazos y continuaciones obligatorios. Mantienen los
 mismos bloqueos, guardado comprobado y recuperación idempotente que Full Restore.
 Full Restore continúa sin restaurar PP. El NPC conserva su elección automática
 entre movimientos legales y no utiliza objetos de jugadores.
+
+Desde2.4.1, los objetos de combate están en **Items**, un acordeón independiente
+debajo de **Battle moves**, tanto para el jugador como en el panel admin.
+Al confirmar un objeto, un diálogo modal compacto bloquea las acciones mientras
+se guarda su efecto. El combate permanece visible y montado, con su música
+continua. No se puede cerrar ese aviso con Escape o clic fuera; si falla la
+conexión o el guardado, permite recuperar la misma operación. Esta corrección
+sólo requiere desplegar React; conserva inventario, PP y protocolo Nest.
 
 La cartera es la autoridad para saldo y objetos comprados; el resto de la partida
 sigue en el navegador. No hay sondeo periódico de saldos: se publican cambios por

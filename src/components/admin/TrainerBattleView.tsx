@@ -207,125 +207,150 @@ function TrainerControls({
           Cancelar elección
         </Button>
       ) : !finished && !request.waiting && !request.forceSwitch ? (
-        <div
-          className="grid grid-cols-2 gap-2"
-          aria-label={`Movimientos de ${team.name}`}
-        >
-          {request.moves.map((move) => {
-            const data = active?.moves?.find(
-              (candidate) => candidate.id === move.id,
-            );
-            return (
-              <Button
-                key={move.id}
-                data-move-id={move.id}
-                type="button"
-                variant="outline"
-                className="h-auto min-h-16 min-w-0 flex-col items-start whitespace-normal px-3 py-2 text-left"
-                disabled={!canChoose || move.disabled}
-                onClick={() => chooseAction({ kind: "move", moveId: move.id })}
+        <>
+          <details open className="rounded-xl border p-3">
+            <summary className="cursor-pointer select-none font-semibold">
+              Battle moves
+            </summary>
+            <div className="pt-3">
+              <div
+                className="grid grid-cols-2 gap-2"
+                aria-label={`Movimientos de ${team.name}`}
               >
-                <span className="break-words font-semibold">{move.name}</span>
-                <span className="mt-1 text-xs font-normal text-muted-foreground">
-                  {move.pp}/{move.maxpp} PP{data ? ` · ${data.type}` : ""}
-                </span>
-                {move.disabled && (
-                  <span className="text-[10px] text-muted-foreground">
-                    No disponible
-                  </span>
-                )}
-              </Button>
-            );
-          })}
-        </div>
-      ) : null}
-
-      {allowItems &&
-        !pending &&
-        !finished &&
-        !request.waiting &&
-        !request.forceSwitch && (
-          <div
-            className="space-y-2 rounded-xl border p-3"
-            aria-label={`Objetos de ${team.name}`}
-          >
-            <Button
-              type="button"
-              variant="outline"
-              className="min-h-11 w-full gap-2"
-              disabled={!canUseItem}
-              aria-expanded={choosingRestore}
-              aria-controls={`full-restore-targets-${side}`}
-              onClick={() => setChoosingRestore((open) => !open)}
-            >
-              <img
-                src="/admin-shop/full-restore.png"
-                alt=""
-                className="h-6 w-6 object-contain [image-rendering:pixelated]"
-              />
-              Full Restore{itemStock !== undefined ? ` · ${itemStock}` : ""}
-            </Button>
-            <p className="text-xs text-muted-foreground">
-              {itemStock === 0
-                ? "Este jugador no tiene Full Restore en su Bag."
-                : request.locked
-                  ? "Completa la acción obligatoria antes de usar un objeto."
-                  : "Recupera todo el HP, cura los estados negativos y restablece los modificadores a 0. Consume tu acción del turno."}
-            </p>
-            {choosingRestore && (
-              <div id={`full-restore-targets-${side}`} className="space-y-2">
-                <p className="text-sm font-medium">
-                  Elige el Pokémon que recibirá Full restore
-                </p>
-                <div
-                  className="grid grid-cols-2 gap-2 sm:grid-cols-3"
-                  aria-label={`Objetivos de Full restore de ${team.name}`}
-                >
-                  {team.pokemons.map((capture) => (
+                {request.moves.map((move) => {
+                  const data = active?.moves?.find(
+                    (candidate) => candidate.id === move.id,
+                  );
+                  return (
                     <Button
-                      key={capture.captureId}
+                      key={move.id}
+                      data-move-id={move.id}
                       type="button"
                       variant="outline"
-                      className="h-auto min-h-16 min-w-0 flex-col whitespace-normal px-2 py-2"
-                      disabled={!canUseItem}
-                      aria-label={`Usar Full restore en ${capture.pokemon.name}`}
+                      className="h-auto min-h-16 min-w-0 flex-col items-start whitespace-normal px-3 py-2 text-left"
+                      disabled={!canChoose || move.disabled}
                       onClick={() =>
-                        chooseAction({
-                          kind: "item",
-                          item: "full-restore",
-                          captureId: capture.captureId,
-                        })
+                        chooseAction({ kind: "move", moveId: move.id })
                       }
                     >
-                      <span className="break-words text-xs font-semibold capitalize">
-                        {capture.pokemon.name}
+                      <span className="break-words font-semibold">
+                        {move.name}
                       </span>
-                      <span className="mt-1 text-[10px] font-normal tabular-nums text-muted-foreground">
-                        {getCurrentHp(capture.pokemon)}/
-                        {getMaxHp(capture.pokemon) ?? "—"} HP
+                      <span className="mt-1 text-xs font-normal text-muted-foreground">
+                        {move.pp}/{move.maxpp} PP{data ? ` · ${data.type}` : ""}
                       </span>
+                      {move.disabled && (
+                        <span className="text-[10px] text-muted-foreground">
+                          No disponible
+                        </span>
+                      )}
                     </Button>
-                  ))}
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="min-h-10 w-full"
-                  onClick={() => setChoosingRestore(false)}
-                >
-                  Volver a las acciones
-                </Button>
+                  );
+                })}
               </div>
-            )}
-            <TrainerPpItems
-              team={team}
-              stock={consumableStock}
-              disabled={!canChoose || request.forceSwitch || request.locked}
-              onChoose={chooseAction}
-            />
-          </div>
-        )}
+            </div>
+          </details>
+
+          {allowItems && (
+            <details
+              className="rounded-xl border p-3"
+              data-testid={`trainer-items-${side}`}
+            >
+              <summary className="cursor-pointer select-none font-semibold">
+                Items
+              </summary>
+              <div className="pt-3">
+                <div
+                  className="space-y-2"
+                  aria-label={`Objetos de ${team.name}`}
+                >
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="min-h-11 w-full gap-2"
+                    disabled={!canUseItem}
+                    aria-expanded={choosingRestore}
+                    aria-controls={`full-restore-targets-${side}`}
+                    onClick={() => setChoosingRestore((open) => !open)}
+                  >
+                    <img
+                      src="/admin-shop/full-restore.png"
+                      alt=""
+                      className="h-6 w-6 object-contain [image-rendering:pixelated]"
+                    />
+                    Full Restore
+                    {itemStock !== undefined ? ` · ${itemStock}` : ""}
+                  </Button>
+                  <p className="text-xs text-muted-foreground">
+                    {itemStock === 0
+                      ? "Este jugador no tiene Full Restore en su Bag."
+                      : request.locked
+                        ? "Completa la acción obligatoria antes de usar un objeto."
+                        : "Recupera todo el HP, cura los estados negativos y restablece los modificadores a 0. Consume tu acción del turno."}
+                  </p>
+                  {choosingRestore && (
+                    <div
+                      id={`full-restore-targets-${side}`}
+                      className="space-y-2"
+                    >
+                      <p className="text-sm font-medium">
+                        Elige el Pokémon que recibirá Full restore
+                      </p>
+                      <div
+                        className="grid grid-cols-2 gap-2 sm:grid-cols-3"
+                        aria-label={`Objetivos de Full restore de ${team.name}`}
+                      >
+                        {team.pokemons.map((capture) => (
+                          <Button
+                            key={capture.captureId}
+                            type="button"
+                            variant="outline"
+                            className="h-auto min-h-16 min-w-0 flex-col whitespace-normal px-2 py-2"
+                            disabled={!canUseItem}
+                            aria-label={`Usar Full restore en ${capture.pokemon.name}`}
+                            onClick={() =>
+                              chooseAction({
+                                kind: "item",
+                                item: "full-restore",
+                                captureId: capture.captureId,
+                              })
+                            }
+                          >
+                            <span className="break-words text-xs font-semibold capitalize">
+                              {capture.pokemon.name}
+                            </span>
+                            <span className="mt-1 text-[10px] font-normal tabular-nums text-muted-foreground">
+                              {getCurrentHp(capture.pokemon)}/
+                              {getMaxHp(capture.pokemon) ?? "—"} HP
+                            </span>
+                          </Button>
+                        ))}
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="min-h-10 w-full"
+                        onClick={() => setChoosingRestore(false)}
+                      >
+                        Volver a las acciones
+                      </Button>
+                    </div>
+                  )}
+                  <TrainerPpItems
+                    team={team}
+                    stock={consumableStock}
+                    disabled={
+                      !canChoose || request.forceSwitch || request.locked
+                    }
+                    onChoose={chooseAction}
+                  />
+                </div>
+              </div>
+            </details>
+          )}
+        </>
+      ) : null}
 
       {(!pending || finished) && (
         <div className="space-y-2">

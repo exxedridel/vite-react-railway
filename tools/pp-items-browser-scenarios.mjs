@@ -323,9 +323,15 @@ export async function ppItemsBrowserScenario({
     "wild PP controls visible",
   );
   await evalArgs(playerA, () => {
-    document
-      .querySelector('[data-testid="battle-max-ether"]')
-      .closest("details").open = true;
+    const items = document.querySelector('[data-testid="battle-items"]');
+    if (
+      !items ||
+      !items.contains(
+        document.querySelector('[data-testid="battle-max-ether"]'),
+      )
+    )
+      throw new Error("PP items must be inside their own Items accordion");
+    items.open = true;
   });
   await field(playerA, 'select[aria-label="Movimiento para Max Ether"]', "150");
   await waitArgs(
@@ -377,7 +383,9 @@ export async function ppItemsBrowserScenario({
   assert.equal(
     await evalArgs(
       playerA,
-      () => document.querySelector('[data-testid="battle-max-ether"]')?.disabled ?? true,
+      () =>
+        document.querySelector('[data-testid="battle-max-ether"]')?.disabled ??
+        true,
     ),
     true,
   );
@@ -433,6 +441,20 @@ export async function ppItemsBrowserScenario({
     "PP Trainer ready",
   );
   await clickButton(admin, "Iniciar Trainer Battle");
+  await waitArgs(
+    admin,
+    () => !!document.querySelector('[data-testid="trainer-items-a"]'),
+    "Trainer PP Items accordion is ready",
+  );
+  await evalArgs(admin, () => {
+    const items = document.querySelector('[data-testid="trainer-items-a"]');
+    if (
+      !items ||
+      items.querySelector(":scope > summary")?.textContent.trim() !== "Items"
+    )
+      throw new Error("Trainer PP items must be inside Items accordion");
+    items.open = true;
+  });
   await waitArgs(
     admin,
     () =>

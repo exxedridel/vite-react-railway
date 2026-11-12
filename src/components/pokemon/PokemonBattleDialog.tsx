@@ -420,14 +420,25 @@ function BattleDialogContent({ captureId, onClose }: Props) {
                         para poder atacar de nuevo.
                       </p>
                     ) : (
-                      <>
-                        <FullRestoreBattleControl captureId={captureId!} />
-                        <PokemonMovesPanel
-                          captureId={capturedPokemon.captureId}
-                          showLastResult={false}
-                        />
-                      </>
+                      <PokemonMovesPanel
+                        captureId={capturedPokemon.captureId}
+                        showLastResult={false}
+                      />
                     )}
+                  </div>
+                </details>
+                <details
+                  key={`own-items:${captureId}`}
+                  data-testid="battle-items"
+                  className="shrink-0 rounded-2xl border bg-card p-4 text-card-foreground"
+                >
+                  <summary className="cursor-pointer text-sm font-semibold">
+                    Items
+                  </summary>
+                  <div className="mt-3 space-y-3">
+                    <FullRestoreBattleControl
+                      captureId={capturedPokemon.captureId}
+                    />
                   </div>
                 </details>
               </>
