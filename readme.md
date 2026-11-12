@@ -2,7 +2,8 @@
 
 Frontend del juego con React, TypeScript y Vite. `mysql-restapi` autentica y
 administra usuarios; `nest-mongo-pokedex` comunica jugadores y conserva las
-batallas PvP. El motor de combate se ejecuta en el panel administrador.
+batallas PvP, las carteras y los recibos del Poké Mart. El motor de combate se
+ejecuta en el panel administrador. Versión de la aplicación: **2.2.0**.
 
 ## Desarrollo y comprobaciones
 
@@ -61,6 +62,57 @@ reserva impide asignarla a varias cuentas del mismo navegador. La importación
 requiere Web Locks (navegador compatible y contexto seguro). Si no está disponible
 o falla el guardado, se muestra el error y se conserva la partida original.
 Los datos del escenario administrador siguen siendo locales al dispositivo.
+Importar una partida antigua conserva la cartera actual; no recupera su saldo
+antiguo. Tampoco se importa mientras hay una batalla o compra pendiente.
+
+## Poké Mart y Pokedollars
+
+**Tienda** abre directamente el Poké Mart y muestra las cuentas de jugador
+conectadas por WebSocket, su saldo y su disponibilidad. No hay que crear fichas
+de jugadores ni configurar el grupo. El color se puede cambiar en cualquier
+momento y se conserva como preferencia local del administrador.
+
+1. Selecciona un jugador disponible y después un objeto del catálogo.
+2. El diálogo limita la cantidad al saldo actual (máximo 99 por compra) y muestra
+   precio unitario, total y saldo restante. Por ejemplo, 600 Pokedollars permiten
+   comprar dos Great Balls de 300. Cancelar no descuenta fondos.
+3. Aceptar solicita autorización a Nest. El servidor fija el precio, comprueba
+   identidad, saldo, revisión y ausencia de batalla. El jugador guarda primero
+   un bloqueo de compra; el cobro y las cantidades se registran juntos en Mongo.
+4. El navegador del jugador guarda el nuevo saldo y los objetos antes de
+   confirmar la entrega. Ambos paneles se actualizan automáticamente. Una
+   operación pendiente muestra **Esperando guardado** y se recupera al reconectar
+   el mismo navegador, sin volver a cobrar ni duplicar objetos.
+
+Cada cuenta comienza con **500 Pokedollars** una sola vez al crear su cartera en
+Mongo. Esta versión sustituye los saldos locales anteriores por ese saldo inicial;
+conserva Pokémon y progreso. Recargar, cerrar sesión, importar o reiniciar la
+partida no vuelve a entregar los 500. La Bag muestra saldo y cantidades en modo
+lectura; los jugadores no pueden editar sus Pokedollars desde la interfaz.
+
+No se permite comprar durante PvP, Trainer Battle ni un encuentro local activo.
+Una compra en curso también bloquea temporalmente las acciones de la Party y
+una nueva reserva de batalla. Una respuesta antigua no retira ese bloqueo. Si
+falla el guardado local, la pantalla ofrece **Recuperar compra** y conserva el
+recibo pendiente. Esta etapa guarda las cantidades de objetos; su uso y consumo
+desde el inventario se implementarán después.
+
+La cartera es la autoridad para saldo y objetos comprados; el resto de la partida
+sigue en el navegador. No hay sondeo periódico de saldos: se publican cambios por
+Socket.IO. Se mantiene una sola réplica Nest. Protocolo: `../SHOP_PROTOCOL.md`.
+
+Desplegar **Nest primero y React después**. No hay cambios en MySQL ni variables
+nuevas; `/shop` usa el mismo origen WebSocket ya configurado. Nest crea
+`shop_wallets` y sus índices. La actualización no borra batallas ni sus reservas.
+
+```bash
+npm run test:shop:wallet
+npm run test:shop:ui
+npm run test:shop:browser
+```
+
+Las pruebas de navegador usan Chrome y servicios locales aislados, sin bases
+de datos reales ni despliegues en Railway.
 
 ## Batallas PvP con jugadores conectados
 
@@ -117,11 +169,11 @@ este frontend y recargar los navegadores originales. No requiere variables nueva
 4. Tras declarar ganador, **Salir y actualizar Partys** publica el resultado.
    Cada navegador guarda HP y condiciones finales junto con un recibo de resultado;
    ambos confirman ese guardado y entonces se liberan los equipos. Los estados
-   temporales y modificadores se limpian al finalizar. Dinero, medallas, especie,
+   temporales y modificadores se limpian al finalizar. Pokedollars, medallas, especie,
    nivel y movimientos permanecen en sus respectivas partidas.
 
-No hay existencias de objetos en la mochila actual, solo dinero y medallas.
-Por eso Full Restore del simulador manual no aparece en PvP. Los PP se consumen
+La mochila conserva cantidades de objetos comprados, pero todavía no permite
+consumirlas en combate. Full Restore del simulador no aparece en PvP. Los PP se consumen
 en el runtime de esta batalla; `moves[].pp` sigue siendo información del catálogo.
 No se añade XP, premios o intercambio de Pokémon en este flujo.
 

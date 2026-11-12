@@ -27,12 +27,13 @@ import {
   LEGACY_NICKNAME_KEY,
   PVP_PARTY_COMMIT,
   isLocalPartyMutationBlocked,
-  isPvpSyncBlocked,
   withAccountStorageLock,
   writePvpAccountParty,
+  pvpPartyRevision,
 } from "./accountStorage";
 
 import partyReducer from "@/slices/partySlice";
+import { emptyTrainerBag } from "@/lib/trainerBag";
 
 import { pokeApi } from "@/api/pokeApi";
 
@@ -88,10 +89,7 @@ export const store = configureStore({
           "persist/REGISTER",
         ],
       },
-    }).concat(
-      pvpPartyGuard,
-      pokeApi.middleware,
-    ),
+    }).concat(pvpPartyGuard, pokeApi.middleware),
 });
 
 export const persistor = persistStore(store);
@@ -170,9 +168,7 @@ function resetAccountUi(): void {
     store.dispatch(pokeApi.util.getRunningQueriesThunk()),
     store.dispatch(pokeApi.util.getRunningMutationsThunk()),
   ].forEach((requests) => requests.forEach((request) => request.abort()));
-  [
-    pokeApi.util.resetApiState(),
-  ].forEach((action) => store.dispatch(action));
+  [pokeApi.util.resetApiState()].forEach((action) => store.dispatch(action));
   store.dispatch({ type: RESET_ACCOUNT });
 }
 
@@ -236,6 +232,10 @@ function legacyParty() {
     throw new Error(
       "La partida anterior usa una versión incompatible. Se conserva intacta para recuperarla antes de importar.",
     );
+  if (decoded.party.shopLock)
+    throw new Error(
+      "La partida anterior contiene una compra pendiente. Recupérala desde su cuenta original antes de importar.",
+    );
   return { raw, party: decoded.party };
 }
 
@@ -244,7 +244,7 @@ export function hasLegacyPartyForImport(userId: number): Promise<boolean> {
   return serializeAccountChange(async () => {
     if (getActiveAccountId() !== userId || !legacyAvailableTo(userId))
       return false;
-    if (isPvpSyncBlocked() || store.getState().party.pvpLock) return false;
+    if (isLocalPartyMutationBlocked(store.getState().party)) return false;
     const legacy = legacyParty();
     if (!legacy) return false;
     const current = store.getState().party;
@@ -266,9 +266,9 @@ export function importLegacyParty(userId: number): Promise<void> {
         throw new Error(
           "La cuenta cambió. Vuelve a abrir la importación desde tu cuenta.",
         );
-      if (isPvpSyncBlocked() || store.getState().party.pvpLock)
+      if (isLocalPartyMutationBlocked(store.getState().party))
         throw new Error(
-          "La partida está reservada para PvP o esperando sincronización. La importación anterior se conserva.",
+          "La partida está reservada para una batalla o compra, o esperando sincronización. La importación anterior se conserva.",
         );
       if (!legacyAvailableTo(userId))
         throw new Error(
@@ -301,8 +301,35 @@ export function importLegacyParty(userId: number): Promise<void> {
       persistor.pause();
       try {
         await flushCurrentAccount();
-        if (!finishingPreviousImport) resumeWithParty({ party: legacy.party });
-        else resumeWithParty({ party: current });
+        if (isLocalPartyMutationBlocked(store.getState().party))
+          throw new Error(
+            "La partida quedó reservada mientras se importaba. Recupera la batalla o compra pendiente antes de continuar.",
+          );
+        if (!finishingPreviousImport) {
+          // Legacy Pokémon and badges may be imported, but old local money
+          // must never replace an already confirmed account wallet.
+          const savedBag = current.bag;
+          const confirmedWallet =
+            savedBag?.currencyVersion === 1 &&
+            savedBag.walletUserId === userId &&
+            Number.isSafeInteger(savedBag.walletRevision) &&
+            Number(savedBag.walletRevision) >= 0;
+          const bag = confirmedWallet
+            ? { ...savedBag!, items: { ...(savedBag?.items ?? {}) } }
+            : emptyTrainerBag();
+          resumeWithParty({
+            party: {
+              ...legacy.party,
+              pvpRevision:
+                Math.max(
+                  pvpPartyRevision(current),
+                  pvpPartyRevision(legacy.party),
+                ) + 1,
+              shopLock: undefined,
+              bag: { ...bag, badges: [...(legacy.party.bag?.badges ?? [])] },
+            },
+          });
+        } else resumeWithParty({ party: current });
         await flushCurrentAccount();
         const nickname = readLocalValue(LEGACY_NICKNAME_KEY)?.trim();
         if (

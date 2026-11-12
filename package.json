@@ -1,6 +1,6 @@
 {
   "name": "pokemon-master-trainer",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -21,7 +21,10 @@
     "test:pvp:browser": "node tools/test-pvp-browser.mjs",
     "test:trainer:catalog": "node --import tsx --test tests/kanto-trainers.test.ts",
     "test:trainer:browser": "node tools/test-pvp-browser.mjs",
-    "test:future-sight": "node --import tsx --test tests/future-sight-native.test.ts tests/legacy-delayed-attacks.test.ts tests/npc-delayed-moves.test.ts"
+    "test:future-sight": "node --import tsx --test tests/future-sight-native.test.ts tests/legacy-delayed-attacks.test.ts tests/npc-delayed-moves.test.ts",
+    "test:shop:wallet": "node tools/test-account-storage.mjs --shop",
+    "test:shop:ui": "node --import tsx --test tests/admin-shop.test.ts",
+    "test:shop:browser": "node tools/test-pvp-browser.mjs --shop-only"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.2.0",

@@ -9,6 +9,7 @@ import { build } from "esbuild";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const pvpMode = process.argv.includes("--pvp");
+const shopMode = process.argv.includes("--shop");
 const timers = new Set();
 let networkCalls = 0;
 class FakeStorage {
@@ -119,7 +120,11 @@ try {
   const { outputFiles } = await build({
     absWorkingDir: root,
     entryPoints: [
-      pvpMode ? "tests/pvp-party-entry.ts" : "tests/account-storage-entry.ts",
+      shopMode
+        ? "tests/shop-wallet-entry.ts"
+        : pvpMode
+          ? "tests/pvp-party-entry.ts"
+          : "tests/account-storage-entry.ts",
     ],
     bundle: true,
     platform: "node",
@@ -167,7 +172,7 @@ try {
   );
   for (const description of passed) console.log(`PASS: ${description}`);
   console.log(
-    `${pvpMode ? "PvP party" : "Account storage"}: ${passed.length} integration cases passed; fake storage only, zero network requests.`,
+    `${shopMode ? "Shop wallet" : pvpMode ? "PvP party" : "Account storage"}: ${passed.length} integration cases passed; fake storage only, zero network requests.`,
   );
 } catch (error) {
   console.error(`${error.name}: ${error.message}`);

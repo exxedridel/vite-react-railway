@@ -104,8 +104,7 @@ export function describePartyActivity(
     const delta = balance - old;
     return {
       kind: "money",
-      title:
-        delta > 0 ? "Dinero agregado a la Bag" : "Dinero restado de la Bag",
+      title: delta > 0 ? "Pokedollars agregados" : "Pokedollars descontados",
       details: [
         `Monto: ${delta > 0 ? "+" : "−"}$${formatBagMoney(Math.abs(delta))}.`,
         `Saldo: $${formatBagMoney(old)} → $${formatBagMoney(balance)}.`,
@@ -197,7 +196,8 @@ export function describePartyActivity(
       title: "Partida reiniciada",
       details: [
         `Se retiraron ${before.pokemons.length} Pokémon del equipo.`,
-        `Bag reiniciada: $${formatBagMoney(before.bag?.money ?? 0)} → $0; ${before.bag?.badges.length ?? 0} medallas → 0.`,
+        `Pokedollars: ${formatBagMoney(before.bag?.money ?? 0)} → ${formatBagMoney(after.bag?.money ?? 0)}; ${before.bag?.badges.length ?? 0} medallas → 0.`,
+        "Los Pokedollars y los objetos comprados se conservan en la cuenta.",
         before.opponent
           ? `Oponente retirado: ${before.opponent.pokemon.name}.`
           : "No había oponente seleccionado.",

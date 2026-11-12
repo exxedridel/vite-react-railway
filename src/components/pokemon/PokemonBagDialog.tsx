@@ -1,8 +1,5 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Backpack, Check, Coins, Minus, Plus } from "lucide-react";
-import { toast } from "sonner";
+import { Backpack, Check, Coins } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -12,79 +9,19 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
-import { store } from "@/store/store";
-import { changeBagMoney, toggleGymBadge } from "@/slices/partySlice";
-import {
-  KANTO_BADGES,
-  formatBagMoney,
-  moneyAfterChange,
-  parseMoneyAmount,
-  type MoneyDirection,
-} from "@/lib/trainerBag";
+import { toggleGymBadge } from "@/slices/partySlice";
+import { KANTO_BADGES, formatBagMoney } from "@/lib/trainerBag";
+import { SHOP_ITEMS } from "@/lib/adminShop";
+import { useShopContext } from "@/context/ShopContext";
 
 type Props = { open: boolean; onOpenChange: (open: boolean) => void };
-
 export default function PokemonBagDialog({ open, onOpenChange }: Props) {
   const dispatch = useAppDispatch();
   const bag = useAppSelector((state) => state.party.bag);
-  const balance = bag?.money ?? 0;
+  const shop = useShopContext();
+  const balance = bag?.money ?? 500;
   const badges = bag?.badges ?? [];
-  const [direction, setDirection] = useState<MoneyDirection | null>(null);
-  const [draft, setDraft] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
-  const submitted = useRef(false);
-  const amount = parseMoneyAmount(draft);
-  const nextBalance =
-    direction && amount !== null
-      ? moneyAfterChange(balance, amount, direction)
-      : null;
-  const insufficient =
-    direction === "subtract" && amount !== null && amount > balance;
-
-  useEffect(() => {
-    if (!open) {
-      setDirection(null);
-      setDraft("");
-    }
-  }, [open]);
-  useEffect(() => {
-    if (direction) inputRef.current?.focus();
-  }, [direction]);
-
-  function chooseDirection(value: MoneyDirection) {
-    submitted.current = false;
-    setDraft("");
-    setDirection(value);
-    inputRef.current?.focus();
-  }
-
-  function confirmMoney(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!direction || submitted.current) return;
-    const value = parseMoneyAmount(draft);
-    if (value === null) {
-      toast.error("Ingresa una cantidad entera mayor que cero.");
-      return;
-    }
-    const current = store.getState().party.bag?.money ?? 0;
-    const next = moneyAfterChange(current, value, direction);
-    if (next === null) {
-      toast.error(
-        direction === "subtract" && value > current
-          ? "No tienes suficiente dinero."
-          : "La cantidad excede el límite permitido.",
-      );
-      return;
-    }
-    submitted.current = true;
-    dispatch(changeBagMoney({ amount: value, direction }));
-    toast.success(
-      `${direction === "add" ? "Agregaste" : "Restaste"} $${formatBagMoney(value)}.`,
-    );
-    setDirection(null);
-    setDraft("");
-  }
-
+  const items = SHOP_ITEMS.filter((item) => (bag?.items?.[item.id] ?? 0) > 0);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger asChild>
@@ -95,8 +32,7 @@ export default function PokemonBagDialog({ open, onOpenChange }: Props) {
           className="shrink-0 gap-1.5"
           aria-label="Abrir Bag"
         >
-          <Backpack className="h-4 w-4 text-brand" aria-hidden="true" />
-          Bag
+          <Backpack className="h-4 w-4 text-brand" aria-hidden="true" /> Bag
         </Button>
       </DialogTrigger>
       <DialogContent className="flex max-h-[calc(100dvh-2rem)] w-[calc(100vw-1.5rem)] flex-col overflow-hidden p-4 sm:max-w-[480px] sm:p-6">
@@ -105,11 +41,77 @@ export default function PokemonBagDialog({ open, onOpenChange }: Props) {
             <Backpack className="h-5 w-5 text-brand" aria-hidden="true" /> Bag
           </DialogTitle>
           <DialogDescription>
-            Medallas y dinero de tu entrenador.
+            Medallas, Pokedollars y objetos de tu entrenador.
           </DialogDescription>
         </DialogHeader>
-
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-1 pb-1">
+          <section
+            aria-labelledby="bag-money-heading"
+            className="space-y-3 rounded-xl border bg-card p-3 text-card-foreground"
+          >
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Coins className="h-4 w-4 text-brand" aria-hidden="true" />
+              <h3 id="bag-money-heading" className="text-sm font-medium">
+                Pokedollars
+              </h3>
+            </div>
+            <p
+              className="break-all text-3xl font-bold tabular-nums"
+              aria-live="polite"
+              data-testid="pokedollars-balance"
+            >
+              {formatBagMoney(balance)} Pokedollars
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Las compras se confirman en el Poké Mart con el administrador.
+            </p>
+            {!shop.connected && (
+              <p role="status" className="text-xs text-muted-foreground">
+                Sin conexión con Tienda. Se muestra el último saldo guardado.
+              </p>
+            )}
+            {shop.connected && !shop.synced && (
+              <p role="status" className="text-xs text-muted-foreground">
+                Recuperando el saldo confirmado…
+              </p>
+            )}
+            {shop.error && (
+              <p role="alert" className="text-xs text-destructive">
+                {shop.error}
+              </p>
+            )}
+          </section>
+          <section aria-labelledby="bag-items-heading" className="space-y-3">
+            <h3 id="bag-items-heading" className="text-sm font-semibold">
+              Objetos del Poké Mart
+            </h3>
+            {items.length ? (
+              <ul className="space-y-2">
+                {items.map((item) => (
+                  <li
+                    key={item.id}
+                    className="flex items-center gap-3 rounded-xl border p-2"
+                    data-item-id={item.id}
+                  >
+                    <img
+                      src={item.image}
+                      alt=""
+                      className="h-9 w-9 object-contain"
+                      draggable={false}
+                    />
+                    <span className="flex-1 text-sm">{item.name}</span>
+                    <strong className="tabular-nums">
+                      ×{bag?.items?.[item.id]}
+                    </strong>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Aún no tienes objetos comprados.
+              </p>
+            )}
+          </section>
           <section aria-labelledby="bag-badges-heading" className="space-y-3">
             <div className="flex items-center justify-between gap-2">
               <h3 id="bag-badges-heading" className="text-sm font-semibold">
@@ -155,94 +157,6 @@ export default function PokemonBagDialog({ open, onOpenChange }: Props) {
               Toca una medalla cuando la obtengas en el tablero. Vuelve a
               tocarla para retirarla.
             </p>
-          </section>
-
-          <section
-            aria-labelledby="bag-money-heading"
-            className="space-y-3 rounded-xl border bg-card p-3 text-card-foreground"
-          >
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Coins className="h-4 w-4 text-brand" aria-hidden="true" />
-              <h3 id="bag-money-heading" className="text-sm font-medium">
-                Dinero
-              </h3>
-            </div>
-            <p
-              className="break-all text-3xl font-bold tabular-nums"
-              aria-live="polite"
-            >
-              ${formatBagMoney(balance)}
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                className="gap-1.5"
-                onClick={() => chooseDirection("subtract")}
-                disabled={balance === 0}
-              >
-                <Minus className="h-4 w-4" aria-hidden="true" /> Restar
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="gap-1.5"
-                onClick={() => chooseDirection("add")}
-              >
-                <Plus className="h-4 w-4" aria-hidden="true" /> Agregar
-              </Button>
-            </div>
-            {direction && (
-              <form onSubmit={confirmMoney} className="space-y-3 border-t pt-3">
-                <label
-                  htmlFor="bag-money-amount"
-                  className="block text-sm font-medium"
-                >
-                  {direction === "add"
-                    ? "Cantidad a agregar"
-                    : "Cantidad a restar"}
-                </label>
-                <Input
-                  ref={inputRef}
-                  id="bag-money-amount"
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]+"
-                  autoComplete="off"
-                  placeholder="0"
-                  maxLength={16}
-                  value={draft}
-                  onChange={(event) => setDraft(event.target.value)}
-                  aria-describedby="bag-money-feedback"
-                  aria-invalid={draft !== "" && nextBalance === null}
-                />
-                <p
-                  id="bag-money-feedback"
-                  className={`text-xs ${insufficient ? "text-destructive" : "text-muted-foreground"}`}
-                >
-                  {insufficient
-                    ? "No tienes suficiente dinero para restar esa cantidad."
-                    : nextBalance !== null
-                      ? `Nuevo saldo: $${formatBagMoney(nextBalance)}`
-                      : "Ingresa una cantidad entera mayor que cero, sin comas ni decimales."}
-                </p>
-                <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setDirection(null);
-                      setDraft("");
-                    }}
-                  >
-                    Cancelar
-                  </Button>
-                  <Button type="submit" disabled={nextBalance === null}>
-                    Confirmar
-                  </Button>
-                </div>
-              </form>
-            )}
           </section>
         </div>
       </DialogContent>

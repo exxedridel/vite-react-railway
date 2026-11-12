@@ -1,21 +1,6 @@
-import {
-  useEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-  type FormEvent,
-} from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Link } from "react-router-dom";
-import {
-  Minus,
-  Plus,
-  Coins,
-  LogOut,
-  Settings2,
-  Store,
-  Users,
-} from "lucide-react";
-import { toast } from "sonner";
+import { Check, Coins, LogOut, RefreshCw, Store, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ModeToggle } from "@/components/ui/mode-toggle";
@@ -27,563 +12,614 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useShopContext } from "@/context/ShopContext";
+import type { ShopPlayer, ShopPurchase } from "@/lib/shop/types";
 import {
-  ADMIN_SHOP_STORAGE_KEY,
-  assignPlayerColor,
-  calculatePlayerBalance,
-  changePlayerMoney,
-  type MoneyOperation,
   PLAYER_COLORS,
   SHOP_ITEMS,
   formatShopMoney,
-  parsePlayerCount,
-  parsePlayerMoney,
-  readAdminSession,
-  validAdminSession,
-  writeAdminSession,
-  type AdminShopSession,
+  isPlayerColorId,
+  maximumShopQuantity,
+  parseShopQuantity,
+  quoteShopPurchase,
+  readShopColors,
+  shopPlayerColor,
+  writeShopColors,
   type PlayerColorId,
-  type ShopPlayer,
+  type PlayerColorPreferences,
+  type ShopCatalogItem,
 } from "@/lib/adminShop";
 import "./AdminShopPage.css";
 
-function loadSession() {
-  try {
-    return { session: readAdminSession(localStorage), error: "" };
-  } catch {
-    return {
-      session: null,
-      error:
-        "No se pudo recuperar la configuración guardada. Puedes configurar la mesa nuevamente.",
-    };
-  }
-}
+type PurchaseDraft = {
+  player: ShopPlayer;
+  item: ShopCatalogItem;
+  quantity: string;
+  revision: number;
+  balance: number;
+  requestId: string;
+  attempted: boolean;
+};
+const playerName = (player: ShopPlayer) =>
+  `${player.user.first_name} ${player.user.last_name}`.trim() ||
+  player.user.email;
 function playerStyle(colorId: PlayerColorId): CSSProperties {
-  const color = PLAYER_COLORS.find((c) => c.id === colorId)!;
+  const color = PLAYER_COLORS.find((entry) => entry.id === colorId)!;
   return {
     "--player-color": color.hsl || "var(--primary)",
     "--player-foreground": color.foreground || "var(--primary-foreground)",
   } as CSSProperties;
 }
-
-function PlayerMoneyCard({
-  player,
-  onChange,
-}: {
-  player: ShopPlayer;
-  onChange: (id: string, amount: number, operation: MoneyOperation) => boolean;
-}) {
-  const [operation, setOperation] = useState<MoneyOperation | null>(null);
-  const [draft, setDraft] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
-  const submitted = useRef(false);
-  useEffect(() => {
-    if (operation) inputRef.current?.focus();
-  }, [operation]);
-  const amount = parsePlayerMoney(draft);
-  const nextBalance =
-    operation && amount !== null
-      ? calculatePlayerBalance(player.money, amount, operation)
-      : null;
-  const insufficient =
-    operation === "subtract" && amount !== null && amount > player.money;
-  function chooseOperation(next: MoneyOperation) {
-    submitted.current = false;
-    setDraft("");
-    setOperation(next);
-    inputRef.current?.focus();
-  }
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!operation || submitted.current) return;
-    if (amount === null || amount <= 0) {
-      toast.error("Ingresa una cantidad entera mayor que cero.");
-      return;
-    }
-    submitted.current = true;
-    if (onChange(player.id, amount, operation)) {
-      setOperation(null);
-      setDraft("");
-    } else submitted.current = false;
-  }
-  const color = PLAYER_COLORS.find((c) => c.id === player.colorId)!;
-  return (
-    <article className="admin-player-card" style={playerStyle(player.colorId)}>
-      <div className="admin-player-card__heading">
-        <span className="admin-player-dot" aria-hidden="true" />
-        <div className="min-w-0">
-          <h3 className="break-words font-semibold">{player.nickname}</h3>
-          <p className="text-xs text-muted-foreground">{color.name}</p>
-        </div>
-      </div>
-      <p className="mb-1 text-xs text-muted-foreground">Dinero actual</p>
-      <p
-        className="mb-3 break-all text-3xl font-bold tabular-nums"
-        aria-live="polite"
-      >
-        ${formatShopMoney(player.money)}
-      </p>
-      <div className="grid grid-cols-2 gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          className="gap-1.5"
-          onClick={() => chooseOperation("subtract")}
-          disabled={player.money === 0}
-          aria-label={`Restar dinero a ${player.nickname}`}
-        >
-          <Minus className="h-4 w-4" aria-hidden="true" /> Restar
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          className="gap-1.5"
-          onClick={() => chooseOperation("add")}
-          aria-label={`Agregar dinero a ${player.nickname}`}
-        >
-          <Plus className="h-4 w-4" aria-hidden="true" /> Agregar
-        </Button>
-      </div>
-      {operation && (
-        <form onSubmit={submit} className="mt-3 space-y-3 border-t pt-3">
-          <label
-            htmlFor={`money-${player.id}`}
-            className="block text-sm font-medium"
-          >
-            {operation === "add" ? "Cantidad a agregar" : "Cantidad a restar"}
-          </label>
-          <Input
-            ref={inputRef}
-            id={`money-${player.id}`}
-            type="text"
-            inputMode="numeric"
-            pattern="[0-9]+"
-            maxLength={16}
-            autoComplete="off"
-            placeholder="0"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            aria-invalid={draft !== "" && nextBalance === null}
-            aria-describedby={`money-help-${player.id}`}
-          />
-          <p
-            id={`money-help-${player.id}`}
-            className={`text-xs ${insufficient ? "text-destructive" : "text-muted-foreground"}`}
-          >
-            {insufficient
-              ? "El saldo no alcanza para restar esa cantidad."
-              : nextBalance !== null
-                ? `Nuevo saldo: $${formatShopMoney(nextBalance)}`
-                : "Ingresa una cantidad entera mayor que cero, sin comas ni decimales."}
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setOperation(null);
-                setDraft("");
-              }}
-            >
-              Cancelar
-            </Button>
-            <Button type="submit" disabled={nextBalance === null}>
-              Confirmar
-            </Button>
-          </div>
-        </form>
-      )}
-    </article>
-  );
-}
+const errorText = (error: unknown) =>
+  error instanceof Error
+    ? error.message
+    : "No se pudo confirmar la operación. Actualiza la conexión y vuelve a intentarlo.";
 
 export default function AdminShopPage() {
-  const [loaded] = useState(loadSession);
-  const [session, setSession] = useState<AdminShopSession | null>(
-    loaded.session,
-  );
-  const sessionRef = useRef(session);
-  const [storageError, setStorageError] = useState(loaded.error);
-  const [step, setStep] = useState<"count" | "players" | "shop">(
-    loaded.session ? "shop" : "count",
-  );
-  const [countDraft, setCountDraft] = useState(
-    String(loaded.session?.players.length ?? 2),
-  );
-  const [playersDraft, setPlayersDraft] = useState<ShopPlayer[]>(
-    loaded.session?.players ?? [],
-  );
-  const [resetOpen, setResetOpen] = useState(false);
-  const count = parsePlayerCount(countDraft);
+  const shop = useShopContext();
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [colors, setColors] = useState<PlayerColorPreferences>({});
+  const [draft, setDraft] = useState<PurchaseDraft | null>(null);
+  const [localPurchase, setLocalPurchase] = useState<ShopPurchase | null>(null);
+  const [localError, setLocalError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const submitLock = useRef(false);
+  const adminId = shop.user?.id;
+  useEffect(() => {
+    setSelectedId(null);
+    setDraft(null);
+    setLocalPurchase(null);
+    setLocalError("");
+    if (!adminId) {
+      setColors({});
+      return;
+    }
+    try {
+      setColors(readShopColors(localStorage, adminId));
+    } catch {
+      setColors({});
+    }
+  }, [adminId]);
 
-  function persist(next: AdminShopSession): boolean {
+  const players = Array.from(
+    new Map(
+      shop.players
+        .filter((player) => player.online)
+        .map((player) => [player.user.id, player]),
+    ).values(),
+  );
+  const selectedPlayer = players.find(
+    (player) => player.user.id === selectedId,
+  );
+  const readyConnection = shop.connected && shop.synced;
+  const selectedAvailable =
+    !!selectedPlayer?.wallet &&
+    selectedPlayer.ready &&
+    !selectedPlayer.inBattle &&
+    !selectedPlayer.pending &&
+    readyConnection;
+  const draftPlayer = draft
+    ? players.find(
+        (player) =>
+          player.user.id === draft.player.user.id &&
+          player.clientId === draft.player.clientId,
+      )
+    : undefined;
+  const transaction = draft
+    ? (shop.purchases.find(
+        (purchase) =>
+          purchase.requestId === draft.requestId &&
+          purchase.userId === draft.player.user.id,
+      ) ?? localPurchase)
+    : null;
+  const quantity = draft ? parseShopQuantity(draft.quantity) : null;
+  const maximum = draft
+    ? maximumShopQuantity(draft.balance, draft.item.price)
+    : 0;
+  const quote =
+    draft && quantity !== null
+      ? quoteShopPurchase(draft.balance, draft.item.price, quantity)
+      : null;
+  const changedQuote =
+    !!draft &&
+    (!draftPlayer?.wallet ||
+      draftPlayer.wallet.revision !== draft.revision ||
+      draftPlayer.wallet.balance !== draft.balance);
+  const draftAvailable =
+    !!draftPlayer?.wallet &&
+    draftPlayer.ready &&
+    !draftPlayer.inBattle &&
+    !draftPlayer.pending;
+  const canConfirm =
+    !!draft &&
+    !transaction &&
+    !submitting &&
+    !shop.busy &&
+    readyConnection &&
+    !!quote &&
+    (draft.attempted || (!changedQuote && draftAvailable));
+
+  async function synchronize() {
+    if (syncing) return;
+    setSyncing(true);
+    setLocalError("");
     try {
-      writeAdminSession(localStorage, next);
-      sessionRef.current = next;
-      setSession(next);
-      setStorageError("");
-      return true;
-    } catch {
-      setStorageError(
-        "No se pudo guardar en este navegador. Revisa el espacio o los permisos de almacenamiento e intenta nuevamente.",
-      );
-      return false;
+      await shop.sync();
+    } catch (error) {
+      setLocalError(errorText(error));
+    } finally {
+      setSyncing(false);
     }
   }
-  function chooseCount(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (count === null) return;
-    const players = playersDraft.slice(0, count);
-    while (players.length < count) {
-      const saved = session?.players[players.length];
-      const color = PLAYER_COLORS.find(
-        (c) => !players.some((p) => p.colorId === c.id),
-      )!;
-      players.push({
-        id: saved?.id ?? crypto.randomUUID(),
-        nickname: saved?.nickname ?? "",
-        colorId:
-          saved && !players.some((p) => p.colorId === saved.colorId)
-            ? saved.colorId
-            : color.id,
-        money: saved?.money ?? 0,
-      });
-    }
-    setPlayersDraft(players);
-    setStep("players");
+  function changeColor(playerId: number, colorId: PlayerColorId) {
+    if (!isPlayerColorId(colorId)) return;
+    const next = { ...colors, [String(playerId)]: colorId };
+    setColors(next);
+    if (adminId)
+      try {
+        writeShopColors(localStorage, adminId, next);
+      } catch {
+        setLocalError(
+          "El color cambió, pero no se pudo guardar en este navegador.",
+        );
+      }
   }
-  function updateDraft(
-    id: string,
-    change: Partial<Pick<ShopPlayer, "nickname" | "colorId">>,
-  ) {
-    setPlayersDraft((current) =>
-      change.colorId
-        ? assignPlayerColor(current, id, change.colorId)
-        : current.map((p) => (p.id === id ? { ...p, ...change } : p)),
-    );
+  function openPurchase(item: ShopCatalogItem) {
+    if (!selectedPlayer?.wallet || !selectedAvailable || shop.busy) return;
+    setLocalPurchase(null);
+    setLocalError("");
+    setDraft({
+      player: selectedPlayer,
+      item,
+      quantity: "1",
+      revision: selectedPlayer.wallet.revision,
+      balance: selectedPlayer.wallet.balance,
+      requestId: crypto.randomUUID(),
+      attempted: false,
+    });
   }
-  function confirmPlayers(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const next: AdminShopSession = {
-      version: 1,
-      players: playersDraft.map((p) => ({ ...p, nickname: p.nickname.trim() })),
-    };
-    if (!validAdminSession(next)) {
-      toast.error(
-        "Cada jugador necesita un nickname y color distintos. El nickname admite hasta 30 caracteres.",
-      );
+  function refreshQuote() {
+    if (!draft || !draftPlayer?.wallet || !draftAvailable || draft.attempted)
       return;
-    }
-    if (persist(next)) {
-      setStep("shop");
-      toast.success("Mesa de jugadores guardada.");
-    }
-  }
-  function adjustMoney(
-    id: string,
-    amount: number,
-    operation: MoneyOperation,
-  ): boolean {
-    const current = sessionRef.current;
-    if (!current) return false;
-    const next = changePlayerMoney(current, id, amount, operation);
-    if (!next) {
-      const player = current.players.find((p) => p.id === id);
-      toast.error(
-        operation === "subtract" && player && amount > player.money
-          ? "El jugador no tiene suficiente dinero."
-          : "No se pudo aplicar esa cantidad. Revisa el valor ingresado.",
-      );
-      return false;
-    }
-    if (!persist(next)) return false;
-    toast.success(
-      `${operation === "add" ? "Agregaste" : "Restaste"} $${formatShopMoney(amount)} a ${next.players.find((p) => p.id === id)!.nickname}.`,
+    const nextMaximum = maximumShopQuantity(
+      draftPlayer.wallet.balance,
+      draft.item.price,
     );
-    return true;
+    setLocalError("");
+    setDraft({
+      ...draft,
+      player: draftPlayer,
+      revision: draftPlayer.wallet.revision,
+      balance: draftPlayer.wallet.balance,
+      quantity: String(Math.max(1, Math.min(quantity ?? 1, nextMaximum))),
+      requestId: crypto.randomUUID(),
+    });
   }
-  function resetTable() {
+  async function confirmPurchase() {
+    if (!draft || !canConfirm || quantity === null || submitLock.current)
+      return;
+    submitLock.current = true;
+    setSubmitting(true);
+    setLocalError("");
+    const attempt = { ...draft, attempted: true };
+    setDraft(attempt);
     try {
-      localStorage.removeItem(ADMIN_SHOP_STORAGE_KEY);
-    } catch {
-      setStorageError("No se pudo reiniciar la mesa. Intenta nuevamente.");
-      return;
+      const confirmed = await shop.purchase(
+        attempt.player,
+        attempt.item.id,
+        quantity,
+        attempt.revision,
+        attempt.requestId,
+      );
+      if (confirmed) setLocalPurchase(confirmed);
+    } catch (error) {
+      setLocalError(errorText(error));
+    } finally {
+      submitLock.current = false;
+      setSubmitting(false);
     }
-    sessionRef.current = null;
-    setSession(null);
-    setPlayersDraft([]);
-    setCountDraft("2");
-    setStep("count");
-    setResetOpen(false);
-    setStorageError("");
+  }
+  function closeDialog() {
+    if (submitLock.current) return;
+    setDraft(null);
+    setLocalPurchase(null);
+    setLocalError("");
   }
 
   return (
     <main className="admin-shop-page">
       <header className="admin-shop-header">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <Store className="h-7 w-7 shrink-0 text-brand" aria-hidden="true" />
-          <div className="min-w-0">
-            <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-              Administrador
-            </p>
-            <h1 className="text-xl font-bold">Poké Mart</h1>
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <h1 className="flex items-center gap-2 text-2xl font-bold">
+          <Store className="h-6 w-6 text-brand" /> Tienda
+        </h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            disabled={syncing || submitting}
+            onClick={() => void synchronize()}
+          >
+            <RefreshCw className="mr-2 h-4 w-4" /> Actualizar conexión
+          </Button>
           <ModeToggle />
           <Button asChild variant="outline" size="icon">
-            <Link to="/logout" aria-label="Cerrar sesión" title="Cerrar sesión">
+            <Link to="/logout" aria-label="Cerrar sesión">
               <LogOut className="h-4 w-4" />
             </Link>
           </Button>
         </div>
       </header>
-      {storageError && (
-        <p
-          role="alert"
-          className="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm"
-        >
-          {storageError}
+      {!readyConnection && (
+        <p role="status" className="mb-4 rounded-xl border p-3 text-sm">
+          Conectando con los jugadores y recuperando sus Pokedollars…
         </p>
       )}
-
-      {step !== "shop" ? (
-        <section className="admin-setup">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-brand">
-            Configuración · Paso {step === "count" ? "1" : "2"} de 2
+      {(localError || shop.error) && (
+        <p
+          role="alert"
+          className="mb-4 rounded-xl border border-destructive/40 p-3 text-sm text-destructive"
+        >
+          {localError || shop.error}
+        </p>
+      )}
+      <section className="admin-mart-scene" aria-labelledby="admin-shop-prices">
+        <div className="admin-mart-menu">
+          <div className="admin-mart-menu__title">
+            <h2 id="admin-shop-prices">Poké Mart</h2>
+            <span>Precios en Pokedollars</span>
+          </div>
+          <p className="px-4 py-3 text-sm" role="status">
+            {selectedPlayer ? (
+              <>
+                Comprando para <strong>{playerName(selectedPlayer)}</strong> ·{" "}
+                {selectedPlayer.wallet
+                  ? `${formatShopMoney(selectedPlayer.wallet.balance)} Pokedollars`
+                  : "recuperando saldo"}
+                {selectedPlayer.inBattle
+                  ? " · En batalla"
+                  : selectedPlayer.pending
+                    ? " · Compra pendiente de guardar"
+                    : ""}
+              </>
+            ) : (
+              "Selecciona un jugador conectado para elegir su compra."
+            )}
           </p>
-          {step === "count" ? (
-            <form onSubmit={chooseCount} className="space-y-5">
-              <div>
-                <h2 className="text-2xl font-bold">
-                  ¿Cuántos jugadores están jugando?
-                </h2>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  De 1 a 8 jugadores, uno por cada color disponible.
-                </p>
-              </div>
-              <label
-                htmlFor="admin-player-count"
-                className="block text-sm font-medium"
-              >
-                Número de jugadores
-              </label>
-              <Input
-                id="admin-player-count"
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]+"
-                maxLength={2}
-                value={countDraft}
-                onChange={(e) => setCountDraft(e.target.value)}
-                className="max-w-32 text-center text-xl"
-                autoFocus
-              />
-              {session && count !== null && count < session.players.length && (
-                <p className="text-sm text-destructive">
-                  Se retirarán los últimos {session.players.length - count}{" "}
-                  jugadores y sus saldos al guardar la configuración.
-                </p>
-              )}
-              <div className="flex flex-wrap gap-2">
-                {session && (
+          <ul className="admin-mart-items">
+            {SHOP_ITEMS.map((item) => (
+              <li key={item.id}>
+                <button
+                  type="button"
+                  className="admin-mart-item"
+                  disabled={!selectedAvailable || shop.busy}
+                  onClick={() => openPurchase(item)}
+                  aria-label={`Comprar ${item.name}`}
+                >
+                  <img src={item.image} alt="" draggable={false} />
+                  <span className="admin-mart-item__name">{item.name}</span>
+                  <strong>
+                    {formatShopMoney(item.price)}{" "}
+                    <span className="admin-price-unit">PD</span>
+                  </strong>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <section
+          className="admin-mart-players"
+          aria-labelledby="admin-players-heading"
+        >
+          <h2
+            id="admin-players-heading"
+            className="mb-3 flex items-center gap-2 text-lg font-bold"
+          >
+            <Users className="h-5 w-5" /> Jugadores conectados ·{" "}
+            {players.length}
+          </h2>
+          {!players.length ? (
+            <p
+              role="status"
+              className="rounded-xl border bg-background/90 p-4 text-sm"
+            >
+              Los jugadores aparecerán aquí al conectarse a la partida.
+            </p>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {players.map((player) => (
+                <article
+                  key={player.user.id}
+                  className={`admin-player-card${selectedId === player.user.id ? " admin-player-card--selected" : ""}`}
+                  style={playerStyle(shopPlayerColor(colors, player.user.id))}
+                  data-testid={`shop-player-${player.user.id}`}
+                >
+                  <div className="admin-player-card__heading">
+                    <span className="admin-player-dot" aria-hidden="true" />
+                    <div className="min-w-0">
+                      <h3 className="break-words font-bold">
+                        {playerName(player)}
+                      </h3>
+                      <p className="break-all text-xs text-muted-foreground">
+                        {player.user.email}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Pokedollars actuales
+                  </p>
+                  <p
+                    className="mb-3 text-2xl font-bold tabular-nums"
+                    data-testid={`shop-balance-${player.user.id}`}
+                  >
+                    {player.wallet
+                      ? formatShopMoney(player.wallet.balance)
+                      : "…"}{" "}
+                    <span className="text-sm font-normal">PD</span>
+                  </p>
+                  <p role="status" className="mb-3 text-sm">
+                    {player.inBattle
+                      ? "En batalla · compras bloqueadas"
+                      : player.pending
+                        ? "Esperando guardado de una compra"
+                        : !player.ready
+                          ? "Sincronizando su mochila"
+                          : "Disponible para comprar"}
+                  </p>
                   <Button
                     type="button"
-                    variant="outline"
-                    onClick={() => setStep("shop")}
+                    className="mb-3 min-h-11 w-full"
+                    variant={
+                      selectedId === player.user.id ? "default" : "outline"
+                    }
+                    aria-pressed={selectedId === player.user.id}
+                    disabled={
+                      !readyConnection ||
+                      !player.ready ||
+                      player.inBattle ||
+                      player.pending ||
+                      !player.wallet ||
+                      submitting
+                    }
+                    onClick={() => {
+                      setSelectedId(player.user.id);
+                      setLocalError("");
+                    }}
+                    aria-label={`Seleccionar a ${playerName(player)}`}
                   >
-                    Cancelar
+                    {selectedId === player.user.id ? (
+                      <>
+                        <Check className="mr-2 h-4 w-4" /> Jugador seleccionado
+                      </>
+                    ) : (
+                      "Seleccionar jugador"
+                    )}
                   </Button>
-                )}
-                <Button type="submit" disabled={count === null}>
-                  Continuar
-                </Button>
-              </div>
-            </form>
-          ) : (
-            <form onSubmit={confirmPlayers} className="space-y-5">
-              <div>
-                <h2 className="text-2xl font-bold">
-                  Presenta a los entrenadores
-                </h2>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  Escribe sus nicknames y asigna el color que usa cada uno.
-                </p>
-              </div>
-              <div className="space-y-3">
-                {playersDraft.map((player, index) => (
-                  <fieldset key={player.id} className="rounded-xl border p-3">
-                    <legend className="px-1 text-sm font-semibold">
-                      Jugador {index + 1}
-                    </legend>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div>
-                        <label
-                          htmlFor={`name-${player.id}`}
-                          className="mb-1.5 block text-xs font-medium"
-                        >
-                          Nickname
-                        </label>
-                        <Input
-                          id={`name-${player.id}`}
-                          value={player.nickname}
-                          maxLength={30}
-                          autoComplete="off"
-                          placeholder="Nombre del entrenador"
-                          onChange={(e) =>
-                            updateDraft(player.id, { nickname: e.target.value })
-                          }
-                          required
-                        />
-                      </div>
-                      <div>
-                        <label
-                          htmlFor={`color-${player.id}`}
-                          className="mb-1.5 block text-xs font-medium"
-                        >
-                          Color
-                        </label>
-                        <div
-                          className="flex items-center gap-2"
-                          style={playerStyle(player.colorId)}
-                        >
-                          <span
-                            className="admin-player-dot"
-                            aria-hidden="true"
-                          />
-                          <select
-                            id={`color-${player.id}`}
-                            value={player.colorId}
-                            onChange={(e) =>
-                              updateDraft(player.id, {
-                                colorId: e.target.value as PlayerColorId,
-                              })
-                            }
-                            className="h-10 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          >
-                            {PLAYER_COLORS.map((color) => (
-                              <option key={color.id} value={color.id}>
-                                {color.name}
-                                {playersDraft.some(
-                                  (p) =>
-                                    p.id !== player.id &&
-                                    p.colorId === color.id,
-                                )
-                                  ? " · Intercambiar"
-                                  : ""}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                    </div>
-                  </fieldset>
-                ))}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setStep("count")}
-                >
-                  Volver
-                </Button>
-                <Button type="submit">
-                  {session ? "Guardar configuración" : "Abrir tienda"}
-                </Button>
-              </div>
-            </form>
+                  <label className="block space-y-1 text-xs">
+                    <span>Color del jugador</span>
+                    <select
+                      className="min-h-10 w-full rounded-md border bg-background px-2 text-foreground"
+                      aria-label={`Color de ${playerName(player)}`}
+                      value={shopPlayerColor(colors, player.user.id)}
+                      onChange={(event) =>
+                        changeColor(
+                          player.user.id,
+                          event.target.value as PlayerColorId,
+                        )
+                      }
+                    >
+                      {PLAYER_COLORS.map((color) => (
+                        <option key={color.id} value={color.id}>
+                          {color.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </article>
+              ))}
+            </div>
           )}
         </section>
-      ) : (
-        session && (
-          <>
-            <section
-              className="admin-mart-scene"
-              aria-labelledby="admin-shop-prices"
-            >
-              <div className="admin-mart-menu">
-                <div className="admin-mart-menu__title">
-                  <h2 id="admin-shop-prices">Poké Mart</h2>
-                  <span>Lista de precios</span>
-                </div>
-                <ul className="admin-mart-items">
-                  {SHOP_ITEMS.map((item) => (
-                    <li key={item.id} className="admin-mart-item">
-                      <img src={item.image} alt="" draggable={false} />
-                      <span className="admin-mart-item__name">{item.name}</span>
-                      <strong>${formatShopMoney(item.price)}</strong>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </section>
-            <section className="mt-6" aria-labelledby="admin-players-heading">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <h2
-                  id="admin-players-heading"
-                  className="flex items-center gap-2 text-lg font-bold"
-                >
-                  <Users className="h-5 w-5 text-brand" /> Jugadores ·{" "}
-                  {session.players.length}
-                </h2>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setPlayersDraft(session.players.map((p) => ({ ...p })));
-                    setCountDraft(String(session.players.length));
-                    setStep("count");
-                  }}
-                  className="gap-1.5"
-                >
-                  <Settings2 className="h-4 w-4" /> Configurar
-                </Button>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {session.players.map((player) => (
-                  <PlayerMoneyCard
-                    key={player.id}
-                    player={player}
-                    onChange={adjustMoney}
-                  />
-                ))}
-              </div>
-              <p className="mt-3 flex items-start gap-1.5 text-xs text-muted-foreground">
-                <Coins className="h-4 w-4 shrink-0" />
-                Control manual de la mesa. Los saldos se guardan en este
-                navegador.
-              </p>
-            </section>
-            <div className="mt-6 flex justify-end">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setResetOpen(true)}
+      </section>
+      <p className="mt-4 flex items-start gap-2 text-xs text-muted-foreground">
+        <Coins className="h-4 w-4 shrink-0" /> Selecciona al jugador y después
+        un objeto. La compra se confirma cuando su mochila guarda el nuevo saldo
+        y los objetos.
+      </p>
+      {!!shop.purchases.length && (
+        <section className="mt-6" aria-labelledby="shop-purchases-heading">
+          <h2 id="shop-purchases-heading" className="mb-3 text-lg font-bold">
+            Últimas compras
+          </h2>
+          <ul className="space-y-2 text-sm">
+            {shop.purchases.slice(0, 8).map((purchase) => (
+              <li
+                key={purchase.purchaseId}
+                className="flex flex-wrap justify-between gap-2 rounded-xl border bg-card p-3"
               >
-                Nueva mesa
-              </Button>
-            </div>
-          </>
-        )
+                <span>
+                  {players.find((player) => player.user.id === purchase.userId)
+                    ? playerName(
+                        players.find(
+                          (player) => player.user.id === purchase.userId,
+                        )!,
+                      )
+                    : `Jugador #${purchase.userId}`}{" "}
+                  · {purchase.quantity} ×{" "}
+                  {SHOP_ITEMS.find((item) => item.id === purchase.itemId)
+                    ?.name ?? purchase.itemId}{" "}
+                  · {formatShopMoney(purchase.total)} Pokedollars
+                </span>
+                <strong
+                  className={
+                    purchase.status === "applied"
+                      ? "text-brand"
+                      : "text-muted-foreground"
+                  }
+                >
+                  {purchase.status === "applied"
+                    ? "Guardado"
+                    : "Esperando guardado"}
+                </strong>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
-      <Dialog open={resetOpen} onOpenChange={setResetOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+      <Dialog
+        open={!!draft}
+        onOpenChange={(open) => {
+          if (!open) closeDialog();
+        }}
+      >
+        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-[480px]">
           <DialogHeader>
-            <DialogTitle>¿Comenzar una nueva mesa?</DialogTitle>
+            <DialogTitle>
+              {transaction?.status === "applied"
+                ? "Compra completada"
+                : transaction
+                  ? "Compra confirmada"
+                  : "Confirmar compra"}
+            </DialogTitle>
             <DialogDescription>
-              Se borrarán los jugadores y saldos de este panel administrador.
-              Después podrás configurar la nueva mesa.
+              {draft
+                ? `${playerName(draft.player)} · ${draft.item.name}`
+                : "Elige la cantidad que comprará el jugador."}
             </DialogDescription>
           </DialogHeader>
+          {draft && (
+            <>
+              <div className="flex items-center gap-3 rounded-xl bg-muted p-3">
+                <img
+                  src={draft.item.image}
+                  alt=""
+                  className="h-12 w-12 object-contain"
+                />
+                <p>
+                  <strong>{draft.item.name}</strong>
+                  <span className="block text-sm">
+                    {formatShopMoney(draft.item.price)} Pokedollars por unidad
+                  </span>
+                </p>
+              </div>
+              {transaction ? (
+                <div role="status" className="space-y-2 rounded-xl border p-4">
+                  <p className="font-semibold">
+                    {transaction.status === "applied"
+                      ? "El jugador guardó el saldo y los objetos."
+                      : "Esperando guardado en el dispositivo del jugador."}
+                  </p>
+                  <p>
+                    {transaction.quantity} × {draft.item.name} ·{" "}
+                    {formatShopMoney(transaction.total)} Pokedollars
+                  </p>
+                  <p>
+                    Saldo resultante:{" "}
+                    {formatShopMoney(transaction.balanceAfter)} Pokedollars
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <label className="space-y-2 text-sm">
+                    <span className="block font-medium">Cantidad</span>
+                    <Input
+                      aria-label="Cantidad de objetos"
+                      type="number"
+                      inputMode="numeric"
+                      min={1}
+                      max={maximum}
+                      step={1}
+                      value={draft.quantity}
+                      disabled={submitting || draft.attempted || maximum === 0}
+                      onChange={(event) =>
+                        setDraft({ ...draft, quantity: event.target.value })
+                      }
+                    />
+                    <span className="block text-muted-foreground">
+                      Máximo disponible con este saldo: {maximum}.
+                    </span>
+                  </label>
+                  <dl className="grid grid-cols-2 gap-2 rounded-xl border p-3 text-sm">
+                    <dt>Saldo actual</dt>
+                    <dd className="text-right tabular-nums">
+                      {formatShopMoney(draft.balance)} PD
+                    </dd>
+                    <dt>Total a gastar</dt>
+                    <dd className="text-right font-bold tabular-nums">
+                      {quote ? formatShopMoney(quote.total) : "—"} PD
+                    </dd>
+                    <dt>Saldo después de comprar</dt>
+                    <dd className="text-right tabular-nums">
+                      {quote ? formatShopMoney(quote.remaining) : "—"} PD
+                    </dd>
+                  </dl>
+                  {!quote && (
+                    <p role="alert" className="text-sm text-destructive">
+                      {maximum === 0
+                        ? "Pokedollars insuficientes para comprar este objeto."
+                        : `Elige una cantidad entera entre 1 y ${maximum}.`}
+                    </p>
+                  )}
+                  {changedQuote && !draft.attempted && (
+                    <div role="alert" className="space-y-2 text-sm">
+                      <p>
+                        El saldo o la conexión del jugador cambió. Revisa la
+                        cotización antes de confirmar.
+                      </p>
+                      <Button
+                        variant="outline"
+                        disabled={!draftAvailable}
+                        onClick={refreshQuote}
+                      >
+                        Actualizar cotización
+                      </Button>
+                    </div>
+                  )}
+                  {!draftAvailable && !draft.attempted && (
+                    <p role="status" className="text-sm text-muted-foreground">
+                      {draftPlayer?.inBattle
+                        ? "El jugador está en batalla y no puede comprar."
+                        : "Espera a que el jugador esté conectado y su mochila esté sincronizada."}
+                    </p>
+                  )}
+                  {draft.attempted && (
+                    <p role="status" className="text-sm text-muted-foreground">
+                      La solicitud ya se envió. Si no llegó la confirmación,
+                      reintenta esta misma compra para recuperar su estado.
+                    </p>
+                  )}
+                </>
+              )}
+              {localError && (
+                <p role="alert" className="text-sm text-destructive">
+                  {localError}
+                </p>
+              )}
+            </>
+          )}
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setResetOpen(false)}>
-              Cancelar
+            <Button
+              variant="outline"
+              disabled={submitting}
+              onClick={closeDialog}
+            >
+              {transaction?.status === "applied"
+                ? "Listo"
+                : transaction || draft?.attempted
+                  ? "Cerrar"
+                  : "Cancelar"}
             </Button>
-            <Button variant="destructive" onClick={resetTable}>
-              Nueva mesa
-            </Button>
+            {!transaction && (
+              <Button
+                disabled={!canConfirm}
+                onClick={() => void confirmPurchase()}
+              >
+                {submitting
+                  ? "Confirmando…"
+                  : draft?.attempted
+                    ? "Reintentar misma compra"
+                    : "Aceptar compra"}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

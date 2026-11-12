@@ -50,9 +50,21 @@ export const KANTO_BADGES = [
 ] as const;
 
 export type GymBadgeId = (typeof KANTO_BADGES)[number]["id"];
-export type TrainerBag = { money: number; badges: GymBadgeId[] };
+export type TrainerBag = {
+  money: number;
+  badges: GymBadgeId[];
+  items?: Partial<Record<import("./shop/types").ShopItemId, number>>;
+  currencyVersion?: 1;
+  walletRevision?: number;
+  walletUserId?: number;
+};
 export type MoneyDirection = "add" | "subtract";
-export const emptyTrainerBag = (): TrainerBag => ({ money: 0, badges: [] });
+export const emptyTrainerBag = (): TrainerBag => ({
+  money: 500,
+  badges: [],
+  items: {},
+  currencyVersion: 1,
+});
 export const formatBagMoney = (amount: number) =>
   new Intl.NumberFormat("es-MX", { maximumFractionDigits: 0 }).format(amount);
 

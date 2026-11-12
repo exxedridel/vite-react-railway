@@ -3,6 +3,13 @@ import { stablePvpJson } from "@/lib/pvp/types";
 
 export const PVP_PARTY_COMMIT = "party/pvpCommit";
 let pvpSyncBlocked = false;
+let shopSyncBlocked = false;
+export function setShopSyncBlocked(blocked: boolean): void {
+  shopSyncBlocked = blocked;
+}
+export function isShopSyncBlocked(): boolean {
+  return shopSyncBlocked;
+}
 export function setPvpSyncBlocked(blocked: boolean): void {
   pvpSyncBlocked = blocked;
 }
@@ -153,6 +160,19 @@ export function decodeAccountParty(
       )
         throw new Error();
     }
+    if (party.shopLock !== undefined) {
+      const lock = party.shopLock;
+      if (
+        !isRecord(lock) ||
+        typeof lock.requestId !== "string" ||
+        !lock.requestId ||
+        typeof lock.clientId !== "string" ||
+        !lock.clientId ||
+        !Number.isSafeInteger(lock.userId) ||
+        Number(lock.userId) <= 0
+      )
+        throw new Error();
+    }
     return {
       party: { ...party, opponent: party.opponent ?? null } as PartyState,
     };
@@ -194,7 +214,7 @@ function writeNormalAccountRoot(userId: number, raw: string): void {
   if (previous) {
     if (pvpPartyRevision(previous) > pvpPartyRevision(incoming)) return;
     if (
-      previous.pvpLock &&
+      (previous.pvpLock || previous.shopLock) &&
       pvpPartyRevision(previous) === pvpPartyRevision(incoming) &&
       stablePvpJson(previous) !== stablePvpJson(incoming)
     )
@@ -230,11 +250,20 @@ export async function withAccountStorageLock<T>(
 }
 
 export function isLocalPartyMutationBlocked(party: PartyState): boolean {
-  if (pvpSyncBlocked || party.pvpLock || activeAccountId === null) return true;
+  if (
+    pvpSyncBlocked ||
+    shopSyncBlocked ||
+    party.pvpLock ||
+    party.shopLock ||
+    activeAccountId === null
+  )
+    return true;
   try {
     const saved = readAccountParty(activeAccountId)?.party;
     return (
-      !!saved?.pvpLock || pvpPartyRevision(saved) > pvpPartyRevision(party)
+      !!saved?.pvpLock ||
+      !!saved?.shopLock ||
+      pvpPartyRevision(saved) > pvpPartyRevision(party)
     );
   } catch {
     return true;

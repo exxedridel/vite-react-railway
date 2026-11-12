@@ -425,7 +425,6 @@ async function seedLogoutParty(sessionId, userId) {
       stats:['hp','attack','defense','special-attack','special-defense','speed'].map(name=>({name,value:50})),
       learnset:{versionGroup:'emerald',moves:[{id:33,name:'tackle'}]}
     }));
-    store.dispatch(actions.changeBagMoney({amount:77,direction:'add'}));
     localStorage.setItem(storage.accountNicknameKey(${JSON.stringify(userId)}),'QA logout owner');
     await persistor.flush();
     const raw=localStorage.getItem(storage.accountStorageKey(${JSON.stringify(userId)}));
@@ -618,10 +617,17 @@ try {
   const { MemoryPvpRepository } = requireNest(
     join(nestRoot, "dist/pvp/pvp.repository.js"),
   );
+  const { ShopModule } = requireNest(
+    join(nestRoot, "dist/shop/shop.module.js"),
+  );
+  const { MemoryShopRepository } = requireNest(
+    join(nestRoot, "dist/shop/shop.repository.js"),
+  );
   Module({
     imports: [
       MessagesModule,
       PvpModule.withRepository(new MemoryPvpRepository()),
+      ShopModule.withRepository(new MemoryShopRepository()),
     ],
   })(BrowserUsersRoot);
   app = await bounded(

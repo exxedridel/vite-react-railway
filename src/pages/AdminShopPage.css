@@ -10,15 +10,6 @@
   gap: 12px;
   margin-bottom: 20px;
 }
-.admin-setup {
-  max-width: 680px;
-  margin: 24px auto;
-  border: 1px solid hsl(var(--border));
-  border-radius: 18px;
-  padding: clamp(16px, 4vw, 32px);
-  background: hsl(var(--card));
-  color: hsl(var(--card-foreground));
-}
 .admin-mart-scene {
   position: relative;
   overflow: hidden;
@@ -68,13 +59,27 @@
 }
 .admin-mart-item {
   display: grid;
+  width: 100%;
   grid-template-columns: 40px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   padding: 9px 0;
   border-bottom: 1px solid hsl(var(--border));
+  text-align: left;
+  transition: background-color 120ms ease;
 }
-.admin-mart-item:last-child {
+.admin-mart-item:not(:disabled):hover {
+  background: hsl(var(--muted) / 0.7);
+}
+.admin-mart-item:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+.admin-mart-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.admin-mart-items li:last-child .admin-mart-item {
   border-bottom: 0;
 }
 .admin-mart-item img {
@@ -92,6 +97,18 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+.admin-price-unit {
+  font-size: 12px;
+  font-weight: 400;
+}
+.admin-mart-players {
+  position: relative;
+  margin-top: 28px;
+  padding: 16px;
+  border-radius: 12px;
+  background: hsl(var(--background) / 0.88);
+  color: hsl(var(--foreground));
+}
 .admin-player-card {
   min-width: 0;
   border: 1px solid hsl(var(--border));
@@ -100,6 +117,10 @@
   border-radius: 12px;
   background: hsl(var(--card));
   color: hsl(var(--card-foreground));
+}
+.admin-player-card--selected {
+  outline: 3px solid hsl(var(--player-color));
+  outline-offset: 2px;
 }
 .admin-player-card__heading {
   display: flex;
@@ -125,7 +146,16 @@
     gap: 0 28px;
     padding: 8px 20px;
   }
-  .admin-mart-item:nth-last-child(2) {
+  .admin-mart-items li:nth-last-child(2) .admin-mart-item {
     border-bottom: 0;
+  }
+}
+@media (max-width: 639px) {
+  .admin-shop-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .admin-mart-players {
+    padding: 12px;
   }
 }

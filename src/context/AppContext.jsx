@@ -13,6 +13,7 @@ import { loginReq, logoutReq, profileReq } from "@/services/login.api";
 import { activateAccountStore, clearAccountStore } from "@/store/store";
 import LegacyPartyImportDialog from "@/components/Navigation/LegacyPartyImportDialog";
 import PvpProvider from "@/context/PvpContext";
+import ShopProvider from "@/context/ShopContext";
 import { setPvpSyncBlocked } from "@/lib/pvpParty";
 
 /** @type {import("react").Context<any>} */
@@ -269,8 +270,10 @@ export const AppContextProvider = ({ children }) => {
       }}
     >
       <PvpProvider user={user} onSessionExpired={logout}>
-        {children}
-        {user && <LegacyPartyImportDialog user={user} />}
+        <ShopProvider user={user} onSessionExpired={logout}>
+          {children}
+          {user && <LegacyPartyImportDialog user={user} />}
+        </ShopProvider>
       </PvpProvider>
     </AppContext.Provider>
   );

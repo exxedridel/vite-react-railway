@@ -7,7 +7,6 @@ import { findEvolution } from "@/lib/gen3Evolutions";
 import {
   emptyTrainerBag,
   KANTO_BADGES,
-  moneyAfterChange,
   type TrainerBag,
   type GymBadgeId,
   type MoneyDirection,
@@ -126,6 +125,7 @@ export type PartyState = {
     highlights?: string[];
   };
   bag?: TrainerBag;
+  shopLock?: { requestId: string; userId: number; clientId: string };
   battleField?: BattleField;
   lastFieldEvent?: { id: string; title: string; details: string[] };
   dataVersion?: string;
@@ -938,7 +938,10 @@ const partySlice = createSlice({
       return {
         pvpRevision: state.pvpRevision,
         pvpReceipts: state.pvpReceipts,
-        bag: emptyTrainerBag(),
+        bag:
+          state.bag?.walletRevision !== undefined && state.bag.walletUserId
+            ? { ...state.bag, badges: [] }
+            : emptyTrainerBag(),
         battleField: emptyBattleField(),
         dataVersion: GAME_DATA_VERSION,
         gameSettings: null,
@@ -1211,14 +1214,11 @@ const partySlice = createSlice({
       ];
     },
     changeBagMoney(
-      state,
-      action: PayloadAction<{ amount: number; direction: MoneyDirection }>,
+      _state,
+      _action: PayloadAction<{ amount: number; direction: MoneyDirection }>,
     ) {
-      const { amount, direction } = action.payload;
-      const next = moneyAfterChange(state.bag?.money ?? 0, amount, direction);
-      if (next === null) return;
-      state.bag ??= emptyTrainerBag();
-      state.bag.money = next;
+      // Pokedollars are changed only by confirmed server wallet snapshots.
+      // Keep the old action as a no-op for stale tabs and older callers.
     },
     toggleGymBadge(state, action: PayloadAction<GymBadgeId>) {
       if (!KANTO_BADGES.some((badge) => badge.id === action.payload)) return;

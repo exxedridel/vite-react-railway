@@ -1,8 +1,3 @@
-export const SHOP_ADMIN_EMAIL = "najerad2223@gmail.com";
-export const ADMIN_SHOP_STORAGE_KEY = `pokemon-admin-shop:v1:${SHOP_ADMIN_EMAIL}`;
-export const isShopAdmin = (email: unknown): boolean =>
-  typeof email === "string" && email.trim().toLowerCase() === SHOP_ADMIN_EMAIL;
-
 export const PLAYER_COLORS = [
   { id: "pink", name: "Rosa", hsl: "347 77% 50%", foreground: "0 0% 98%" },
   {
@@ -29,60 +24,7 @@ export const PLAYER_COLORS = [
   },
 ] as const;
 export type PlayerColorId = (typeof PLAYER_COLORS)[number]["id"];
-export type ShopPlayer = {
-  id: string;
-  nickname: string;
-  colorId: PlayerColorId;
-  money: number;
-};
-export type AdminShopSession = { version: 1; players: ShopPlayer[] };
-export type MoneyOperation = "add" | "subtract";
-export function calculatePlayerBalance(
-  balance: number,
-  amount: number,
-  operation: MoneyOperation,
-): number | null {
-  if (
-    !Number.isSafeInteger(balance) ||
-    balance < 0 ||
-    !Number.isSafeInteger(amount) ||
-    amount <= 0 ||
-    (operation !== "add" && operation !== "subtract")
-  )
-    return null;
-  const next = operation === "add" ? balance + amount : balance - amount;
-  return Number.isSafeInteger(next) && next >= 0 ? next : null;
-}
-export function changePlayerMoney(
-  session: AdminShopSession,
-  id: string,
-  amount: number,
-  operation: MoneyOperation,
-): AdminShopSession | null {
-  const player = session.players.find((p) => p.id === id);
-  if (!player) return null;
-  const money = calculatePlayerBalance(player.money, amount, operation);
-  if (money === null) return null;
-  return {
-    ...session,
-    players: session.players.map((p) => (p.id === id ? { ...p, money } : p)),
-  };
-}
-export function assignPlayerColor(
-  players: ShopPlayer[],
-  id: string,
-  colorId: PlayerColorId,
-): ShopPlayer[] {
-  const player = players.find((p) => p.id === id);
-  if (!player || !PLAYER_COLORS.some((c) => c.id === colorId)) return players;
-  return players.map((p) =>
-    p.id === id
-      ? { ...p, colorId }
-      : p.colorId === colorId
-        ? { ...p, colorId: player.colorId }
-        : p,
-  );
-}
+export type PlayerColorPreferences = Record<string, PlayerColorId>;
 
 export const SHOP_ITEMS = [
   {
@@ -117,68 +59,94 @@ export const SHOP_ITEMS = [
     image: "/admin-shop/bicycle.png",
   },
 ] as const;
-
+export type ShopCatalogItem = (typeof SHOP_ITEMS)[number];
+export const MAX_SHOP_QUANTITY = 99;
 export const formatShopMoney = (value: number) =>
-  new Intl.NumberFormat("es-MX").format(value);
-export function parsePlayerMoney(value: string): number | null {
-  if (!/^\d+$/.test(value.trim())) return null;
-  const amount = Number(value.trim());
-  return Number.isSafeInteger(amount) && amount >= 0 ? amount : null;
+  new Intl.NumberFormat("es-MX", { maximumFractionDigits: 0 }).format(value);
+
+/** Display-only quote. The server independently validates price and funds. */
+export function maximumShopQuantity(
+  balance: number,
+  unitPrice: number,
+): number {
+  if (
+    !Number.isSafeInteger(balance) ||
+    balance < 0 ||
+    !Number.isSafeInteger(unitPrice) ||
+    unitPrice <= 0
+  )
+    return 0;
+  return Math.min(MAX_SHOP_QUANTITY, Math.floor(balance / unitPrice));
 }
-export function parsePlayerCount(value: string): number | null {
-  if (!/^\d+$/.test(value.trim())) return null;
-  const count = Number(value);
-  return Number.isInteger(count) && count >= 1 && count <= PLAYER_COLORS.length
-    ? count
+export function quoteShopPurchase(
+  balance: number,
+  unitPrice: number,
+  quantity: number,
+): { total: number; remaining: number } | null {
+  if (
+    !Number.isSafeInteger(quantity) ||
+    quantity < 1 ||
+    quantity > maximumShopQuantity(balance, unitPrice)
+  )
+    return null;
+  const total = unitPrice * quantity;
+  return Number.isSafeInteger(total)
+    ? { total, remaining: balance - total }
     : null;
 }
-export function validAdminSession(value: unknown): value is AdminShopSession {
-  if (!value || typeof value !== "object") return false;
-  const s = value as Partial<AdminShopSession>;
-  if (
-    s.version !== 1 ||
-    !Array.isArray(s.players) ||
-    s.players.length < 1 ||
-    s.players.length > PLAYER_COLORS.length
-  )
-    return false;
-  if (
-    !s.players.every(
-      (p) =>
-        p &&
-        typeof p.id === "string" &&
-        p.id.length > 0 &&
-        typeof p.nickname === "string" &&
-        p.nickname.trim().length > 0 &&
-        p.nickname.length <= 30 &&
-        PLAYER_COLORS.some((color) => color.id === p.colorId) &&
-        Number.isSafeInteger(p.money) &&
-        p.money >= 0,
-    )
-  )
-    return false;
+export function parseShopQuantity(value: string): number | null {
+  if (!/^\d+$/.test(value)) return null;
+  const quantity = Number(value);
+  return Number.isSafeInteger(quantity) &&
+    quantity >= 1 &&
+    quantity <= MAX_SHOP_QUANTITY
+    ? quantity
+    : null;
+}
+
+function colorStorageKey(adminId: number): string {
+  if (!Number.isSafeInteger(adminId) || adminId <= 0)
+    throw new Error("Administrador no válido.");
+  return `pokemon-admin-shop-colors:v2:${adminId}`;
+}
+export function isPlayerColorId(value: unknown): value is PlayerColorId {
   return (
-    new Set(s.players.map((p) => p.id)).size === s.players.length &&
-    new Set(s.players.map((p) => p.nickname.trim().toLowerCase())).size ===
-      s.players.length &&
-    new Set(s.players.map((p) => p.colorId)).size === s.players.length
+    typeof value === "string" &&
+    PLAYER_COLORS.some((color) => color.id === value)
   );
 }
-export function readAdminSession(
+export function readShopColors(
   storage: Pick<Storage, "getItem">,
-): AdminShopSession | null {
-  const raw = storage.getItem(ADMIN_SHOP_STORAGE_KEY);
-  if (!raw) return null;
-  const value: unknown = JSON.parse(raw);
-  if (!validAdminSession(value))
-    throw new Error("Configuración de tienda inválida.");
-  return value;
+  adminId: number,
+): PlayerColorPreferences {
+  const raw = storage.getItem(colorStorageKey(adminId));
+  if (!raw) return {};
+  const parsed: unknown = JSON.parse(raw);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+  return Object.fromEntries(
+    Object.entries(parsed).filter(
+      ([key, value]) => /^[1-9]\d*$/.test(key) && isPlayerColorId(value),
+    ),
+  ) as PlayerColorPreferences;
 }
-export function writeAdminSession(
+export function writeShopColors(
   storage: Pick<Storage, "setItem">,
-  session: AdminShopSession,
+  adminId: number,
+  colors: PlayerColorPreferences,
 ): void {
-  if (!validAdminSession(session))
-    throw new Error("Revisa los jugadores y sus saldos.");
-  storage.setItem(ADMIN_SHOP_STORAGE_KEY, JSON.stringify(session));
+  const safe = Object.fromEntries(
+    Object.entries(colors).filter(
+      ([key, value]) => /^[1-9]\d*$/.test(key) && isPlayerColorId(value),
+    ),
+  );
+  storage.setItem(colorStorageKey(adminId), JSON.stringify(safe));
+}
+export function shopPlayerColor(
+  colors: PlayerColorPreferences,
+  playerId: number,
+): PlayerColorId {
+  return (
+    colors[String(playerId)] ??
+    PLAYER_COLORS[Math.abs(playerId - 1) % PLAYER_COLORS.length].id
+  );
 }
