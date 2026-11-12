@@ -40,8 +40,19 @@ export async function runShopBrowserScenario({
       "purchase dialog closes",
     );
   };
-  const select = async (id) =>
-    evalArgs(
+  const select = async (id) => {
+    await waitArgs(
+      admin,
+      (selector) => {
+        const button = document
+          .querySelector(selector)
+          ?.querySelector("button[aria-pressed]");
+        return button && !button.disabled;
+      },
+      `player ${id} has synchronized and is available for shopping`,
+      card(id),
+    );
+    return evalArgs(
       admin,
       (selector) => {
         const button = document
@@ -53,6 +64,7 @@ export async function runShopBrowserScenario({
       },
       card(id),
     );
+  };
   const openItem = async (name) => {
     await waitArgs(
       admin,
@@ -86,6 +98,69 @@ export async function runShopBrowserScenario({
     [...document.querySelectorAll('[role="dialog"] button')].some(
       (button) =>
         button.textContent.trim() === "Aceptar compra" && !button.disabled,
+    );
+  const openReset = async () => {
+    await waitArgs(
+      playerA,
+      () => !!document.querySelector('[data-testid="player-menu"]'),
+      "player menu is available for a new game",
+    );
+    await evalArgs(playerA, () => {
+      const trigger = document.querySelector('[data-testid="player-menu"]');
+      trigger.focus();
+      trigger.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }),
+      );
+    });
+    await waitArgs(
+      playerA,
+      () => !!document.querySelector('[data-testid="restart-game"]'),
+      "restart action is visible in the player menu",
+    );
+    await evalArgs(playerA, () =>
+      document.querySelector('[data-testid="restart-game"]').click(),
+    );
+    await waitArgs(
+      playerA,
+      () =>
+        !!document.querySelector('[data-testid="confirm-restart-game"]') &&
+        document
+          .querySelector('[role="dialog"]')
+          ?.textContent.includes("500 Pokedollars"),
+      "reset confirmation explains the starting Pokedollars",
+    );
+  };
+  const confirmResetTwice = async () =>
+    evalArgs(playerA, () => {
+      const button = document.querySelector(
+        '[data-testid="confirm-restart-game"]',
+      );
+      if (!button || button.disabled)
+        throw new Error("The connected player cannot confirm a new game");
+      button.click();
+      button.click();
+    });
+  const waitResetSaved = async (label) =>
+    waitArgs(
+      playerA,
+      async () => {
+        const [{ store }, storage] = await Promise.all([
+          import("/src/store/store.ts"),
+          import("/src/store/accountStorage.ts"),
+        ]);
+        const party = store.getState().party;
+        return (
+          storage.getActiveAccountId() === 2 &&
+          party.bag.walletUserId === 2 &&
+          !storage.isLocalPartyMutationBlocked(party) &&
+          !party.resetLock &&
+          !party.shopLock &&
+          party.pokemons.length === 0 &&
+          party.bag.money === 500 &&
+          Object.values(party.bag.items ?? {}).every((count) => count === 0)
+        );
+      },
+      label,
     );
 
   await clickButton(admin, "Tienda");
@@ -306,6 +381,17 @@ export async function runShopBrowserScenario({
     "cyan",
     "color remains editable during combat",
   );
+  await openReset();
+  assert.equal(
+    await evalArgs(
+      playerA,
+      () =>
+        document.querySelector('[data-testid="confirm-restart-game"]').disabled,
+    ),
+    true,
+    "a local battle prevents starting a new game",
+  );
+  await clickButton(playerA, "Cancelar", "[role=dialog]");
   await evalArgs(playerA, async () => {
     const [{ store }, actions] = await Promise.all([
       import("/src/store/store.ts"),
@@ -329,6 +415,14 @@ export async function runShopBrowserScenario({
     playerA,
     () => !!document.querySelector('[data-testid="pvp-party-lock"]'),
     "admin battle reserves the player's party",
+  );
+  assert.equal(
+    await evalArgs(
+      playerA,
+      () => !!document.querySelector('[data-testid="player-menu"]'),
+    ),
+    false,
+    "a reserved Trainer battle cannot be bypassed by restarting the party",
   );
   await clickButton(admin, "Tienda");
   await waitArgs(
@@ -427,6 +521,14 @@ export async function runShopBrowserScenario({
     (await partyState(playerA)).shopLock,
     "the party stays frozen until the purchase is recovered",
   );
+  assert.equal(
+    await evalArgs(
+      playerA,
+      () => !!document.querySelector('[data-testid="player-menu"]'),
+    ),
+    false,
+    "a pending purchase hides restart controls until its checked save succeeds",
+  );
   await closeDialog("Cerrar");
   await cdp.request("Page.reload", {}, playerA);
   await waitArgs(
@@ -465,8 +567,232 @@ export async function runShopBrowserScenario({
   );
   assert.equal((await partyState(playerA)).bag.money, 200);
   assert.equal((await partyState(playerA)).bag.items["great-ball"], 1);
+
+  // A new game is a player command, never an incidental shop sync or reload.
+  const beforeReset = await shopRepository.get(2);
+  console.log(
+    "Shop Chrome: purchase guards and recovery passed; testing player new-game reset.",
+  );
+  const beforeResetParty = await partyState(playerA);
+  assert.equal(beforeResetParty.pokemons.length, 1);
+  await openReset();
+  await clickButton(playerA, "Cancelar", "[role=dialog]");
+  await waitArgs(
+    playerA,
+    () => !document.querySelector('[role="dialog"]'),
+    "cancelling a new game closes confirmation without changing the save",
+  );
+  assert.equal((await shopRepository.get(2)).revision, beforeReset.revision);
+  assert.equal((await partyState(playerA)).bag.money, 200);
+  assert.equal((await partyState(playerA)).pokemons.length, 1);
+
+  await openReset();
+  await confirmResetTwice();
+  await waitResetSaved(
+    "a confirmed new game clears the team and purchased objects",
+  );
+  await waitBalance(2, 500);
+  const firstReset = await shopRepository.get(2);
+  assert.equal(firstReset.revision, beforeReset.revision + 1);
+  assert.equal(firstReset.balance, 500);
+  assert.deepEqual(firstReset.items, {});
+  assert.equal(
+    firstReset.resets.length,
+    1,
+    "double click creates one reset receipt",
+  );
+  assert.equal(firstReset.resets[0].status, "applied");
+  assert.deepEqual(
+    firstReset.purchases,
+    beforeReset.purchases,
+    "starting a new game preserves the purchase audit and idempotency keys",
+  );
+  assert.equal((await partyState(playerA)).gameSettings, null);
+  assert.deepEqual((await partyState(playerA)).bag.badges, []);
+
+  await cdp.request("Page.reload", {}, playerA);
+  await waitResetSaved("reloading a fresh game preserves its confirmed reset");
+  console.log(
+    "Shop Chrome: player reset/cancel/double click passed; checking subsequent purchases and offline guard.",
+  );
+  assert.equal((await shopRepository.get(2)).resets.length, 1);
+  // Prepare a new local team and spend again. A repeated old receipt must not
+  // erase this new team or refill its later balance.
+  await waitArgs(
+    playerA,
+    async (revision) => {
+      const [{ store }, storage] = await Promise.all([
+        import("/src/store/store.ts"),
+        import("/src/store/accountStorage.ts"),
+      ]);
+      const party = store.getState().party;
+      return (
+        party.bag.walletUserId === 2 &&
+        party.bag.walletRevision === revision &&
+        !storage.isLocalPartyMutationBlocked(party)
+      );
+    },
+    "new game is fully synchronized before installing its next team fixture",
+    firstReset.revision,
+  );
+  await seedPvpTeam(playerA, 1, 40, 1.3);
+  const seededAfterReset = await evalArgs(playerA, async () => {
+    const storage = await import("/src/store/accountStorage.ts");
+    return storage.readAccountParty(2)?.party.pokemons.length;
+  });
+  assert.equal(seededAfterReset, 1, "the next team fixture is durably saved");
+  await select(2);
+  await openItem("Poké Ball");
+  await clickButton(admin, "Aceptar compra", "[role=dialog]");
+  await waitBalance(2, 350);
+  await waitArgs(
+    admin,
+    () =>
+      document
+        .querySelector('[role="dialog"]')
+        ?.textContent.includes("El jugador guardó"),
+    "a purchase after the new game saves normally",
+  );
+  await closeDialog("Listo");
+  await shopGateway.publish();
+  await cdp.request("Page.reload", {}, playerA);
+  try {
+    await waitArgs(
+      playerA,
+      async () => {
+        const party = (await import("/src/store/store.ts")).store.getState()
+          .party;
+        return (
+          party.bag.money === 350 &&
+          party.bag.items["poke-ball"] === 1 &&
+          party.pokemons.length === 1 &&
+          !party.resetLock
+        );
+      },
+      "old reset receipts do not erase new Pokémon or replenish later purchases",
+    );
+  } catch (error) {
+    const actualParty = await partyState(playerA);
+    const disk = await evalArgs(playerA, async () => {
+      const storage = await import("/src/store/accountStorage.ts");
+      const party = storage.readAccountParty(2)?.party;
+      return (
+        party && {
+          bag: party.bag,
+          teamCount: party.pokemons.length,
+          resetLock: party.resetLock,
+        }
+      );
+    });
+    throw new Error(
+      `${error.message}; player=${JSON.stringify({ bag: actualParty.bag, teamCount: actualParty.pokemons.length, resetLock: actualParty.resetLock })}; disk=${JSON.stringify(disk)}; server=${JSON.stringify(await shopRepository.get(2))}`,
+    );
+  }
+  await waitBalance(2, 350);
+  assert.equal((await shopRepository.get(2)).resets.length, 1);
+
+  // Offline confirmation must be unavailable and leave the current party intact.
+  const beforeOffline = await partyState(playerA);
+  await cdp.request("Network.enable", {}, playerA);
+  await cdp.request(
+    "Network.emulateNetworkConditions",
+    { offline: true, latency: 0, downloadThroughput: -1, uploadThroughput: -1 },
+    playerA,
+  );
+  for (const socket of shopGateway.namespace.sockets.values())
+    if (socket.data.identity?.user.id === 2) socket.disconnect(true);
+  await openReset();
+  await waitArgs(
+    playerA,
+    () =>
+      document.querySelector('[data-testid="confirm-restart-game"]')?.disabled,
+    "offline players cannot confirm a new game",
+  );
+  await clickButton(playerA, "Cancelar", "[role=dialog]");
+  assert.equal((await partyState(playerA)).bag.money, beforeOffline.bag.money);
+  assert.equal((await partyState(playerA)).pokemons.length, 1);
+  assert.equal((await shopRepository.get(2)).resets.length, 1);
+  await cdp.request(
+    "Network.emulateNetworkConditions",
+    {
+      offline: false,
+      latency: 0,
+      downloadThroughput: -1,
+      uploadThroughput: -1,
+    },
+    playerA,
+  );
+  await cdp.request("Page.reload", {}, playerA);
+  await waitBalance(2, 350);
+  await waitArgs(
+    admin,
+    (selector) => {
+      const button = document
+        .querySelector(selector)
+        ?.querySelector("button[aria-pressed]");
+      return button && !button.disabled;
+    },
+    "player is synchronized before a durable reset failure",
+    card(2),
+  );
+
+  // The server can accept a reset while the final local checked write fails.
+  // Keep both the old team and a durable intent until that same receipt is saved.
+  await evalArgs(playerA, () => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (key === "persist:root:user:2") {
+        try {
+          const party = JSON.parse(JSON.parse(value).party);
+          if (party.pokemons.length === 0 && party.bag?.money === 500)
+            throw new Error("QA checked reset write failure");
+        } catch (error) {
+          if (error.message === "QA checked reset write failure") throw error;
+        }
+      }
+      return original.call(this, key, value);
+    };
+  });
+  const beforeFailedReset = await shopRepository.get(2);
+  console.log(
+    "Shop Chrome: reload and offline guard passed; testing interrupted reset persistence.",
+  );
+  await openReset();
+  await confirmResetTwice();
+  await waitArgs(
+    playerA,
+    () => !!document.querySelector('[data-testid="shop-reset-lock"]'),
+    "failed reset remains recoverable through a dedicated persistent lock",
+  );
+  await waitBalance(2, 500);
+  const resetPending = await shopRepository.get(2);
+  assert.equal(resetPending.revision, beforeFailedReset.revision + 1);
+  assert.equal(resetPending.resets.length, 2);
+  assert.equal(resetPending.resets[1].status, "pending");
+  assert.deepEqual(resetPending.items, {});
+  assert.ok((await partyState(playerA)).resetLock);
+  assert.equal(
+    (await partyState(playerA)).pokemons.length,
+    1,
+    "failed local persistence preserves the old team until recovery",
+  );
+  await cdp.request("Page.reload", {}, playerA);
+  await waitResetSaved(
+    "reload recovers the same reset after storage starts working",
+  );
+  const resetRecovered = await shopRepository.get(2);
+  assert.equal(resetRecovered.resets.length, 2);
+  assert.equal(resetRecovered.resets[1].status, "applied");
+  assert.equal(resetRecovered.revision, resetPending.revision);
+  assert.deepEqual(resetRecovered.purchases, beforeFailedReset.purchases);
+  await shopGateway.publish();
+  await cdp.request("Page.reload", {}, playerA);
+  await waitResetSaved(
+    "a second reload does not repeat or re-credit the reset",
+  );
+  assert.equal((await shopRepository.get(2)).revision, resetPending.revision);
   assert.deepEqual(cdp.exceptions, [], "Unexpected browser exception");
   console.log(
-    "PASS: live Poké Mart, one-time 500 Pokedollars, read-only player cash, 600/Great Ball quantity2, cancel/insufficient/double click, items and balances live, local/admin battle locks, colors, disconnects and durable purchase recovery without duplicate charges.",
+    "PASS: live Poké Mart, 600/Great Ball quantity2, read-only cash, live objects/balances, battle locks, durable purchase recovery, and player new games: 500 Pokedollars, empty purchased inventory/team, cancel/offline guards, double-click deduplication, checked-save recovery and no repeated reset on reload.",
   );
 }

@@ -32,7 +32,7 @@ import {
   pvpPartyRevision,
 } from "./accountStorage";
 
-import partyReducer from "@/slices/partySlice";
+import partyReducer, { resetGame } from "@/slices/partySlice";
 import { emptyTrainerBag } from "@/lib/trainerBag";
 
 import { pokeApi } from "@/api/pokeApi";
@@ -61,6 +61,15 @@ const persistedReducer = persistReducer(persistConfig, resettableReducer);
 
 const pvpPartyGuard: Middleware<{}, { party: AppState["party"] }> =
   (api) => (next) => (action) => {
+    // Starting a new game requires the checked, server-confirmed coordinator.
+    // A legacy dispatch must never clear the local party on its own.
+    if (
+      action &&
+      typeof action === "object" &&
+      "type" in action &&
+      action.type === resetGame.type
+    )
+      return action;
     if (
       action &&
       typeof action === "object" &&
@@ -232,7 +241,7 @@ function legacyParty() {
     throw new Error(
       "La partida anterior usa una versión incompatible. Se conserva intacta para recuperarla antes de importar.",
     );
-  if (decoded.party.shopLock)
+  if (decoded.party.shopLock || decoded.party.resetLock)
     throw new Error(
       "La partida anterior contiene una compra pendiente. Recupérala desde su cuenta original antes de importar.",
     );

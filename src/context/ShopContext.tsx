@@ -11,11 +11,19 @@ import { io, type Socket } from "socket.io-client";
 import type { ChatUser } from "@/lib/testMessages";
 import { testMessagesUrl } from "@/lib/testMessages";
 import { store } from "@/store/store";
-import { accountStorageKey, setShopSyncBlocked } from "@/store/accountStorage";
+import {
+  accountStorageKey,
+  isLocalPartyMutationBlocked,
+  setResetSyncBlocked,
+  setShopSyncBlocked,
+} from "@/store/accountStorage";
 import {
   applyShopWallet,
+  applyGameReset,
   localBattleActive,
+  prepareGameReset,
   prepareShopParty,
+  validGameReset,
   validPurchase,
   validWallet,
 } from "@/lib/shop/wallet";
@@ -25,6 +33,7 @@ import type {
   ShopPlayer,
   ShopPurchase,
   ShopState,
+  GameReset,
   Wallet,
 } from "@/lib/shop/types";
 
@@ -36,9 +45,12 @@ type ShopContextValue = {
   players: ShopPlayer[];
   wallet: Wallet | null;
   purchases: ShopPurchase[];
+  resets: GameReset[];
+  restarting: boolean;
   error: string;
   busy: boolean;
   sync: () => Promise<void>;
+  restartGame: () => Promise<void>;
   purchase: (
     player: ShopPlayer,
     itemId: ShopItemId,
@@ -61,6 +73,14 @@ const SESSION_ERRORS = new Set([
   "ACCOUNT_NOT_FOUND",
 ]);
 const TIMEOUT = 15000;
+class ShopResponseError extends Error {
+  constructor(
+    message: string,
+    readonly code?: string,
+  ) {
+    super(message);
+  }
+}
 const message = (error: unknown) =>
   error instanceof Error ? error.message : "No se pudo sincronizar la Tienda.";
 function token() {
@@ -88,6 +108,9 @@ function validState(value: unknown): value is ShopState {
       (Array.isArray(state.purchases) &&
         state.purchases.every(validPurchase))) &&
     (!state.purchase || validPurchase(state.purchase)) &&
+    (!state.reset || validGameReset(state.reset)) &&
+    (!state.resets ||
+      (Array.isArray(state.resets) && state.resets.every(validGameReset))) &&
     (!state.players ||
       (Array.isArray(state.players) &&
         state.players.every(
@@ -119,6 +142,8 @@ export default function ShopProvider({
   const [players, setPlayers] = useState<ShopPlayer[]>([]);
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [purchases, setPurchases] = useState<ShopPurchase[]>([]);
+  const [resets, setResets] = useState<GameReset[]>([]);
+  const [restarting, setRestarting] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const socketRef = useRef<Socket | null>(null);
@@ -134,6 +159,11 @@ export default function ShopProvider({
     ) => Promise<void>
   >(async () => {});
   const mutation = useRef(false);
+  const recoverResetRef = useRef<() => Promise<void>>(async () => {});
+  const restartRef = useRef<() => Promise<void>>(async () => {
+    throw new Error("Inicia sesión para reiniciar la partida.");
+  });
+  const restartGame = useCallback(() => restartRef.current(), []);
 
   const emit = useCallback(
     async (
@@ -174,9 +204,10 @@ export default function ShopProvider({
               if (detail && SESSION_ERRORS.has(detail.code))
                 void expiryRef.current(capturedToken);
               reject(
-                new Error(
+                new ShopResponseError(
                   detail?.message ??
                     "El servidor rechazó la operación de Tienda.",
+                  detail?.code,
                 ),
               );
               return;
@@ -226,6 +257,7 @@ export default function ShopProvider({
     const abortUnlockRequestId = store.getState().party.shopLock?.requestId;
     const response = await emit("shop:sync", {});
     await queueState.current(response, { abortUnlockRequestId });
+    await recoverResetRef.current();
   }, [emit]);
 
   useEffect(() => {
@@ -236,11 +268,14 @@ export default function ShopProvider({
     setPlayers([]);
     setWallet(null);
     setPurchases([]);
+    setResets([]);
+    setRestarting(false);
     setError("");
     setBusy(false);
     mutation.current = false;
     if (!user) {
       setShopSyncBlocked(false);
+      setResetSyncBlocked(false);
       return;
     }
     const actor = user;
@@ -275,6 +310,9 @@ export default function ShopProvider({
     let applied = false;
     let latestWallet: Wallet | null = null;
     let latestPurchases: ShopPurchase[] = [];
+    let latestResets: GameReset[] = [];
+    let resetRecovery: Promise<void> | null = null;
+    let resetStarting = false;
     let presenceTimer: number | undefined;
     let presenceKey = "";
     const current = () =>
@@ -286,7 +324,12 @@ export default function ShopProvider({
       if (!current() || !socket.connected || actor.role !== "player") return;
       const party = store.getState().party;
       const localBattle = localBattleActive(party);
-      const ready = applied && !localBattle && !party.shopLock;
+      const ready =
+        applied &&
+        !localBattle &&
+        !party.shopLock &&
+        !party.resetLock &&
+        !latestResets.some((reset) => reset.status === "pending");
       const next = JSON.stringify([ready, localBattle]);
       if (next === presenceKey) return;
       presenceKey = next;
@@ -331,8 +374,57 @@ export default function ShopProvider({
         latestPurchases = next.purchases;
         setPurchases(next.purchases);
       }
+      if (next.resets || next.reset) {
+        const previous = new Map(
+          latestResets.map((reset) => [reset.requestId, reset]),
+        );
+        const incoming = next.resets ?? latestResets;
+        latestResets = incoming.map((reset) => {
+          const saved = previous.get(reset.requestId);
+          return saved &&
+            saved.status !== "pending" &&
+            reset.status === "pending"
+            ? saved
+            : reset;
+        });
+        if (next.reset) {
+          const reset = next.reset;
+          const index = latestResets.findIndex(
+            (entry) => entry.requestId === reset.requestId,
+          );
+          if (index < 0) latestResets.push(reset);
+          else if (
+            latestResets[index].status === "pending" ||
+            reset.status !== "pending"
+          )
+            latestResets[index] = reset;
+        }
+        setResets(latestResets);
+      }
       if (!latestWallet)
         throw new Error("Falta recuperar el saldo de Pokedollars.");
+      const resetLock = store.getState().party.resetLock;
+      const receipt =
+        resetLock &&
+        latestResets.find(
+          (entry) =>
+            entry.requestId === resetLock.requestId &&
+            entry.userId === actor.id &&
+            entry.clientId === id,
+        );
+      if (receipt) {
+        const resetStatus = await applyGameReset(latestWallet, receipt, id);
+        if (!current()) return;
+        if (resetStatus === "pending") {
+          const confirmed = await emit("shop:reset-applied", {
+            requestId: receipt.requestId,
+            revision: receipt.walletRevision,
+          });
+          // Reconcile the ACK inline, rather than waiting on our own queue.
+          await reconcile(confirmed);
+          return;
+        }
+      }
       const pending = latestPurchases.filter(
         (purchase) =>
           purchase.userId === actor.id && purchase.status === "pending",
@@ -353,6 +445,10 @@ export default function ShopProvider({
       setSynced(true);
       setError("");
       setShopSyncBlocked(!!store.getState().party.shopLock);
+      setResetSyncBlocked(
+        !!store.getState().party.resetLock ||
+          latestResets.some((reset) => reset.status === "pending"),
+      );
       schedulePresence();
       for (const purchase of pending) {
         if (
@@ -387,11 +483,127 @@ export default function ShopProvider({
           setSynced(false);
           setError(message(reason));
           setShopSyncBlocked(!!store.getState().party.shopLock);
+          setResetSyncBlocked(
+            !!store.getState().party.resetLock ||
+              latestResets.some((reset) => reset.status === "pending"),
+          );
         }
       });
       return operation;
     }
     queueState.current = receive;
+    async function sendResetIntent() {
+      const lock = store.getState().party.resetLock;
+      if (!lock) return;
+      if (
+        !current() ||
+        !socket.connected ||
+        actor.role !== "player" ||
+        lock.userId !== actor.id ||
+        lock.clientId !== id
+      )
+        throw new Error(
+          "Reconecta el navegador original para recuperar el reinicio de la partida.",
+        );
+      const payload = {
+        requestId: lock.requestId,
+        expectedWalletRevision: lock.expectedWalletRevision,
+      };
+      let response: Extract<ShopAck, { ok: true }>;
+      let rejected: unknown;
+      try {
+        response = await emit("shop:reset", payload);
+      } catch (reason) {
+        if (
+          !(reason instanceof ShopResponseError) ||
+          !current() ||
+          !socket.connected
+        )
+          throw reason;
+        // Persist a cancellation tombstone before releasing local consent. A
+        // delayed copy of this request can then never reset a later game.
+        rejected = reason;
+        response = await emit("shop:reset-cancel", payload);
+      }
+      await receive(response);
+      if (!current()) throw new Error("La sesión cambió durante el reinicio.");
+      const receipt =
+        response.reset ??
+        response.resets?.find((entry) => entry.requestId === lock.requestId);
+      if (store.getState().party.resetLock)
+        throw new Error(
+          "El reinicio sigue pendiente. Recupera la conexión en este navegador.",
+        );
+      if (receipt?.status === "cancelled")
+        throw (
+          rejected ??
+          new Error("El reinicio se canceló; tu partida anterior se conserva.")
+        );
+    }
+    function recoverReset(): Promise<void> {
+      if (actor.role !== "player" || !store.getState().party.resetLock)
+        return Promise.resolve();
+      if (resetRecovery) return resetRecovery;
+      setRestarting(true);
+      const operation = sendResetIntent();
+      resetRecovery = operation;
+      void operation
+        .catch((reason) => {
+          if (current()) setError(message(reason));
+        })
+        .finally(() => {
+          if (resetRecovery === operation) resetRecovery = null;
+          if (current()) setRestarting(false);
+        });
+      return operation;
+    }
+    recoverResetRef.current = recoverReset;
+    restartRef.current = async () => {
+      if (resetStarting || resetRecovery)
+        throw new Error("Espera la confirmación del reinicio anterior.");
+      if (!current() || !socket.connected || !applied || !latestWallet)
+        throw new Error(
+          "Conecta y sincroniza tus Pokedollars antes de reiniciar la partida.",
+        );
+      if (actor.role !== "player")
+        throw new Error("Sólo un jugador puede reiniciar su partida.");
+      if (
+        isLocalPartyMutationBlocked(store.getState().party) ||
+        localBattleActive(store.getState().party)
+      )
+        throw new Error(
+          "Termina la batalla o compra pendiente antes de reiniciar la partida.",
+        );
+      resetStarting = true;
+      setRestarting(true);
+      setError("");
+      setResetSyncBlocked(true);
+      try {
+        await prepareGameReset(
+          actor.id,
+          id,
+          crypto.randomUUID(),
+          latestWallet.revision,
+        );
+        if (!current() || !socket.connected)
+          throw new Error(
+            "La conexión cambió; recupera el reinicio desde este navegador.",
+          );
+        await recoverReset();
+      } catch (reason) {
+        if (current()) setError(message(reason));
+        throw reason;
+      } finally {
+        resetStarting = false;
+        if (current()) {
+          setRestarting(false);
+          setResetSyncBlocked(
+            !!store.getState().party.resetLock ||
+              latestResets.some((reset) => reset.status === "pending"),
+          );
+        }
+      }
+    };
     socket.on("shop:state", (next: ShopState) => {
       void receive(next).catch(() => {});
     });
@@ -506,6 +718,7 @@ export default function ShopProvider({
     };
     window.addEventListener("storage", onStorage);
     setShopSyncBlocked(!!store.getState().party.shopLock);
+    setResetSyncBlocked(!!store.getState().party.resetLock);
     socket.connect();
     return () => {
       unsubscribe();
@@ -516,8 +729,13 @@ export default function ShopProvider({
       if (socketRef.current === socket) {
         socketRef.current = null;
         queueState.current = async () => {};
+        recoverResetRef.current = async () => {};
+        restartRef.current = async () => {
+          throw new Error("Inicia sesión para reiniciar la partida.");
+        };
       }
       setShopSyncBlocked(false);
+      setResetSyncBlocked(false);
     };
   }, [user?.id, user?.role, sync, emit]);
 
@@ -568,9 +786,12 @@ export default function ShopProvider({
         players,
         wallet,
         purchases,
+        resets,
+        restarting,
         error,
         busy,
         sync,
+        restartGame,
         purchase,
       }}
     >

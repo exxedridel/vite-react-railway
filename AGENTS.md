@@ -9,6 +9,19 @@ Acuerdo del usuario confirmado el 2026-11-08:
 
 Si esta disponible, leer [la memoria compartida](../PROJECT_MEMORY.md). Este resumen se conserva tambien aqui para sesiones que abran solo este repositorio.
 
+Poké Mart2.2.0 desplegado y funcionando según usuario. Corrección autorizada
+2026-11-12 versión2.2.1: Reiniciar juego del jugador exige conexión, establece
+500 Pokedollars y vacía objetos además de equipo/progreso/medallas. ContextoShop
+guarda resetLock antes de shop:reset; aplica sólo recibo propio confirmado,
+escribe Party+marca antes del ACK y libera por APPLIED/cancelled coincidente.
+No liberar por timeout/caché/sync sin recibo. Recuperación mismo ID/client;
+historial/recibos PvP se conservan. Dispatch resetGame aislado no borra Party.
+Compras y combates bloquean reinicio; reset pendiente bloquea Party/import/
+snapshotPvP/compra. Tienda sólo observa saldo500 en vivo, no reinicia al abrir.
+Otros dispositivos no borran su Party por el reset de otro navegador. Nest es
+autoridad de saldo/items; partida general permanece local. Uso de objetos futuro.
+Desplegar Nest primero y React después, sin variables nuevas ni MySQL.
+
 FutureSight global corregido 2026-11-11: auditoría native boardfuture produce
 resultado de impacto en wild/trainer; no volver a aplicar HP nativo ni tirar
 RNG extra. Legacy no-wild usa pendingDelayedAttacks persistido en BattleField
@@ -40,8 +53,8 @@ ADMIN controla ambos equipos en PvP; jugadores observan. En Trainer NPC automát
 Locks por cuenta/Web Locks, guardia party/*, rendicion en turno propio,
 patch HP/estados tras salir y recibo+ACK antes de liberar ambos. Reconexion no
 desbloquea; equipo divergente exige dispositivo original. Ver README/protocolo.
-No convertir moves[].pp de catalogo en PP gastados; Full Restore solo manual
-porque mochila no tiene existencias. No se agregan XP ni premios.
+No convertir moves[].pp de catalogo en PP gastados; Full Restore del simulador
+no consume aún los objetos comprados de mochila. No se agregan XP ni premios.
 Correccion 2026-11-11: PvpBattlePanel valida checkpoint antes de montar controles
 o procesar cola/outbox. Estado incompatible muestra aviso y permite actualizar
 conexion sin desbloquear. Causa Nest: Mongoose eliminaba pending={} (minimize).

@@ -3,7 +3,7 @@
 Frontend del juego con React, TypeScript y Vite. `mysql-restapi` autentica y
 administra usuarios; `nest-mongo-pokedex` comunica jugadores y conserva las
 batallas PvP, las carteras y los recibos del Poké Mart. El motor de combate se
-ejecuta en el panel administrador. Versión de la aplicación: **2.2.0**.
+ejecuta en el panel administrador. Versión de la aplicación: **2.2.1**.
 
 ## Desarrollo y comprobaciones
 
@@ -86,9 +86,31 @@ momento y se conserva como preferencia local del administrador.
 
 Cada cuenta comienza con **500 Pokedollars** una sola vez al crear su cartera en
 Mongo. Esta versión sustituye los saldos locales anteriores por ese saldo inicial;
-conserva Pokémon y progreso. Recargar, cerrar sesión, importar o reiniciar la
-partida no vuelve a entregar los 500. La Bag muestra saldo y cantidades en modo
+conserva Pokémon y progreso. Recargar, cerrar sesión o importar una partida
+conserva el saldo confirmado. La Bag muestra saldo y cantidades en modo
 lectura; los jugadores no pueden editar sus Pokedollars desde la interfaz.
+
+### Reiniciar partida desde el jugador
+
+El menú de la cuenta incluye **Reiniciar juego**. La confirmación informa que se
+eliminarán el equipo, el inicial, el oponente y las medallas, se vaciarán los
+objetos comprados y el saldo quedará en **500 Pokedollars**. Exige conexión y
+sincronización; no se permite durante una batalla ni una compra pendiente.
+
+El dispositivo guarda primero la solicitud de reinicio. Nest valida la operación
+del propio jugador y guarda saldo500, objetos vacíos y un recibo pendiente de
+forma atómica. El navegador guarda entonces la nueva partida y confirma ese
+recibo. La Tienda recibe automáticamente el saldo actualizado: abrir la Tienda
+no inicia ni reinicia partidas. La cartera pertenece a la cuenta; el resto de
+la partida continúa guardándose por navegador.
+
+Si falla la red o el guardado, **Recuperar reinicio** continúa la misma solicitud
+desde el navegador original. Los reintentos no vuelven a entregar500 ni borran
+un nuevo equipo. Las compras y reservas de batalla esperan su confirmación.
+Un rechazo se resuelve con una cancelación persistida antes de retirar el bloqueo;
+un evento antiguo o la ausencia de recibo no prueban que el reinicio se canceló.
+El historial y los recibos anteriores se conservan. Cancelar el diálogo antes de
+confirmar no cambia la partida ni el saldo.
 
 No se permite comprar durante PvP, Trainer Battle ni un encuentro local activo.
 Una compra en curso también bloquea temporalmente las acciones de la Party y

@@ -560,83 +560,86 @@ async function seedPvpTeam(sessionId, count, hpFirst, multiplier) {
   return evalArgs(
     sessionId,
     async (count, hpFirst, multiplier) => {
-      const [{ store, persistor }, actions, storage] = await Promise.all([
-        import("/src/store/store.ts"),
-        import("/src/slices/partySlice.ts"),
-        import("/src/store/accountStorage.ts"),
-      ]);
-      store.dispatch(
-        actions.configureGame({
-          regions: ["kanto"],
-          startingLevel: 20,
-          hpMultiplier: multiplier,
-        }),
-      );
-      const party = JSON.parse(JSON.stringify(store.getState().party));
-      const statsModule = await import("/src/lib/pokemonStats.ts");
-      party.pokemons = Array.from({ length: count }, () => {
-        const base = {
-          id: 35,
-          name: "clefairy",
-          image: null,
-          types: ["fairy"],
-          stats: [
-            "hp",
-            "attack",
-            "defense",
-            "special-attack",
-            "special-defense",
-            "speed",
-          ].map((name) => ({ name, value: 50 })),
-          learnset: {
-            versionGroup: "emerald",
-            moves: [
-              { id: 150, name: "splash" },
-              { id: 33, name: "tackle" },
-            ],
-          },
-        };
-        return {
-          captureId: crypto.randomUUID(),
-          origin: "wild",
-          pokemon: statsModule.createLeveledPokemon(
-            base,
-            base.stats,
-            20,
-            multiplier,
-          ),
-          moves: [],
-          statuses: [],
-          statusTurns: {},
-        };
+      const [{ store, transactPvpParty }, actions, storage, statsModule] =
+        await Promise.all([
+          import("/src/store/store.ts"),
+          import("/src/slices/partySlice.ts"),
+          import("/src/store/accountStorage.ts"),
+          import("/src/lib/pokemonStats.ts"),
+        ]);
+      const owner = storage.getActiveAccountId();
+      if (!owner) throw new Error("No account owns the Party fixture");
+      return transactPvpParty(owner, async (latest) => {
+        const configured = actions.default(
+          latest,
+          actions.configureGame({
+            regions: ["kanto"],
+            startingLevel: 20,
+            hpMultiplier: multiplier,
+          }),
+        );
+        const party = JSON.parse(JSON.stringify(configured));
+        party.pokemons = Array.from({ length: count }, () => {
+          const base = {
+            id: 35,
+            name: "clefairy",
+            image: null,
+            types: ["fairy"],
+            stats: [
+              "hp",
+              "attack",
+              "defense",
+              "special-attack",
+              "special-defense",
+              "speed",
+            ].map((name) => ({ name, value: 50 })),
+            learnset: {
+              versionGroup: "emerald",
+              moves: [
+                { id: 150, name: "splash" },
+                { id: 33, name: "tackle" },
+              ],
+            },
+          };
+          return {
+            captureId: crypto.randomUUID(),
+            origin: "wild",
+            pokemon: statsModule.createLeveledPokemon(
+              base,
+              base.stats,
+              20,
+              multiplier,
+            ),
+            moves: [],
+            statuses: [],
+            statusTurns: {},
+          };
+        });
+        party.pokemons.forEach((capture, index) => {
+          capture.pokemon.stats.find((stat) => stat.name === "hp").value =
+            index === 0 ? hpFirst : 0;
+          capture.moves = [
+            {
+              id: 150,
+              name: "splash",
+              displayName: "Splash",
+              type: "normal",
+              damageClass: "status",
+              power: null,
+              accuracy: null,
+              pp: 40,
+              priority: 0,
+              description: "Test move",
+              source: "tm",
+            },
+          ];
+          capture.statuses = index === 0 ? ["burned"] : [];
+          capture.statusTurns = {};
+        });
+        party.bag = { ...party.bag, badges: ["boulder"] };
+        party.pvpRevision = storage.pvpPartyRevision(latest) + 1;
+        return { party, value: JSON.parse(JSON.stringify(party)) };
       });
-      party.pokemons.forEach((capture, index) => {
-        capture.pokemon.stats.find((stat) => stat.name === "hp").value =
-          index === 0 ? hpFirst : 0;
-        capture.moves = [
-          {
-            id: 150,
-            name: "splash",
-            displayName: "Splash",
-            type: "normal",
-            damageClass: "status",
-            power: null,
-            accuracy: null,
-            pp: 40,
-            priority: 0,
-            description: "Test move",
-            source: "tm",
-          },
-        ];
-        capture.statuses = index === 0 ? ["burned"] : [];
-        capture.statusTurns = {};
-      });
-      party.bag = { ...party.bag, money: 500, badges: ["boulder"] };
-      store.dispatch({ type: storage.PVP_PARTY_COMMIT, payload: party });
-      await persistor.flush();
-      if (store.getState().party.pokemons.length !== count)
-        throw new Error("Party fixture was not installed");
-      return JSON.parse(JSON.stringify(store.getState().party));
     },
     count,
     hpFirst,

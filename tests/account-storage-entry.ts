@@ -178,9 +178,12 @@ export async function runAccountStorageTests() {
   );
 
   await activateAccountStore(importer);
-  const { applyShopWallet, prepareShopParty } = await import(
-    "../src/lib/shop/wallet"
-  );
+  const {
+    applyShopWallet,
+    prepareShopParty,
+    prepareGameReset,
+    applyGameReset,
+  } = await import("../src/lib/shop/wallet");
   const importedWallet = {
     userId: importer,
     currencyVersion: 1 as const,
@@ -211,6 +214,20 @@ export async function runAccountStorageTests() {
   await applyShopWallet(importedWallet, [], {
     abortUnlockRequestId: "import-pending",
   });
+  await prepareGameReset(importer, "import-client", "import-reset-pending", 4);
+  assert.equal(await hasLegacyPartyForImport(importer), false);
+  await assert.rejects(importLegacyParty(importer), /reservada/);
+  await applyGameReset(
+    importedWallet,
+    {
+      requestId: "import-reset-pending",
+      userId: importer,
+      clientId: "import-client",
+      walletRevision: 4,
+      status: "cancelled",
+    },
+    "import-client",
+  );
   const foreignLegacy = {
     ...legacy,
     shopLock: {

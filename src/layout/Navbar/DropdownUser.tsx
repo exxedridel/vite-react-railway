@@ -31,8 +31,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useAppContext } from "@/context/AppContext";
-import { useAppDispatch } from "@/store/hooks";
-import { resetGame } from "@/slices/partySlice";
+import { useShopContext } from "@/context/ShopContext";
+import { useAppSelector } from "@/store/hooks";
+import { localBattleActive } from "@/lib/shop/wallet";
 import FloatingActivityHistory from "@/components/pokemon/FloatingActivityHistory";
 import {
   accountNicknameKey,
@@ -43,13 +44,16 @@ type ActiveDialog = "nickname" | "reset" | null;
 
 export default function DropdownUser() {
   const { user, navigate, setPokemonDialogOpen } = useAppContext();
-  const dispatch = useAppDispatch();
+  const shop = useShopContext();
+  const party = useAppSelector((state) => state.party);
   const userId = Number(user?.id);
   const [nickname, setNickname] = useState(() => getStoredNickname(userId));
   const [nicknameDraft, setNicknameDraft] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [historyVisible, setHistoryVisible] = useState(false);
   const [activeDialog, setActiveDialog] = useState<ActiveDialog>(null);
+  const [resetting, setResetting] = useState(false);
+  const [resetError, setResetError] = useState("");
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
   const openingDialogRef = useRef(false);
   const resetSubmittedRef = useRef(false);
@@ -60,6 +64,8 @@ export default function DropdownUser() {
     setActiveDialog(null);
     setMenuOpen(false);
     setHistoryVisible(false);
+    setResetError("");
+    setResetting(false);
     window.addEventListener("storage", refreshNickname);
     window.addEventListener(ACCOUNT_NICKNAME_EVENT, refreshNickname);
     return () => {
@@ -75,7 +81,10 @@ export default function DropdownUser() {
   const openDialog = (dialog: Exclude<ActiveDialog, null>) => {
     openingDialogRef.current = true;
     if (dialog === "nickname") setNicknameDraft(nickname);
-    if (dialog === "reset") resetSubmittedRef.current = false;
+    if (dialog === "reset") {
+      resetSubmittedRef.current = false;
+      setResetError("");
+    }
     setMenuOpen(false);
     setActiveDialog(dialog);
   };
@@ -114,17 +123,37 @@ export default function DropdownUser() {
       toast.error("No se pudo eliminar el nickname.");
     }
   };
-  const handleResetGame = () => {
-    if (resetSubmittedRef.current) return;
+  const resetUnavailable =
+    !shop.connected ||
+    !shop.synced ||
+    shop.busy ||
+    !!party.shopLock ||
+    !!party.resetLock ||
+    localBattleActive(party);
+  const handleResetGame = async () => {
+    if (resetSubmittedRef.current || resetUnavailable) return;
     resetSubmittedRef.current = true;
-    setPokemonDialogOpen(false);
-    dispatch(resetGame());
-    closeDialog();
-    navigate("/dashboard");
-    toast.success("Partida reiniciada.", {
-      description:
-        "Ya puedes elegir un nuevo Pokémon inicial. El reinicio quedó en el historial.",
-    });
+    setResetting(true);
+    setResetError("");
+    try {
+      await shop.restartGame();
+      setPokemonDialogOpen(false);
+      closeDialog();
+      navigate("/dashboard");
+      toast.success("Partida reiniciada.", {
+        description:
+          "Tienes 500 Pokedollars y la mochila vacía. Ya puedes elegir un nuevo Pokémon inicial.",
+      });
+    } catch (error) {
+      setResetError(
+        error instanceof Error
+          ? error.message
+          : "No se pudo confirmar el reinicio. Recupera la conexión antes de continuar.",
+      );
+      resetSubmittedRef.current = false;
+    } finally {
+      setResetting(false);
+    }
   };
 
   return (
@@ -133,6 +162,7 @@ export default function DropdownUser() {
         <DropdownMenuTrigger asChild>
           <Button
             ref={menuTriggerRef}
+            data-testid="player-menu"
             variant="outline"
             className="flex flex-row items-center border-brand"
           >
@@ -191,7 +221,10 @@ export default function DropdownUser() {
             <span>Historial de actividad</span>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => openDialog("reset")}>
+          <DropdownMenuItem
+            data-testid="restart-game"
+            onSelect={() => openDialog("reset")}
+          >
             <RotateCcw className="mr-2 h-4 w-4" />
             <span>Reiniciar juego</span>
           </DropdownMenuItem>
@@ -267,7 +300,7 @@ export default function DropdownUser() {
       <Dialog
         open={activeDialog === "reset"}
         onOpenChange={(open) => {
-          if (!open) closeDialog();
+          if (!open && !resetting) closeDialog();
         }}
       >
         <DialogContent
@@ -282,21 +315,43 @@ export default function DropdownUser() {
             <DialogDescription>
               Se eliminará todo tu equipo, incluido el inicial, con sus niveles,
               movimientos y estados. También se quitará al oponente guardado.
-              Podrás elegir un nuevo Pokémon inicial. Esta acción no se puede
-              deshacer. El historial de las últimas 20 acciones se conserva y
-              registrará este reinicio.
+              Tu saldo quedará en 500 Pokedollars, se vaciarán los objetos de la
+              mochila y se retirarán tus medallas. El saldo se actualizará
+              también en la Tienda. Necesitas conexión para confirmar el
+              reinicio. Podrás elegir un nuevo Pokémon inicial. Esta acción no
+              se puede deshacer. El historial de las últimas 20 acciones se
+              conserva y registrará este reinicio.
             </DialogDescription>
           </DialogHeader>
+          {resetError && (
+            <p role="alert" className="text-sm text-destructive">
+              {resetError}
+            </p>
+          )}
+          {resetUnavailable && !resetting && (
+            <p role="status" className="text-sm text-muted-foreground">
+              {!shop.connected || !shop.synced
+                ? "Conecta y sincroniza tu cuenta antes de reiniciar."
+                : "Termina la batalla o la operación pendiente antes de reiniciar."}
+            </p>
+          )}
           <DialogFooter className="gap-2">
-            <Button type="button" variant="outline" onClick={closeDialog}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={closeDialog}
+              disabled={resetting}
+            >
               Cancelar
             </Button>
             <Button
               type="button"
               variant="destructive"
-              onClick={handleResetGame}
+              data-testid="confirm-restart-game"
+              onClick={() => void handleResetGame()}
+              disabled={resetting || resetUnavailable}
             >
-              Sí, reiniciar juego
+              {resetting ? "Confirmando reinicio…" : "Sí, reiniciar juego"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,8 +1,13 @@
-import type { PartyState } from "@/slices/partySlice";
+import partyReducer, { resetGame, type PartyState } from "@/slices/partySlice";
 import { transactPvpParty } from "@/store/store";
 import { getCurrentHp } from "@/lib/pokemonStats";
 import { pvpPartyRevision } from "@/store/accountStorage";
-import { SHOP_ITEM_IDS, type ShopPurchase, type Wallet } from "./types";
+import {
+  SHOP_ITEM_IDS,
+  type GameReset,
+  type ShopPurchase,
+  type Wallet,
+} from "./types";
 
 const record = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === "object" && !Array.isArray(value);
@@ -46,6 +51,20 @@ export function validPurchase(value: unknown): value is ShopPurchase {
     integer(value.walletRevision, 1) &&
     SHOP_ITEM_IDS.includes(value.itemId as (typeof SHOP_ITEM_IDS)[number]) &&
     ["pending", "applied"].includes(String(value.status))
+  );
+}
+
+export function validGameReset(value: unknown): value is GameReset {
+  return (
+    record(value) &&
+    typeof value.requestId === "string" &&
+    /^[\w.:-]{1,128}$/.test(value.requestId) &&
+    typeof value.clientId === "string" &&
+    /^[\w.:-]{1,128}$/.test(value.clientId) &&
+    integer(value.userId, 1) &&
+    integer(value.walletRevision) &&
+    ["pending", "applied", "cancelled"].includes(String(value.status)) &&
+    (value.status === "cancelled" || Number(value.walletRevision) >= 1)
   );
 }
 
@@ -110,6 +129,14 @@ export function applyShopWallet(
       (party.bag.walletRevision ?? -1) > wallet.revision
     )
       return { party, value: undefined };
+    // A reset wallet must arrive together with its matching reset receipt.
+    // Cache/presence responses cannot advance the wallet before the party reset.
+    if (
+      party.resetLock &&
+      party.resetLock.appliedWalletRevision === undefined &&
+      wallet.revision > party.resetLock.expectedWalletRevision
+    )
+      return { party, value: undefined };
     let next = partyWithWallet(party, wallet);
     const lock = next.shopLock;
     const confirmedApplied =
@@ -145,6 +172,8 @@ export function prepareShopParty(
   revision: number,
 ): Promise<number> {
   return transactPvpParty(userId, async (party) => {
+    if (party.resetLock)
+      throw new Error("Hay un reinicio de partida pendiente de confirmación.");
     if (localBattleActive(party))
       throw new Error("El jugador está en batalla.");
     if (
@@ -169,5 +198,135 @@ export function prepareShopParty(
           },
       value: revision,
     };
+  });
+}
+
+/** Store consent before a network request. Nothing from the game is deleted yet. */
+export function prepareGameReset(
+  userId: number,
+  clientId: string,
+  requestId: string,
+  expectedWalletRevision: number,
+): Promise<void> {
+  return transactPvpParty(userId, async (party) => {
+    if (localBattleActive(party))
+      throw new Error("Termina la batalla antes de reiniciar la partida.");
+    if (party.shopLock)
+      throw new Error(
+        "Recupera la compra pendiente antes de reiniciar la partida.",
+      );
+    if (
+      party.bag?.walletUserId !== userId ||
+      party.bag.walletRevision !== expectedWalletRevision
+    )
+      throw new Error(
+        "Actualiza tus Pokedollars antes de reiniciar la partida.",
+      );
+    if (party.resetLock) {
+      if (
+        party.resetLock.userId !== userId ||
+        party.resetLock.clientId !== clientId ||
+        party.resetLock.requestId !== requestId ||
+        party.resetLock.expectedWalletRevision !== expectedWalletRevision
+      )
+        throw new Error(
+          "Hay otro reinicio pendiente. Recupéralo desde el navegador original.",
+        );
+      return { party, value: undefined };
+    }
+    return {
+      party: {
+        ...party,
+        pvpRevision: pvpPartyRevision(party) + 1,
+        resetLock: { userId, clientId, requestId, expectedWalletRevision },
+      },
+      value: undefined,
+    };
+  });
+}
+
+/** Apply a committed new game once, before ACK. Only terminal server receipts
+ * release the intent; absence from any cache or sync never means cancellation.
+ */
+export function applyGameReset(
+  wallet: Wallet,
+  receipt: GameReset,
+  clientId: string,
+): Promise<"pending" | "applied" | "cancelled" | "ignored"> {
+  if (
+    !validWallet(wallet) ||
+    !validGameReset(receipt) ||
+    receipt.userId !== wallet.userId
+  )
+    return Promise.reject(new Error("El reinicio recibido no es válido."));
+  return transactPvpParty(wallet.userId, async (party) => {
+    const lock = party.resetLock;
+    if (
+      !lock ||
+      receipt.clientId !== clientId ||
+      lock.clientId !== clientId ||
+      lock.userId !== wallet.userId ||
+      lock.requestId !== receipt.requestId
+    )
+      return { party, value: "ignored" as const };
+    if (
+      (party.bag?.walletRevision ?? -1) > wallet.revision ||
+      receipt.walletRevision > wallet.revision
+    )
+      return { party, value: "ignored" as const };
+    if (receipt.status === "cancelled") {
+      if (lock.appliedWalletRevision !== undefined)
+        throw new Error(
+          "La cancelación no coincide con el reinicio ya guardado.",
+        );
+      return {
+        party: {
+          ...party,
+          pvpRevision: pvpPartyRevision(party) + 1,
+          resetLock: undefined,
+        },
+        value: "cancelled" as const,
+      };
+    }
+    if (party.pvpLock || party.shopLock)
+      throw new Error(
+        "La partida conserva otra reserva pendiente; no se aplicó el reinicio.",
+      );
+    if (receipt.walletRevision !== lock.expectedWalletRevision + 1)
+      throw new Error(
+        "La revisión del reinicio no corresponde a esta partida.",
+      );
+    let next = party;
+    if (lock.appliedWalletRevision === undefined) {
+      if (
+        wallet.revision !== receipt.walletRevision ||
+        wallet.balance !== 500 ||
+        Object.values(wallet.items).some((quantity) => quantity !== 0)
+      )
+        throw new Error(
+          "Recupera la cartera correspondiente al reinicio antes de continuar.",
+        );
+      // The public Redux reset dispatch is guarded; only this checked transaction
+      // calls the pure reducer after receiving the server's exact receipt.
+      next = partyWithWallet(
+        partyReducer({ ...party, resetLock: undefined }, resetGame()),
+        wallet,
+      );
+      next = {
+        ...next,
+        pvpRevision:
+          Math.max(pvpPartyRevision(next), pvpPartyRevision(party)) + 1,
+        resetLock: { ...lock, appliedWalletRevision: receipt.walletRevision },
+      };
+    } else if (lock.appliedWalletRevision !== receipt.walletRevision) {
+      throw new Error("El reinicio guardado no coincide con su confirmación.");
+    }
+    if (receipt.status === "applied")
+      next = {
+        ...next,
+        pvpRevision: pvpPartyRevision(next) + 1,
+        resetLock: undefined,
+      };
+    return { party: next, value: receipt.status };
   });
 }

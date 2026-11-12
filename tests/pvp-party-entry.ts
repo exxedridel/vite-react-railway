@@ -78,8 +78,13 @@ function saved(id: number): PartyState {
   );
 }
 export async function runAccountStorageTests() {
-  const { store, persistor, activateAccountStore, clearAccountStore } =
-    await import("../src/store/store");
+  const {
+    store,
+    persistor,
+    activateAccountStore,
+    clearAccountStore,
+    transactPvpParty,
+  } = await import("../src/store/store");
   const {
     reservePvpParty,
     applyPvpResult,
@@ -192,7 +197,12 @@ export async function runAccountStorageTests() {
   );
   await releasePvpParty(snapshot.battleId, result.resultId);
   setPvpSyncBlocked(false);
-  store.dispatch(resetGame());
+  // This fixture represents a later, confirmed new game. Public reset dispatches
+  // now require the server coordinator and cannot clear a party directly.
+  await transactPvpParty(id, async (party) => ({
+    party: partyReducer(party, resetGame()),
+    value: undefined,
+  }));
   await persistor.flush();
   await applyPvpResult(result);
   assert.equal(store.getState().party.pokemons.length, 0);
@@ -211,6 +221,43 @@ export async function runAccountStorageTests() {
   assert.equal(getCurrentHp(saved(other).pokemons[0].pokemon), 17);
   passed.push(
     "a different account or divergent device cannot receive another team's result and remains safely locked",
+  );
+  for (const [owner, kind] of [
+    [2003, "purchase"],
+    [2004, "reset"],
+  ] as const) {
+    const locked = fixture();
+    if (kind === "purchase")
+      locked.shopLock = {
+        userId: owner,
+        clientId: "client-owner",
+        requestId: "pending-purchase",
+      };
+    else
+      locked.resetLock = {
+        userId: owner,
+        clientId: "client-owner",
+        requestId: "pending-reset",
+        expectedWalletRevision: 0,
+      };
+    testStorage.seed(accountStorageKey(owner), encodeAccountParty(locked));
+    await activateAccountStore(owner);
+    await assert.rejects(
+      reservePvpParty({
+        userId: owner,
+        clientId: "client-owner",
+        battleId: "blocked-battle",
+      }),
+      /compra|reinicio/,
+    );
+    assert.equal(saved(owner).pvpLock, undefined);
+    assert.equal(saved(owner).pokemons.length, 1);
+    assert.ok(
+      kind === "purchase" ? saved(owner).shopLock : saved(owner).resetLock,
+    );
+  }
+  passed.push(
+    "pending purchases and new-game intents cannot submit a PvP snapshot or erase their existing lock",
   );
   return passed;
 }

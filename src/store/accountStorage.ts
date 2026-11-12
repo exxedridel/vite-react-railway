@@ -4,6 +4,10 @@ import { stablePvpJson } from "@/lib/pvp/types";
 export const PVP_PARTY_COMMIT = "party/pvpCommit";
 let pvpSyncBlocked = false;
 let shopSyncBlocked = false;
+let resetSyncBlocked = false;
+export function setResetSyncBlocked(blocked: boolean): void {
+  resetSyncBlocked = blocked;
+}
 export function setShopSyncBlocked(blocked: boolean): void {
   shopSyncBlocked = blocked;
 }
@@ -173,6 +177,25 @@ export function decodeAccountParty(
       )
         throw new Error();
     }
+    if (party.resetLock !== undefined) {
+      const lock = party.resetLock;
+      if (
+        !isRecord(lock) ||
+        typeof lock.requestId !== "string" ||
+        !lock.requestId ||
+        typeof lock.clientId !== "string" ||
+        !lock.clientId ||
+        !Number.isSafeInteger(lock.userId) ||
+        Number(lock.userId) <= 0 ||
+        !Number.isSafeInteger(lock.expectedWalletRevision) ||
+        Number(lock.expectedWalletRevision) < 0 ||
+        (lock.appliedWalletRevision !== undefined &&
+          (!Number.isSafeInteger(lock.appliedWalletRevision) ||
+            Number(lock.appliedWalletRevision) !==
+              Number(lock.expectedWalletRevision) + 1))
+      )
+        throw new Error();
+    }
     return {
       party: { ...party, opponent: party.opponent ?? null } as PartyState,
     };
@@ -214,7 +237,7 @@ function writeNormalAccountRoot(userId: number, raw: string): void {
   if (previous) {
     if (pvpPartyRevision(previous) > pvpPartyRevision(incoming)) return;
     if (
-      (previous.pvpLock || previous.shopLock) &&
+      (previous.pvpLock || previous.shopLock || previous.resetLock) &&
       pvpPartyRevision(previous) === pvpPartyRevision(incoming) &&
       stablePvpJson(previous) !== stablePvpJson(incoming)
     )
@@ -253,8 +276,10 @@ export function isLocalPartyMutationBlocked(party: PartyState): boolean {
   if (
     pvpSyncBlocked ||
     shopSyncBlocked ||
+    resetSyncBlocked ||
     party.pvpLock ||
     party.shopLock ||
+    party.resetLock ||
     activeAccountId === null
   )
     return true;
@@ -263,6 +288,7 @@ export function isLocalPartyMutationBlocked(party: PartyState): boolean {
     return (
       !!saved?.pvpLock ||
       !!saved?.shopLock ||
+      !!saved?.resetLock ||
       pvpPartyRevision(saved) > pvpPartyRevision(party)
     );
   } catch {

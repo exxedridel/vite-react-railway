@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import reducer, {
   changeBagMoney,
+  addPokemon,
+  configureGame,
   resetGame,
   toggleGymBadge,
 } from "../src/slices/partySlice";
@@ -11,16 +13,20 @@ import {
   PVP_PARTY_COMMIT,
   setPvpSyncBlocked,
   setShopSyncBlocked,
+  setResetSyncBlocked,
   isLocalPartyMutationBlocked,
 } from "../src/store/accountStorage";
 import {
   applyShopWallet,
+  applyGameReset,
   localBattleActive,
   partyWithWallet,
   prepareShopParty,
+  prepareGameReset,
+  validGameReset,
   validWallet,
 } from "../src/lib/shop/wallet";
-import type { Wallet } from "../src/lib/shop/types";
+import type { GameReset, Wallet } from "../src/lib/shop/types";
 declare const testStorage: {
   getItem(key: string): string | null;
   failWritesFor: Set<string>;
@@ -207,7 +213,266 @@ export async function runAccountStorageTests() {
   passed.push(
     "a confirmed aborted preflight clears only its reservation and never charges the player",
   );
+
+  const resetUser = 604;
+  await activateAccountStore(resetUser);
+  await applyShopWallet(wallet(resetUser, 2, 200, { "great-ball": 1 }));
+  store.dispatch(
+    configureGame({ regions: ["kanto"], startingLevel: 5, hpMultiplier: 1.3 }),
+  );
+  store.dispatch(
+    addPokemon({
+      id: 1,
+      name: "bulbasaur",
+      image: null,
+      types: ["grass", "poison"],
+      stats: [
+        "hp",
+        "attack",
+        "defense",
+        "special-attack",
+        "special-defense",
+        "speed",
+      ].map((name) => ({ name, value: 50 })),
+      learnset: {
+        versionGroup: "emerald",
+        moves: [{ id: 33, name: "tackle" }],
+      },
+    }),
+  );
+  store.dispatch(toggleGymBadge("boulder"));
+  const partyBeforeReset = clone(store.getState().party);
+  partyBeforeReset.pvpReceipts = [
+    {
+      battleId: "past-battle",
+      resultId: "past-result",
+      userId: resetUser,
+      snapshotId: "past-snapshot",
+      baseHash: "past-hash",
+      resultDigest: "past-digest",
+      savedAt: "past",
+    },
+  ];
+  store.dispatch({ type: PVP_PARTY_COMMIT, payload: partyBeforeReset });
+  await persistor.flush();
+  store.dispatch(resetGame());
+  assert.deepEqual(
+    store.getState().party,
+    partyBeforeReset,
+    "a legacy reset dispatch cannot delete a game without server confirmation",
+  );
+  testStorage.failWritesFor.add(accountStorageKey(resetUser));
+  await assert.rejects(
+    prepareGameReset(resetUser, "reset-client", "reset-intent", 2),
+    /guardar/,
+  );
+  assert.equal(saved(resetUser).resetLock, undefined);
+  assert.equal(saved(resetUser).pokemons.length, 1);
+  testStorage.failWritesFor.clear();
+  await prepareGameReset(resetUser, "reset-client", "reset-intent", 2);
+  const intended = clone(store.getState().party);
+  assert.equal(saved(resetUser).resetLock.requestId, "reset-intent");
+  assert.equal(saved(resetUser).pokemons.length, 1);
+  assert.equal(saved(resetUser).bag.money, 200);
+  store.dispatch(toggleGymBadge("cascade"));
+  store.dispatch(addPokemon(partyBeforeReset.pokemons[0].pokemon));
+  assert.deepEqual(store.getState().party, intended);
+  await accountStorage.setItem(
+    "persist:root",
+    encodeAccountParty(partyBeforeReset),
+  );
+  assert.equal(
+    saved(resetUser).resetLock.requestId,
+    "reset-intent",
+    "a stale tab cannot erase consent from disk",
+  );
+  await assert.rejects(
+    prepareShopParty(resetUser, "reset-client", "buy-during-reset", 2),
+    /reinicio/,
+  );
+  await assert.rejects(
+    prepareGameReset(resetUser, "other-client", "other-reset", 2),
+    /otro reinicio/,
+  );
+  passed.push(
+    "reset consent is saved before deletion; storage failure, stale tabs, legacy dispatches and concurrent purchases cannot bypass it",
+  );
+
+  const resetWallet = wallet(resetUser, 3);
+  const resetReceipt: GameReset = {
+    requestId: "reset-intent",
+    userId: resetUser,
+    clientId: "reset-client",
+    walletRevision: 3,
+    status: "pending",
+  };
+  await applyShopWallet(resetWallet);
+  assert.equal(
+    saved(resetUser).bag.money,
+    200,
+    "a wallet cache alone cannot apply a pending game reset",
+  );
+  assert.equal(
+    await applyGameReset(
+      resetWallet,
+      { ...resetReceipt, clientId: "other-client" },
+      "reset-client",
+    ),
+    "ignored",
+  );
+  assert.equal(
+    await applyGameReset(
+      resetWallet,
+      { ...resetReceipt, requestId: "older-request" },
+      "reset-client",
+    ),
+    "ignored",
+  );
+  assert.equal(saved(resetUser).pokemons.length, 1);
+  testStorage.failWritesFor.add(accountStorageKey(resetUser));
+  await assert.rejects(
+    applyGameReset(resetWallet, resetReceipt, "reset-client"),
+    /guardar/,
+  );
+  assert.equal(saved(resetUser).pokemons.length, 1);
+  assert.equal(saved(resetUser).bag.money, 200);
+  assert.equal(saved(resetUser).resetLock.appliedWalletRevision, undefined);
+  testStorage.failWritesFor.clear();
+  assert.equal(
+    await applyGameReset(resetWallet, resetReceipt, "reset-client"),
+    "pending",
+  );
+  const resetAppliedLocally = clone(store.getState().party);
+  assert.equal(resetAppliedLocally.pokemons.length, 0);
+  assert.equal(resetAppliedLocally.gameSettings, null);
+  assert.equal(resetAppliedLocally.starterClaimed, false);
+  assert.equal(resetAppliedLocally.bag?.money, 500);
+  assert.deepEqual(resetAppliedLocally.bag?.items, {});
+  assert.deepEqual(resetAppliedLocally.bag?.badges, []);
+  assert.deepEqual(
+    resetAppliedLocally.pvpReceipts,
+    partyBeforeReset.pvpReceipts,
+  );
+  assert.equal(resetAppliedLocally.resetLock?.appliedWalletRevision, 3);
+  assert.equal(resetAppliedLocally.activityHistory?.[0].kind, "reset");
+  assert.equal(
+    resetAppliedLocally.activityHistory?.length,
+    (partyBeforeReset.activityHistory?.length ?? 0) + 1,
+  );
+  passed.push(
+    "a matching committed reset atomically clears team, progress and purchased items, restores 500 and preserves battle receipts/history before ACK",
+  );
+
+  await clearAccountStore();
+  await activateAccountStore(resetUser);
+  assert.equal(store.getState().party.resetLock?.appliedWalletRevision, 3);
+  await applyGameReset(resetWallet, resetReceipt, "reset-client");
+  assert.deepEqual(
+    store.getState().party,
+    resetAppliedLocally,
+    "an ACK lost across logout/reload cannot repeat the reset or history entry",
+  );
+  await applyShopWallet(wallet(resetUser, 2, 200, { "great-ball": 1 }));
+  assert.equal(saved(resetUser).bag.money, 500);
+  await applyGameReset(
+    resetWallet,
+    { ...resetReceipt, status: "applied" },
+    "reset-client",
+  );
+  setResetSyncBlocked(false);
+  assert.equal(saved(resetUser).resetLock, undefined);
+  store.dispatch(
+    configureGame({ regions: ["kanto"], startingLevel: 5, hpMultiplier: 1.3 }),
+  );
+  store.dispatch(addPokemon(partyBeforeReset.pokemons[0].pokemon));
+  await persistor.flush();
+  const afterNewStarter = clone(store.getState().party);
+  await applyGameReset(resetWallet, resetReceipt, "reset-client");
+  assert.deepEqual(
+    store.getState().party,
+    afterNewStarter,
+    "old pending reset events cannot delete a new starter",
+  );
+  await applyShopWallet(wallet(resetUser, 4, 50, { "ultra-ball": 1 }));
+  await applyGameReset(
+    resetWallet,
+    { ...resetReceipt, status: "applied" },
+    "reset-client",
+  );
+  assert.equal(saved(resetUser).bag.money, 50);
+  assert.equal(saved(resetUser).bag.items["ultra-ball"], 1);
+  passed.push(
+    "reset replay after reload, ACK loss, a new starter or a later purchase never deletes progress or replenishes funds again",
+  );
+
+  const beforeCancellation = clone(store.getState().party);
+  await prepareGameReset(resetUser, "reset-client", "cancel-intent", 4);
+  const cancelled: GameReset = {
+    requestId: "cancel-intent",
+    userId: resetUser,
+    clientId: "reset-client",
+    walletRevision: 4,
+    status: "cancelled",
+  };
+  await applyShopWallet(wallet(resetUser, 4, 50, { "ultra-ball": 1 }));
+  assert.equal(
+    saved(resetUser).resetLock.requestId,
+    "cancel-intent",
+    "an absent receipt never releases an uncommitted request",
+  );
+  await applyGameReset(
+    wallet(resetUser, 4, 50, { "ultra-ball": 1 }),
+    { ...cancelled, requestId: "wrong-id" },
+    "reset-client",
+  );
+  assert.equal(saved(resetUser).resetLock.requestId, "cancel-intent");
+  assert.equal(
+    await applyGameReset(
+      wallet(resetUser, 4, 50, { "ultra-ball": 1 }),
+      cancelled,
+      "reset-client",
+    ),
+    "cancelled",
+  );
+  assert.equal(saved(resetUser).resetLock, undefined);
+  assert.deepEqual(saved(resetUser).pokemons, beforeCancellation.pokemons);
+  assert.deepEqual(saved(resetUser).bag, beforeCancellation.bag);
+  assert.equal(
+    saved(resetUser).activityHistory.length,
+    beforeCancellation.activityHistory?.length,
+  );
+  assert.equal(validGameReset({ ...cancelled, walletRevision: -1 }), false);
+  assert.equal(validGameReset({ ...resetReceipt, status: "unknown" }), false);
+  passed.push(
+    "only a matching durable cancellation releases an uncommitted reset, preserving its team, items, balance and history",
+  );
+
+  const battleParty = clone(store.getState().party);
+  battleParty.pvpLock = {
+    version: 1,
+    battleId: "reset-blocked-battle",
+    userId: resetUser,
+    clientId: "reset-client",
+    phase: "held",
+    lockedAt: "test",
+  };
+  store.dispatch({ type: PVP_PARTY_COMMIT, payload: battleParty });
+  await persistor.flush();
+  await assert.rejects(
+    prepareGameReset(resetUser, "reset-client", "during-reserved-battle", 4),
+    /batalla/,
+  );
+  assert.equal(saved(resetUser).resetLock, undefined);
+  await activateAccountStore(other);
+  await assert.rejects(
+    prepareGameReset(resetUser, "reset-client", "wrong-account-reset", 4),
+    /cuenta cambió/,
+  );
+  passed.push(
+    "a reserved battle or another signed-in owner cannot initialize a game reset",
+  );
   setShopSyncBlocked(false);
+  setResetSyncBlocked(false);
   await clearAccountStore();
   persistor.pause();
   await persistor.flush();

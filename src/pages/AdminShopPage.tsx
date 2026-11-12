@@ -359,11 +359,13 @@ export default function AdminShopPage() {
                   <p role="status" className="mb-3 text-sm">
                     {player.inBattle
                       ? "En batalla · compras bloqueadas"
-                      : player.pending
-                        ? "Esperando guardado de una compra"
-                        : !player.ready
-                          ? "Sincronizando su mochila"
-                          : "Disponible para comprar"}
+                      : player.pendingReset
+                        ? "Esperando guardado del reinicio de partida"
+                        : player.pending
+                          ? "Esperando guardado de una compra"
+                          : !player.ready
+                            ? "Sincronizando su mochila"
+                            : "Disponible para comprar"}
                   </p>
                   <Button
                     type="button"

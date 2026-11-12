@@ -126,6 +126,13 @@ export type PartyState = {
   };
   bag?: TrainerBag;
   shopLock?: { requestId: string; userId: number; clientId: string };
+  resetLock?: {
+    requestId: string;
+    userId: number;
+    clientId: string;
+    expectedWalletRevision: number;
+    appliedWalletRevision?: number;
+  };
   battleField?: BattleField;
   lastFieldEvent?: { id: string; title: string; details: string[] };
   dataVersion?: string;
@@ -938,10 +945,7 @@ const partySlice = createSlice({
       return {
         pvpRevision: state.pvpRevision,
         pvpReceipts: state.pvpReceipts,
-        bag:
-          state.bag?.walletRevision !== undefined && state.bag.walletUserId
-            ? { ...state.bag, badges: [] }
-            : emptyTrainerBag(),
+        bag: emptyTrainerBag(),
         battleField: emptyBattleField(),
         dataVersion: GAME_DATA_VERSION,
         gameSettings: null,
@@ -1399,7 +1403,8 @@ export default function partyReducer(
   action: UnknownAction,
 ): PartyState {
   if (action.type === PVP_PARTY_COMMIT) return action.payload as PartyState;
-  if (state?.pvpLock && action.type.startsWith("party/")) return state;
+  if ((state?.pvpLock || state?.resetLock) && action.type.startsWith("party/"))
+    return state;
   // redux-persist autoMergeLevel1 conserva un slice si cambió durante REHYDRATE.
   // Reiniciamos solo party: no tokens, nickname, colores ni datos de otras apps.
   if (action.type === "persist/REHYDRATE" && action.key === "root") {
@@ -1410,8 +1415,9 @@ export default function partyReducer(
       if (
         saved &&
         typeof saved === "object" &&
-        "pvpLock" in saved &&
-        saved.pvpLock
+        (("pvpLock" in saved && saved.pvpLock) ||
+          ("shopLock" in saved && saved.shopLock) ||
+          ("resetLock" in saved && saved.resetLock))
       )
         return { ...initialState, ...saved } as PartyState;
       if (

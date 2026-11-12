@@ -197,7 +197,7 @@ export function describePartyActivity(
       details: [
         `Se retiraron ${before.pokemons.length} Pokémon del equipo.`,
         `Pokedollars: ${formatBagMoney(before.bag?.money ?? 0)} → ${formatBagMoney(after.bag?.money ?? 0)}; ${before.bag?.badges.length ?? 0} medallas → 0.`,
-        "Los Pokedollars y los objetos comprados se conservan en la cuenta.",
+        "Nueva partida: 500 Pokedollars y mochila de objetos vacía.",
         before.opponent
           ? `Oponente retirado: ${before.opponent.pokemon.name}.`
           : "No había oponente seleccionado.",
