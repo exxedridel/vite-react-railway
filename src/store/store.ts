@@ -36,6 +36,7 @@ import {
 
 import partyReducer, { resetGame } from "@/slices/partySlice";
 import { emptyTrainerBag } from "@/lib/trainerBag";
+import { hydratePartyMovePp } from "@/lib/movePp";
 
 import { pokeApi } from "@/api/pokeApi";
 
@@ -80,7 +81,8 @@ const pvpPartyGuard: Middleware<{}, { party: AppState["party"] }> =
       typeof action.type === "string" &&
       action.type.startsWith("party/") &&
       action.type !== PVP_PARTY_COMMIT &&
-      (isAccountTransactionBlocked() || isLocalPartyMutationBlocked(api.getState().party))
+      (isAccountTransactionBlocked() ||
+        isLocalPartyMutationBlocked(api.getState().party))
     )
       return action;
     return next(action);
@@ -207,6 +209,14 @@ export function activateAccountStore(userId: number): Promise<void> {
       await flushCurrentAccount();
       // Read/validate before selecting the owner; a corrupt save is never replaced.
       const incoming = readAccountParty(userId);
+      if (
+        incoming &&
+        !incoming.party.pvpLock &&
+        !incoming.party.shopLock &&
+        !incoming.party.resetLock &&
+        !incoming.party.itemUseLock
+      )
+        incoming.party = hydratePartyMovePp(incoming.party);
       selectAccountStorage(userId);
       resetAccountUi();
       resumeWithParty(incoming);
@@ -340,7 +350,7 @@ export function importLegacyParty(userId: number): Promise<void> {
             : emptyTrainerBag();
           resumeWithParty({
             party: {
-              ...legacy.party,
+              ...hydratePartyMovePp(legacy.party),
               pvpRevision:
                 Math.max(
                   pvpPartyRevision(current),

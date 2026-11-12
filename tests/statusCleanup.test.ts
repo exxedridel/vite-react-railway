@@ -125,7 +125,13 @@ test("capturar neutraliza el equipo completo y la captura sin curar HP ni estado
     ...before.opponent!.pokemon,
     battleStages: neutralBattleStages(),
   });
-  assert.deepEqual(captured.moves, before.opponent!.moves);
+  assert.deepEqual(
+    captured.moves,
+    before.opponent!.moves!.map((move) => ({
+      ...move,
+      currentPp: move.currentPp ?? move.pp,
+    })),
+  );
   assert.deepEqual(captured.statuses, ["asleep"]);
   assert.deepEqual(captured.statusTurns, { asleep: 4 });
   assert.ok(

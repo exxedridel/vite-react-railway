@@ -7,6 +7,8 @@ import partyReducer, {
 import { getCurrentHp, getMaxHp, isLeveled } from "@/lib/pokemonStats";
 import { combatKey } from "@/lib/emerald/types";
 import { emptyBattleField } from "@/lib/battleField";
+import type { ConsumableItemId } from "@/lib/shop/types";
+import { getCurrentMovePp, getMaxMovePp, restoreMovePp } from "@/lib/movePp";
 
 type Engine = typeof import("@/lib/emerald/engine");
 let engine: Promise<Engine> | undefined;
@@ -40,27 +42,66 @@ export function needsFullRestore(
 
 /** Pure inventory-use draft. The caller persists it before requesting the
  * server debit, then commits this exact draft once. Bag is never modified here. */
-export async function prepareFullRestoreParty(
+export async function preparePartyItem(
   input: PartyState,
   captureId: string,
+  itemId: ConsumableItemId,
+  moveId?: number,
 ): Promise<PartyState> {
   if (input.pvpLock || input.shopLock || input.resetLock || input.itemUseLock)
     throw new Error(
-      "La Party tiene una batalla u operación pendiente. Recupérala antes de usar Full Restore.",
+      "La Party tiene una batalla u operación pendiente. Recupérala antes de usar un objeto.",
     );
   const target = input.pokemons.find(
     (capture) => capture.captureId === captureId,
   );
   if (!target || !isLeveled(target.pokemon))
     throw new Error("Elige un Pokémon válido de tu equipo.");
-  if (!needsFullRestore(input, captureId))
-    throw new Error("Este Pokémon no necesita Full Restore.");
+  if (
+    itemId === "max-ether"
+      ? !target.moves?.some((move) => move.id === moveId)
+      : moveId !== undefined
+  )
+    throw new Error("Elige un movimiento válido del Pokémon para Max Ether.");
+  const needsItem =
+    itemId === "full-restore"
+      ? needsFullRestore(input, captureId)
+      : target.moves?.some(
+          (move) =>
+            (itemId === "max-elixir" ||
+              (itemId === "max-ether" && move.id === moveId)) &&
+            getCurrentMovePp(move) < getMaxMovePp(move),
+        );
+  if (!needsItem)
+    throw new Error(
+      itemId === "full-restore"
+        ? "Este Pokémon no necesita Full Restore."
+        : "El objeto no tendría efecto en el Pokémon o movimiento elegido.",
+    );
   const state = JSON.parse(JSON.stringify(input)) as PartyState;
   const inBattle =
     !!state.opponent &&
     getCurrentHp(state.opponent.pokemon) > 0 &&
     !state.emerald?.ended;
-  if (!inBattle) return applyFullRestoreToParty(state, captureId);
+  const applyItem = (): PartyState =>
+    itemId === "full-restore"
+      ? applyFullRestoreToParty(state, captureId)
+      : {
+          ...state,
+          pokemons: state.pokemons.map((capture) =>
+            capture.captureId !== captureId
+              ? capture
+              : {
+                  ...capture,
+                  moves: capture.moves?.map((move) =>
+                    itemId === "max-elixir" || move.id === moveId
+                      ? restoreMovePp(move)
+                      : move,
+                  ),
+                },
+          ),
+        };
+  if (!inBattle) return applyItem();
   if (state.opponent?.kind === "wild") {
     const native = await loadFullRestoreEngine();
     const active =
@@ -69,7 +110,7 @@ export async function prepareFullRestoreParty(
       ) ?? state.pokemons.find((capture) => getCurrentHp(capture.pokemon) > 0);
     if (!active || getCurrentHp(active.pokemon) <= 0)
       throw new Error(
-        "Elige el reemplazo obligatorio antes de usar Full Restore.",
+        "Elige el reemplazo obligatorio antes de usar un objeto.",
       );
     const seed = Array.from(crypto.getRandomValues(new Uint16Array(4))) as [
       number,
@@ -82,7 +123,12 @@ export async function prepareFullRestoreParty(
       state,
       active.captureId,
       "player",
-      { kind: "item", item: "full-restore", captureId },
+      {
+        kind: "item",
+        item: itemId,
+        captureId,
+        ...(moveId !== undefined ? { moveId } : {}),
+      },
       seed,
       id,
     );
@@ -94,17 +140,15 @@ export async function prepareFullRestoreParty(
   const field = state.battleField ?? emptyBattleField();
   if (field.playerSwitchedThisTurn || field.playerItemUsedThisTurn)
     throw new Error(
-      "Ya utilizaste la acción de este turno. Finaliza el turno antes de usar Full Restore.",
+      "Ya utilizaste la acción de este turno. Finaliza el turno antes de usar otro objeto.",
     );
   const active =
     state.pokemons.find(
       (capture) => capture.captureId === field.activeCaptureId,
     ) ?? target;
   if (getCurrentHp(active.pokemon) <= 0)
-    throw new Error(
-      "Elige el reemplazo obligatorio antes de usar Full Restore.",
-    );
-  const restored = applyFullRestoreToParty(state, captureId);
+    throw new Error("Elige el reemplazo obligatorio antes de usar un objeto.");
+  const restored = applyItem();
   return {
     ...restored,
     battleField: {
@@ -113,4 +157,12 @@ export async function prepareFullRestoreParty(
       playerItemUsedThisTurn: true,
     },
   };
+}
+
+export const prepareBattleItemParty = preparePartyItem;
+export function prepareFullRestoreParty(
+  input: PartyState,
+  captureId: string,
+): Promise<PartyState> {
+  return preparePartyItem(input, captureId, "full-restore");
 }

@@ -37,6 +37,7 @@ import type {
   ShopState,
   GameReset,
   ItemUse,
+  ConsumableItemId,
   Wallet,
 } from "@/lib/shop/types";
 
@@ -57,6 +58,11 @@ type ShopContextValue = {
   sync: () => Promise<void>;
   restartGame: () => Promise<void>;
   useFullRestore: (captureId: string) => Promise<void>;
+  useItem: (
+    itemId: ConsumableItemId,
+    captureId: string,
+    moveId?: number,
+  ) => Promise<void>;
   purchase: (
     player: ShopPlayer,
     itemId: ShopItemId,
@@ -176,11 +182,22 @@ export default function ShopProvider({
   });
   const restartGame = useCallback(() => restartRef.current(), []);
   const recoverItemUseRef = useRef<() => Promise<void>>(async () => {});
-  const useItemRef = useRef<(captureId: string) => Promise<void>>(async () => {
-    throw new Error("Inicia sesión para usar Full Restore.");
+  const useItemRef = useRef<
+    (
+      itemId: ConsumableItemId,
+      captureId: string,
+      moveId?: number,
+    ) => Promise<void>
+  >(async () => {
+    throw new Error("Inicia sesión para usar objetos de tu Bag.");
   });
+  const useItem = useCallback(
+    (itemId: ConsumableItemId, captureId: string, moveId?: number) =>
+      useItemRef.current(itemId, captureId, moveId),
+    [],
+  );
   const useFullRestore = useCallback(
-    (captureId: string) => useItemRef.current(captureId),
+    (captureId: string) => useItemRef.current("full-restore", captureId),
     [],
   );
 
@@ -694,11 +711,13 @@ export default function ShopProvider({
         lock.clientId !== id
       )
         throw new Error(
-          "Reconecta el navegador original para recuperar Full Restore.",
+          "Reconecta el navegador original para recuperar el uso del objeto.",
         );
       const payload = {
         requestId: lock.requestId,
         captureId: lock.captureId,
+        ...(lock.itemId === undefined ? {} : { itemId: lock.itemId }),
+        ...(lock.moveId === undefined ? {} : { moveId: lock.moveId }),
         context: lock.context,
         planHash: lock.planHash,
         expectedWalletRevision: lock.expectedWalletRevision,
@@ -719,19 +738,19 @@ export default function ShopProvider({
       }
       await receive(response);
       if (!current())
-        throw new Error("La sesión cambió durante el uso de Full Restore.");
+        throw new Error("La sesión cambió durante el uso del objeto.");
       const receipt =
         response.use ??
         response.uses?.find((entry) => entry.requestId === lock.requestId);
       if (store.getState().party.itemUseLock)
         throw new Error(
-          "Full Restore sigue pendiente. Recupera la operación desde este navegador.",
+          "El uso del objeto sigue pendiente. Recupera la operación desde este navegador.",
         );
       if (receipt?.status === "cancelled")
         throw (
           rejected ??
           new Error(
-            "El uso de Full Restore se canceló; tu inventario y Pokémon se conservan.",
+            "El uso del objeto se canceló; tu inventario y Pokémon se conservan.",
           )
         );
     }
@@ -753,9 +772,9 @@ export default function ShopProvider({
       return operation;
     }
     recoverItemUseRef.current = recoverItemUse;
-    useItemRef.current = async (captureId) => {
+    useItemRef.current = async (itemId, captureId, moveId) => {
       if (itemStarting || itemRecovery)
-        throw new Error("Espera a que termine el Full Restore anterior.");
+        throw new Error("Espera a que termine el uso del objeto anterior.");
       if (
         !current() ||
         !socket.connected ||
@@ -764,14 +783,14 @@ export default function ShopProvider({
         actor.role !== "player"
       )
         throw new Error(
-          "Conecta y sincroniza tu inventario antes de usar Full Restore.",
+          "Conecta y sincroniza tu inventario antes de usar un objeto.",
         );
       if (isLocalPartyMutationBlocked(store.getState().party))
         throw new Error(
-          "Termina la batalla reservada o la operación pendiente antes de usar Full Restore.",
+          "Termina la batalla reservada o la operación pendiente antes de usar un objeto.",
         );
-      if ((latestWallet.items["full-restore"] ?? 0) < 1)
-        throw new Error("No tienes Full Restore en tu Bag.");
+      if ((latestWallet.items[itemId] ?? 0) < 1)
+        throw new Error("No tienes existencias de este objeto en tu Bag.");
       itemStarting = true;
       setUsingItem(true);
       setError("");
@@ -782,18 +801,21 @@ export default function ShopProvider({
         const planner = await import("@/lib/fullRestorePlan");
         await planner.loadFullRestoreEngine();
         if (!current() || !socket.connected)
-          throw new Error("La conexión cambió antes de preparar Full Restore.");
+          throw new Error("La conexión cambió antes de preparar el objeto.");
         await prepareItemUse(
           actor.id,
           id,
           crypto.randomUUID(),
           captureId,
           latestWallet.revision,
-          planner.prepareFullRestoreParty,
+          (party, target) =>
+            planner.preparePartyItem(party, target, itemId, moveId),
+          itemId,
+          moveId,
         );
         if (!current() || !socket.connected)
           throw new Error(
-            "Recupera Full Restore desde este navegador al volver a conectar.",
+            "Recupera el uso del objeto desde este navegador al volver a conectar.",
           );
         await recoverItemUse();
       } catch (reason) {
@@ -942,7 +964,7 @@ export default function ShopProvider({
         };
         recoverItemUseRef.current = async () => {};
         useItemRef.current = async () => {
-          throw new Error("Inicia sesión para usar Full Restore.");
+          throw new Error("Inicia sesión para usar un objeto.");
         };
       }
       setShopSyncBlocked(false);
@@ -1007,6 +1029,7 @@ export default function ShopProvider({
         sync,
         restartGame,
         useFullRestore,
+        useItem,
         purchase,
       }}
     >

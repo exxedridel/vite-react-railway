@@ -9,6 +9,7 @@ import {
 } from "@/lib/trainerBattle/engine";
 import { clearBattleConditions } from "@/lib/pokemonCondition";
 import { getCurrentHp } from "@/lib/pokemonStats";
+import { getCurrentMovePp } from "@/lib/movePp";
 import type {
   TrainerBattleSession,
   TrainerSide,
@@ -99,6 +100,10 @@ export function applyPvpTrainerCommand(
     networkItems.pending[command.side] = {
       commandId: command.commandId,
       captureId: command.choice.captureId,
+      itemId: command.choice.item,
+      ...(command.choice.moveId !== undefined
+        ? { moveId: command.choice.moveId }
+        : {}),
     };
   }
   const input = { ...session, networkItems };
@@ -108,9 +113,14 @@ export function applyPvpTrainerCommand(
       : chooseTrainerAction(input, command.side, command.choice, {
           allowNetworkItem:
             command.choice.kind === "item" && !!command.inventoryAuthorized,
-          onItemUsed: (side, captureId) => {
+          onItemUsed: (side, captureId, itemId = "full-restore", moveId) => {
             const pending = networkItems.pending[side];
-            if (!pending || pending.captureId !== captureId)
+            if (
+              !pending ||
+              pending.captureId !== captureId ||
+              (pending.itemId ?? "full-restore") !== itemId ||
+              pending.moveId !== moveId
+            )
               throw new Error(
                 "La curación no tiene una reserva de inventario correspondiente.",
               );
@@ -166,6 +176,14 @@ export function pvpTeamPatches(
       hp: getCurrentHp(capture.pokemon),
       statuses: [...(capture.statuses ?? [])],
       statusTurns: { ...(capture.statusTurns ?? {}) },
+      ...(capture.moves?.some((move) => move.currentPp !== undefined)
+        ? {
+            movesPp: capture.moves.map((move) => ({
+              moveId: move.id,
+              currentPp: getCurrentMovePp(move),
+            })),
+          }
+        : {}),
     };
   });
 }

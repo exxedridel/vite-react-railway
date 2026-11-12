@@ -177,7 +177,14 @@ test("preloaded primary conditions, sleep counters, HP and stages survive starti
     };
   }
   const started = startTrainerBattle(setup, seed);
-  assert.deepEqual(started.teams, setup.teams);
+  const expected = clone(setup.teams);
+  for (const team of Object.values(expected))
+    for (const capture of team.pokemons)
+      capture.moves = capture.moves?.map((move) => ({
+        ...move,
+        currentPp: move.currentPp ?? move.pp!,
+      }));
+  assert.deepEqual(started.teams, expected);
   assert(validTrainerBattleSession(started));
 });
 

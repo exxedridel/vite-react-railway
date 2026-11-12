@@ -17,6 +17,7 @@ import { useShopContext } from "@/context/ShopContext";
 import { isLocalPartyMutationBlocked } from "@/store/accountStorage";
 import { localBattleActive } from "@/lib/shop/wallet";
 import type { CapturedPokemon } from "@/types/pokemon";
+import PpRestoreControls from "./PpRestoreControls";
 
 type Props = {
   capturedPokemon: CapturedPokemon;
@@ -45,11 +46,16 @@ export default function PokemonActionsDialog({
       nativeTurn.requests.player.locked);
   const restoreUnavailable =
     stock < 1 ||
+    shop.usingItem ||
     !shop.connected ||
     !shop.synced ||
     isLocalPartyMutationBlocked(party) ||
     turnUnavailable ||
-    (localBattleActive(party) && !!party.battleField?.playerItemUsedThisTurn);
+    (localBattleActive(party) &&
+      !!(
+        party.battleField?.playerItemUsedThisTurn ||
+        party.battleField?.playerSwitchedThisTurn
+      ));
   const [confirmingRelease, setConfirmingRelease] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const cancelReleaseRef = useRef<HTMLButtonElement>(null);
@@ -203,6 +209,12 @@ export default function PokemonActionsDialog({
                 </Button>
               )}
             </div>
+            <PpRestoreControls
+              captureId={captureId}
+              disabled={!ready || restoring}
+              onUsed={() => onOpenChange(false)}
+              onBusyChange={setRestoring}
+            />
             <div className="space-y-2 rounded-xl border p-3">
               <Button
                 type="button"

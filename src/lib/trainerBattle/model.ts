@@ -11,6 +11,9 @@ import { TIMED_STATUSES, validTurns } from "@/lib/statusTurns";
 import { validHpMultiplier } from "@/lib/gameSettings";
 import { trainerMoves, trainerSpecies } from "./catalog";
 import type { TrainerBattleSession, TrainerSide } from "./types";
+import { getMaxMovePp } from "@/lib/movePp";
+import { CONSUMABLE_ITEM_IDS } from "@/lib/shop/types";
+import type { LearnedMove } from "@/types/moves";
 
 export const TRAINER_BATTLE_STORAGE_KEY = "pokemon-admin-trainer-battle:v1";
 const sides: TrainerSide[] = ["a", "b"];
@@ -173,7 +176,11 @@ function validMember(
     !Array.isArray(value.moves) ||
     value.moves.length > 4 ||
     !value.moves.every(
-      (m) => isRecord(m) && trainerMoves.some((move) => move.id === m.id),
+      (m) =>
+        isRecord(m) &&
+        trainerMoves.some((move) => move.id === m.id) &&
+        (m.currentPp === undefined ||
+          integer(m.currentPp, 0, getMaxMovePp(m as LearnedMove))),
     ) ||
     new Set(value.moves.map((m) => m.id)).size !== value.moves.length
   )
@@ -376,10 +383,22 @@ export function validTrainerBattleSession(
       if (
         !isRecord(pending) ||
         Object.keys(pending).some(
-          (key) => !["commandId", "captureId"].includes(key),
+          (key) =>
+            !["commandId", "captureId", "itemId", "moveId"].includes(key),
         ) ||
         !text(pending.commandId, 128) ||
         !text(pending.captureId, 128) ||
+        (pending.itemId !== undefined &&
+          !CONSUMABLE_ITEM_IDS.includes(
+            pending.itemId as (typeof CONSUMABLE_ITEM_IDS)[number],
+          )) ||
+        ((pending.itemId ?? "full-restore") === "max-ether"
+          ? !team.pokemons.some(
+              (capture) =>
+                capture.captureId === pending.captureId &&
+                capture.moves?.some((move) => move.id === pending.moveId),
+            )
+          : pending.moveId !== undefined) ||
         !team.pokemons.some(
           (capture) => capture.captureId === pending.captureId,
         )
@@ -494,7 +513,16 @@ export function validTrainerBattleSession(
           (choice.kind === "move" && integer(choice.moveId, 0, 354)) ||
           (choice.kind === "switch" && ownsTarget) ||
           (choice.kind === "item" &&
-            choice.item === "full-restore" &&
+            CONSUMABLE_ITEM_IDS.includes(
+              choice.item as (typeof CONSUMABLE_ITEM_IDS)[number],
+            ) &&
+            (choice.item === "max-ether"
+              ? ownTeam.pokemons.some(
+                  (capture) =>
+                    capture.captureId === choice.captureId &&
+                    capture.moves?.some((move) => move.id === choice.moveId),
+                )
+              : choice.moveId === undefined) &&
             ownsTarget)
         ))
     )

@@ -694,6 +694,7 @@ export default function PvpBattlePanel({
               onAction={action}
               allowItems
               itemStock={state.inventory ?? { a: 0, b: 0 }}
+              consumableStock={state.itemInventory}
               allowForfeit
               automaticSide={state.mode === "trainer" ? "b" : undefined}
               disabled={

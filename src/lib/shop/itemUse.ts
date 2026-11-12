@@ -3,7 +3,13 @@ import { combatKey } from "@/lib/emerald/types";
 import { transactPvpParty } from "@/store/store";
 import { pvpPartyRevision } from "@/store/accountStorage";
 import { localBattleActive, partyWithWallet, validWallet } from "./wallet";
-import type { ItemUse, Wallet } from "./types";
+import {
+  CONSUMABLE_ITEM_IDS,
+  SHOP_ITEM_IDS,
+  type ConsumableItemId,
+  type ItemUse,
+  type Wallet,
+} from "./types";
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 const id = (value: unknown) =>
@@ -19,7 +25,12 @@ export function validItemUse(value: unknown): value is ItemUse {
     id(item.captureId) &&
     Number.isSafeInteger(item.userId) &&
     item.userId > 0 &&
-    item.itemId === "full-restore" &&
+    CONSUMABLE_ITEM_IDS.includes(item.itemId) &&
+    (item.itemId === "max-ether"
+      ? Number.isSafeInteger(item.moveId) &&
+        Number(item.moveId) >= 1 &&
+        Number(item.moveId) <= 354
+      : item.moveId === undefined) &&
     ["party", "local-battle"].includes(item.context) &&
     typeof item.planHash === "string" &&
     /^[a-f0-9]{64}$/.test(item.planHash) &&
@@ -46,26 +57,34 @@ export function prepareItemUse(
   captureId: string,
   expectedWalletRevision: number,
   plan: (party: PartyState, captureId: string) => Promise<PartyState>,
+  itemId: ConsumableItemId = "full-restore",
+  moveId?: number,
 ): Promise<void> {
   return transactPvpParty(userId, async (party) => {
     if (
       !id(clientId) ||
       !id(requestId) ||
       !id(captureId) ||
-      !revision(expectedWalletRevision)
+      !revision(expectedWalletRevision) ||
+      !CONSUMABLE_ITEM_IDS.includes(itemId) ||
+      (itemId === "max-ether"
+        ? !Number.isSafeInteger(moveId) ||
+          Number(moveId) < 1 ||
+          Number(moveId) > 354
+        : moveId !== undefined)
     )
-      throw new Error("La solicitud de Full Restore no es válida.");
+      throw new Error("La solicitud de uso del objeto no es válida.");
     if (party.pvpLock || party.shopLock || party.resetLock || party.itemUseLock)
       throw new Error(
-        "Termina la batalla reservada o la operación pendiente antes de usar Full Restore.",
+        "Termina la batalla reservada o la operación pendiente antes de usar un objeto.",
       );
     if (
       party.bag?.walletUserId !== userId ||
       party.bag.walletRevision !== expectedWalletRevision
     )
-      throw new Error("Sincroniza tu inventario antes de usar Full Restore.");
-    if ((party.bag.items?.["full-restore"] ?? 0) < 1)
-      throw new Error("No tienes Full Restore en tu Bag.");
+      throw new Error("Sincroniza tu inventario antes de usar un objeto.");
+    if ((party.bag.items?.[itemId] ?? 0) < 1)
+      throw new Error("No tienes existencias de este objeto en tu Bag.");
     const context = localBattleActive(party) ? "local-battle" : "party";
     const prepared = clone(await plan(clone(party), captureId));
     if (
@@ -74,7 +93,11 @@ export function prepareItemUse(
       prepared.resetLock ||
       prepared.itemUseLock
     )
-      throw new Error("No se pudo preparar Full Restore para esta partida.");
+      throw new Error("No se pudo preparar el objeto para esta partida.");
+    if (combatKey(prepared) === combatKey(party))
+      throw new Error(
+        "El objeto no tendría efecto; no se consumió ninguna unidad.",
+      );
     const planHash = await itemUseHash(prepared);
     const expectedCombatHash = await itemUseHash(combatKey(party));
     return {
@@ -86,6 +109,8 @@ export function prepareItemUse(
           clientId,
           requestId,
           captureId,
+          itemId,
+          ...(moveId === undefined ? {} : { moveId }),
           context,
           planHash,
           expectedWalletRevision,
@@ -122,12 +147,14 @@ export function applyItemUse(
       return { party, value: "ignored" as const };
     if (
       lock.captureId !== receipt.captureId ||
+      (lock.itemId ?? "full-restore") !== receipt.itemId ||
+      lock.moveId !== receipt.moveId ||
       lock.context !== receipt.context ||
       lock.planHash !== receipt.planHash ||
       lock.expectedWalletRevision !== receipt.expectedWalletRevision
     )
       throw new Error(
-        "El recibo no corresponde al Full Restore preparado en este navegador.",
+        "El recibo no corresponde al objeto preparado en este navegador.",
       );
     if (receipt.status === "cancelled") {
       if (lock.appliedWalletRevision !== undefined)
@@ -148,20 +175,25 @@ export function applyItemUse(
       return { party, value: "ignored" as const };
     if (party.pvpLock || party.shopLock || party.resetLock)
       throw new Error(
-        "La partida conserva otra reserva; no se aplicó Full Restore.",
+        "La partida conserva otra reserva; no se aplicó el objeto.",
       );
     let next = party;
     if (lock.appliedWalletRevision === undefined) {
       if (
         wallet.revision !== receipt.walletRevision ||
         wallet.balance !== party.bag?.money ||
-        (wallet.items["full-restore"] ?? 0) !==
-          (party.bag?.items?.["full-restore"] ?? 0) - 1 ||
+        (wallet.items[receipt.itemId] ?? 0) !==
+          (party.bag?.items?.[receipt.itemId] ?? 0) - 1 ||
+        SHOP_ITEM_IDS.some(
+          (itemId) =>
+            itemId !== receipt.itemId &&
+            (wallet.items[itemId] ?? 0) !== (party.bag?.items?.[itemId] ?? 0),
+        ) ||
         (await itemUseHash(combatKey(party))) !== lock.expectedCombatHash ||
         (await itemUseHash(lock.prepared)) !== lock.planHash
       )
         throw new Error(
-          "La partida o el inventario no coincide con Full Restore. Recupera la operación original.",
+          "La partida o el inventario no coincide con el objeto. Recupera la operación original.",
         );
       next = partyWithWallet(clone(lock.prepared), wallet);
       next = {
@@ -171,9 +203,7 @@ export function applyItemUse(
         itemUseLock: { ...lock, appliedWalletRevision: receipt.walletRevision },
       };
     } else if (lock.appliedWalletRevision !== receipt.walletRevision) {
-      throw new Error(
-        "El Full Restore guardado no coincide con su confirmación.",
-      );
+      throw new Error("El objeto guardado no coincide con su confirmación.");
     }
     if (receipt.status === "applied")
       next = {

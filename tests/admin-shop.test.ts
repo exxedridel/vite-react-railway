@@ -44,7 +44,7 @@ test("purchase quantities reject fractions, zero, non-finite values and amounts 
   assert.equal(maximumShopQuantity(500, 0), 0);
 });
 
-test("display catalog retains the six current Poké Mart prices", () => {
+test("display catalog includes PP recovery items at the agreed prices", () => {
   assert.deepEqual(
     SHOP_ITEMS.map(({ id, price }) => [id, price]),
     [
@@ -52,6 +52,8 @@ test("display catalog retains the six current Poké Mart prices", () => {
       ["great-ball", 300],
       ["ultra-ball", 450],
       ["full-restore", 350],
+      ["max-ether", 350],
+      ["max-elixir", 700],
       ["tm", 500],
       ["bicycle", 1200],
     ],

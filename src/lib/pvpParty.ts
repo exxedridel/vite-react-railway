@@ -21,6 +21,7 @@ import {
   type PokemonStatus,
 } from "@/types/pokemon";
 import { TIMED_STATUSES, validTurns } from "@/lib/statusTurns";
+import { getMaxMovePp } from "@/lib/movePp";
 import {
   stablePvpJson,
   type PvpSnapshot,
@@ -179,6 +180,13 @@ function validatePokemons(pokemons: CapturedPokemon[]): void {
       capture.moves.length < 1 ||
       capture.moves.length > 4 ||
       capture.moves.some((move) => !isGenerationThreeMove(move.id)) ||
+      capture.moves.some(
+        (move) =>
+          move.currentPp !== undefined &&
+          (!Number.isSafeInteger(move.currentPp) ||
+            move.currentPp < 0 ||
+            move.currentPp > getMaxMovePp(move)),
+      ) ||
       new Set(capture.moves.map((move) => move.id)).size !==
         capture.moves.length
     )
@@ -396,6 +404,33 @@ function validateResult(result: PvpResult, snapshot: PvpSnapshot): void {
           "El resultado contiene contadores de estado no válidos.",
         );
     }
+    if (patch.movesPp !== undefined) {
+      const learned = new Map(
+        (capture.moves ?? []).map((move) => [move.id, move]),
+      );
+      const seenMoves = new Set<number>();
+      if (
+        !Array.isArray(patch.movesPp) ||
+        patch.movesPp.length !== learned.size
+      )
+        throw new Error(
+          "El resultado no contiene los PP de todos los movimientos originales.",
+        );
+      for (const entry of patch.movesPp) {
+        const move = learned.get(entry?.moveId);
+        if (
+          !move ||
+          seenMoves.has(entry.moveId) ||
+          !Number.isSafeInteger(entry.currentPp) ||
+          entry.currentPp < 0 ||
+          entry.currentPp > getMaxMovePp(move)
+        )
+          throw new Error(
+            "El resultado contiene movimientos o PP no válidos; la partida sigue bloqueada.",
+          );
+        seenMoves.add(entry.moveId);
+      }
+    }
     seen.add(patch.captureId);
   }
 }
@@ -453,6 +488,16 @@ export function applyPvpResult(result: PvpResult): Promise<void> {
       const patch = patches.get(capture.captureId)!;
       return {
         ...capture,
+        ...(patch.movesPp
+          ? {
+              moves: capture.moves?.map((move) => ({
+                ...move,
+                currentPp: patch.movesPp!.find(
+                  (entry) => entry.moveId === move.id,
+                )!.currentPp,
+              })),
+            }
+          : {}),
         pokemon: {
           ...capture.pokemon,
           stats: capture.pokemon.stats.map((stat) =>

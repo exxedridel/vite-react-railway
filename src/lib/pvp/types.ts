@@ -1,6 +1,7 @@
 import type { ChatUser } from "@/lib/testMessages";
 import type { CapturedPokemon, PokemonStatus } from "@/types/pokemon";
 import type { EmeraldRequest } from "@/lib/emerald/types";
+import type { ConsumableItemId } from "@/lib/shop/types";
 import type {
   TrainerBattleSession,
   TrainerSide,
@@ -18,7 +19,7 @@ export type PvpPhase =
 export type PvpChoice =
   | { kind: "move"; moveId: number }
   | { kind: "switch"; captureId: string }
-  | { kind: "item"; item: "full-restore"; captureId: string }
+  | { kind: "item"; item: ConsumableItemId; captureId: string; moveId?: number }
   | { kind: "wait" }
   | { kind: "cancel" }
   | { kind: "forfeit" };
@@ -39,6 +40,7 @@ export type PvpPatch = {
   hp: number;
   statuses: PokemonStatus[];
   statusTurns: Record<string, number>;
+  movesPp?: { moveId: number; currentPp: number }[];
 };
 export type PvpResult = {
   battleId: string;
@@ -96,6 +98,9 @@ export type PvpBattleView = {
   session?: TrainerBattleSession | null;
   commands?: PvpCommand[];
   inventory?: Partial<Record<TrainerSide, number>>;
+  itemInventory?: Partial<
+    Record<TrainerSide, Partial<Record<ConsumableItemId, number>>>
+  >;
   side?: TrainerSide;
   snapshot?: PvpSnapshot;
   team?: TrainerTeam;

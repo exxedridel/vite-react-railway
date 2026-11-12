@@ -17,4 +17,6 @@ export type PokemonMove = {
 };
 export type LearnedMove = PokemonMove & {
   source: "starter" | "wild" | "tm" | "hm";
+  /** Remaining PP in this saved party. `pp` remains the catalog maximum. */
+  currentPp?: number;
 };

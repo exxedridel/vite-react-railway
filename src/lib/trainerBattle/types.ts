@@ -2,12 +2,10 @@ import type { CapturedPokemon } from "@/types/pokemon";
 import type { BattleResult } from "@/types/battle";
 import type { BattleField } from "@/lib/battleField";
 import type { EmeraldChoice, EmeraldRequest } from "@/lib/emerald/types";
+import type { ConsumableItemId } from "@/lib/shop/types";
 
 export type TrainerSide = "a" | "b";
-export type TrainerChoice =
-  | EmeraldChoice
-  | { kind: "forfeit" }
-  | { kind: "item"; item: "full-restore"; captureId: string };
+export type TrainerChoice = EmeraldChoice | { kind: "forfeit" };
 export type TrainerPokemon = CapturedPokemon & {
   trainerStatusContext?: {
     disabledMoveId?: number;
@@ -43,7 +41,15 @@ export type TrainerBattleSession = {
   networkBattleId?: string;
   networkItems?: {
     pending: Partial<
-      Record<TrainerSide, { commandId: string; captureId: string }>
+      Record<
+        TrainerSide,
+        {
+          commandId: string;
+          captureId: string;
+          itemId?: ConsumableItemId;
+          moveId?: number;
+        }
+      >
     >;
     used: string[];
   };

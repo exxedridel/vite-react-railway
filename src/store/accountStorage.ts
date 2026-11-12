@@ -1,5 +1,7 @@
 import type { PartyState } from "@/slices/partySlice";
 import { stablePvpJson } from "@/lib/pvp/types";
+import { getMaxMovePp } from "@/lib/movePp";
+import { CONSUMABLE_ITEM_IDS } from "@/lib/shop/types";
 
 export const PVP_PARTY_COMMIT = "party/pvpCommit";
 let pvpSyncBlocked = false;
@@ -150,6 +152,7 @@ export function decodeAccountParty(
       )
         throw new Error();
       ids.add(capture.captureId);
+      validateStoredMovePp(capture.moves);
     }
     if (
       party.opponent !== undefined &&
@@ -157,6 +160,7 @@ export function decodeAccountParty(
       (!isRecord(party.opponent) || !validPokemon(party.opponent.pokemon))
     )
       throw new Error();
+    if (isRecord(party.opponent)) validateStoredMovePp(party.opponent.moves);
     if (
       party.pvpRevision !== undefined &&
       (!Number.isSafeInteger(party.pvpRevision) ||
@@ -217,6 +221,13 @@ export function decodeAccountParty(
         !/^[\w.:-]{1,128}$/.test(lock.clientId) ||
         typeof lock.captureId !== "string" ||
         !lock.captureId ||
+        (lock.itemId !== undefined &&
+          !(CONSUMABLE_ITEM_IDS as readonly unknown[]).includes(lock.itemId)) ||
+        (lock.itemId === "max-ether"
+          ? !Number.isSafeInteger(lock.moveId) ||
+            Number(lock.moveId) < 1 ||
+            Number(lock.moveId) > 354
+          : lock.moveId !== undefined) ||
         !["party", "local-battle"].includes(String(lock.context)) ||
         typeof lock.planHash !== "string" ||
         !/^[a-f0-9]{64}$/.test(lock.planHash) ||
@@ -247,6 +258,26 @@ export function decodeAccountParty(
     throw new Error(
       "La partida guardada no se pudo interpretar. Se conserva sin sobrescribir para poder recuperarla.",
     );
+  }
+}
+
+function validateStoredMovePp(moves: unknown): void {
+  if (moves === undefined) return;
+  if (!Array.isArray(moves)) throw new Error();
+  for (const move of moves) {
+    if (!isRecord(move)) throw new Error();
+    if (move.currentPp === undefined) continue;
+    if (
+      !Number.isSafeInteger(move.id) ||
+      !Number.isSafeInteger(move.currentPp) ||
+      Number(move.currentPp) < 0 ||
+      Number(move.currentPp) >
+        getMaxMovePp({
+          id: Number(move.id),
+          pp: typeof move.pp === "number" ? move.pp : null,
+        })
+    )
+      throw new Error();
   }
 }
 

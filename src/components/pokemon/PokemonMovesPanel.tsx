@@ -24,6 +24,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import PokemonTypeBadges from "./PokemonTypeBadges";
+import { getCurrentMovePp, getMaxMovePp } from "@/lib/movePp";
 
 type Choice = { kind: "initial" } | { kind: "tm"; replaceMoveId?: number };
 const TYPE_IDS: Record<string, number> = {
@@ -75,10 +76,13 @@ function MoveTypeIcon({ type }: { type: string }) {
 function MoveDetails({
   move,
   automatic = false,
+  remaining,
 }: {
   move: PokemonMove;
   automatic?: boolean;
+  remaining?: number;
 }) {
+  const maxPp = getMaxMovePp(move);
   move = automatic ? getWildMove(move, true) : getCuratedMove(move);
   return (
     <div className="space-y-2">
@@ -101,7 +105,9 @@ function MoveDetails({
         </div>
         <div>
           <dt className="text-muted-foreground">PP</dt>
-          <dd className="font-semibold">{move.pp ?? "—"}</dd>
+          <dd className="font-semibold">
+            {remaining === undefined ? maxPp : `${remaining}/${maxPp}`}
+          </dd>
         </div>
       </dl>
       <p className="text-xs leading-relaxed text-muted-foreground">
@@ -343,6 +349,14 @@ export default function PokemonMovesPanel({
   const opponent = useAppSelector((state) => state.party.opponent);
   const runtime = useAppSelector((state) => state.party.emerald);
   const lastResult = useAppSelector((state) => state.party.lastBattleResult);
+  const fieldActionUsed = useAppSelector(
+    (state) =>
+      !state.party.emerald &&
+      !!(
+        state.party.battleField?.playerItemUsedThisTurn ||
+        state.party.battleField?.playerSwitchedThisTurn
+      ),
+  );
 
   if (!capture) return null;
   const moves = capture.moves ?? [];
@@ -377,12 +391,19 @@ export default function PokemonMovesPanel({
             className="flex flex-col gap-3 rounded-xl border p-3"
           >
             <h3 className="font-semibold">{move.displayName}</h3>
-            <MoveDetails move={move} automatic={opponent?.kind === "wild"} />
+            <MoveDetails
+              move={move}
+              automatic={opponent?.kind === "wild"}
+              remaining={getCurrentMovePp(move)}
+            />
             <Button
               type="button"
               size="sm"
               className="mt-auto w-full gap-2"
               disabled={
+                fieldActionUsed ||
+                (getCurrentMovePp(move) === 0 &&
+                  !runtime?.requests.player.locked) ||
                 !!runtime?.pending.player ||
                 !!runtime?.ended ||
                 (!!runtime &&
@@ -429,6 +450,33 @@ export default function PokemonMovesPanel({
           </Button>
         ))}
       </div>
+      {moves.length > 0 &&
+        moves.every((move) => getCurrentMovePp(move) === 0) && (
+          <div className="mt-3 space-y-2 rounded-xl border p-3">
+            <p className="text-xs text-muted-foreground">
+              Todos los movimientos están sin PP. Puedes usar Struggle o un
+              objeto para restaurarlos.
+            </p>
+            <Button
+              variant="outline"
+              className="w-full"
+              disabled={
+                !opponent ||
+                fieldActionUsed ||
+                !!runtime?.pending.player ||
+                !!runtime?.ended ||
+                !!runtime?.requests.player.waiting ||
+                !!runtime?.requests.player.forceSwitch ||
+                !!runtime?.requests.player.locked ||
+                getCurrentHp(capture.pokemon) <= 0 ||
+                getCurrentHp(opponent.pokemon) <= 0
+              }
+              onClick={() => setExecutingMoveId(165)}
+            >
+              Usar Struggle
+            </Button>
+          </div>
+        )}
       <p className="mt-3 text-xs text-muted-foreground">
         Aprender o sustituir con TM cuesta una carta física por movimiento. Los
         movimientos aprendidos se guardan en tu equipo.

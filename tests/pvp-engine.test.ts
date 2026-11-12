@@ -226,14 +226,16 @@ test("forfeit resolves a winner without running queued attacks, consuming PP or 
   assert.deepEqual(Object.keys(patches[0]).sort(), [
     "captureId",
     "hp",
+    "movesPp",
     "statusTurns",
     "statuses",
   ]);
   assert.equal(patches[0].hp, 17);
   assert.equal(patches[1].hp, 0);
+  assert.deepEqual(patches[0].movesPp, [{ moveId: 150, currentPp: 40 }]);
 });
 
-test("PvP commands preserve native serialized state/PRNG, own request identity and PP only inside runtime", () => {
+test("PvP commands preserve native serialized state/PRNG, own request identity and persistent PP", () => {
   const setup = createPvpTrainerSession(view());
   for (const team of Object.values(setup.teams))
     for (const capture of team.pokemons) capture.statuses = [];
@@ -585,3 +587,62 @@ test("authorized Full Restore is reserved until native execution; cancelled and 
   );
   assert.ok(validTrainerBattleSession(done));
 });
+
+for (const item of ["max-ether", "max-elixir"] as const) {
+  test(`${item}: an authorized native effect consumes the selected item and exports exact learned PP`, () => {
+    const state = view();
+    const capture = state.players.a.snapshot!.pokemons[0];
+    for (const player of Object.values(state.players)) {
+      if (!player) continue;
+      const active = player.snapshot!.pokemons[0];
+      active.statuses = [];
+      active.pokemon.stats.find((stat) => stat.name === "hp")!.value = getMaxHp(
+        active.pokemon,
+      )!;
+    }
+    capture.moves = [
+      { ...clone(trainerMoves.find((m) => m.id === 150)!), currentPp: 0 },
+      { ...clone(trainerMoves.find((m) => m.id === 45)!), currentPp: 1 },
+    ];
+    const started = startTrainerBattle(createPvpTrainerSession(state), seed);
+    const queued = applyPvpTrainerCommand(started, {
+      commandId: `pp-${item}`,
+      userId: 99,
+      side: "a",
+      requestKey: pvpRequestKey(started, "a"),
+      inventoryAuthorized: true,
+      choice: {
+        kind: "item",
+        item,
+        captureId: capture.captureId,
+        ...(item === "max-ether" ? { moveId: 150 } : {}),
+      },
+    });
+    assert.equal(queued.teams.a.pokemons[0].moves![0].currentPp, 0);
+    assert.deepEqual(queued.networkItems!.used, []);
+    assert.equal(queued.networkItems!.pending.a!.itemId, item);
+    const resumed = JSON.parse(JSON.stringify(queued));
+    const done = applyPvpTrainerCommand(resumed, {
+      commandId: "resolve-pp",
+      userId: 99,
+      side: "b",
+      requestKey: pvpRequestKey(resumed, "b"),
+      choice: { kind: "move", moveId: 150 },
+    });
+    const moves = done.teams.a.pokemons[0].moves!;
+    assert.equal(moves[0].currentPp, moves[0].pp);
+    assert.equal(moves[1].currentPp, item === "max-ether" ? 1 : moves[1].pp);
+    assert.deepEqual(done.networkItems!.used, [`pp-${item}`]);
+    assert.deepEqual(done.networkItems!.pending, {});
+    const finished = forfeitTrainerBattle(done, "b");
+    assert.deepEqual(
+      pvpTeamPatches(finished, "a")[0].movesPp,
+      moves.map((m) => ({ moveId: m.id, currentPp: m.currentPp })),
+    );
+    assert.equal(
+      capture.moves[0].currentPp,
+      0,
+      "original snapshot remains immutable",
+    );
+  });
+}

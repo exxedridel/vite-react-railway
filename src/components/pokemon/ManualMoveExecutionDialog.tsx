@@ -19,6 +19,7 @@ import {
   requiresConditionCheck,
 } from "@/lib/battleEngine";
 import { getCurrentHp } from "@/lib/pokemonStats";
+import { getCurrentMovePp, getMaxMovePp, getStruggleMove } from "@/lib/movePp";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -73,7 +74,16 @@ export default function ManualMoveExecutionDialog({
   const storedMove = (
     actorSide === "opponent" ? opponent?.moves : capture?.moves
   )?.find((m) => m.id === moveId);
-  const move = storedMove ? getCuratedMove(storedMove) : undefined;
+  const learned = actorSide === "opponent" ? opponent?.moves : capture?.moves;
+  const synthetic =
+    moveId === 165 &&
+    !!learned?.length &&
+    learned.every((move) => getCurrentMovePp(move) === 0);
+  const move = storedMove
+    ? getCuratedMove(storedMove)
+    : synthetic
+      ? getCuratedMove(getStruggleMove())
+      : undefined;
   const needsConditionCheck =
     !!participants && requiresConditionCheck(participants.attacker, moveId);
   let manualReason: string | null = move ? getMoveSupportReason(move) : null;
@@ -82,6 +92,9 @@ export default function ManualMoveExecutionDialog({
   if (!capture || !opponent || !move)
     reason = "Selecciona un Pokémon, un movimiento aprendido y un oponente.";
   else {
+    if (storedMove && !synthetic && getCurrentMovePp(storedMove) === 0)
+      reason =
+        "Este movimiento no tiene PP. Usa Max Ether o Max Elixir para recuperarlos.";
     if (actorSide === "opponent" && opponent.kind !== "wild")
       reason = "El encuentro salvaje ya no está disponible.";
     if (!reason && getCurrentHp(capture.pokemon) <= 0)
@@ -175,6 +188,13 @@ export default function ManualMoveExecutionDialog({
                 Atacante: {participants?.attacker.pokemon.name ?? "—"} →
                 Objetivo: {participants?.defender.pokemon.name ?? "—"}
               </p>
+              {move && (
+                <p className="text-sm">
+                  {synthetic
+                    ? "Struggle no consume PP de los movimientos aprendidos."
+                    : `PP: ${getCurrentMovePp(storedMove!)}/${getMaxMovePp(storedMove!)}`}
+                </p>
+              )}
               {move && (
                 <details className="text-sm">
                   <summary className="cursor-pointer text-muted-foreground">

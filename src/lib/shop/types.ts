@@ -5,10 +5,18 @@ export const SHOP_ITEM_IDS = [
   "great-ball",
   "ultra-ball",
   "full-restore",
+  "max-ether",
+  "max-elixir",
   "tm",
   "bicycle",
 ] as const;
 export type ShopItemId = (typeof SHOP_ITEM_IDS)[number];
+export const CONSUMABLE_ITEM_IDS = [
+  "full-restore",
+  "max-ether",
+  "max-elixir",
+] as const;
+export type ConsumableItemId = (typeof CONSUMABLE_ITEM_IDS)[number];
 export type Wallet = {
   userId: number;
   balance: number;
@@ -31,8 +39,9 @@ export type ItemUse = {
   requestId: string;
   userId: number;
   clientId: string;
-  itemId: "full-restore";
+  itemId: ConsumableItemId;
   captureId: string;
+  moveId?: number;
   context: "party" | "local-battle";
   planHash: string;
   expectedWalletRevision: number;

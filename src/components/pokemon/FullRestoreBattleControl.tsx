@@ -5,6 +5,7 @@ import { useShopContext } from "@/context/ShopContext";
 import { useAppSelector } from "@/store/hooks";
 import { isLocalPartyMutationBlocked } from "@/store/accountStorage";
 import { localBattleActive } from "@/lib/shop/wallet";
+import PpRestoreControls from "./PpRestoreControls";
 
 export default function FullRestoreBattleControl({
   captureId,
@@ -19,6 +20,7 @@ export default function FullRestoreBattleControl({
   const request = runtime?.requests.player;
   const unavailable =
     busy ||
+    shop.usingItem ||
     stock < 1 ||
     !shop.connected ||
     !shop.synced ||
@@ -27,7 +29,11 @@ export default function FullRestoreBattleControl({
     !!request?.waiting ||
     !!request?.forceSwitch ||
     !!request?.locked ||
-    (localBattleActive(party) && !!party.battleField?.playerItemUsedThisTurn);
+    (localBattleActive(party) &&
+      !!(
+        party.battleField?.playerItemUsedThisTurn ||
+        party.battleField?.playerSwitchedThisTurn
+      ));
   async function use() {
     if (unavailable) return;
     setBusy(true);
@@ -44,25 +50,28 @@ export default function FullRestoreBattleControl({
     }
   }
   return (
-    <div className="space-y-2 rounded-xl border p-3">
-      <Button
-        variant="outline"
-        className="w-full gap-2"
-        disabled={unavailable}
-        onClick={() => void use()}
-        data-testid="battle-full-restore"
-      >
-        <img
-          src="/admin-shop/full-restore.png"
-          alt=""
-          className="h-6 w-6 [image-rendering:pixelated]"
-        />
-        {busy ? "Confirmando…" : `Full Restore · ${stock}`}
-      </Button>
-      <p className="text-xs text-muted-foreground">
-        Consume 1 Full Restore de tu Bag y la acción de tu Pokémon en este
-        turno. Requiere conexión.
-      </p>
-    </div>
+    <>
+      <div className="space-y-2 rounded-xl border p-3">
+        <Button
+          variant="outline"
+          className="w-full gap-2"
+          disabled={unavailable}
+          onClick={() => void use()}
+          data-testid="battle-full-restore"
+        >
+          <img
+            src="/admin-shop/full-restore.png"
+            alt=""
+            className="h-6 w-6 [image-rendering:pixelated]"
+          />
+          {busy ? "Confirmando…" : `Full Restore · ${stock}`}
+        </Button>
+        <p className="text-xs text-muted-foreground">
+          Consume 1 Full Restore de tu Bag y la acción de tu Pokémon en este
+          turno. Requiere conexión.
+        </p>
+      </div>
+      <PpRestoreControls captureId={captureId} battle disabled={busy} />
+    </>
   );
 }

@@ -1,10 +1,11 @@
 import type { PartyState } from "@/slices/partySlice";
 import type { BattleResult } from "@/types/battle";
+import type { ConsumableItemId } from "@/lib/shop/types";
 export type BattleSide = "player" | "opponent";
 export type EmeraldChoice =
   | { kind: "move"; moveId: number }
   | { kind: "switch"; captureId: string }
-  | { kind: "item"; item: "full-restore"; captureId: string }
+  | { kind: "item"; item: ConsumableItemId; captureId: string; moveId?: number }
   | { kind: "wait" };
 export type EmeraldRequest = {
   moves: {

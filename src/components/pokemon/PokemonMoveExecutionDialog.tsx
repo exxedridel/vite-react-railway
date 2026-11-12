@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { submitEmeraldAction } from "@/lib/emerald/commands";
 import { getWildMove } from "@/lib/emerald/moveInfo";
+import { getCurrentMovePp, getMaxMovePp, getStruggleMove } from "@/lib/movePp";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -33,7 +34,17 @@ function WildMoveExecutionDialog({
   const raw = (
     actorSide === "player" ? capture?.moves : party.opponent?.moves
   )?.find((m) => m.id === moveId);
-  const move = raw ? getWildMove(raw) : undefined;
+  const learned =
+    actorSide === "player" ? capture?.moves : party.opponent?.moves;
+  const synthetic =
+    moveId === 165 &&
+    !!learned?.length &&
+    learned.every((move) => getCurrentMovePp(move) === 0);
+  const move = raw
+    ? getWildMove(raw)
+    : synthetic
+      ? getStruggleMove()
+      : undefined;
   const runtime = party.emerald;
   const option = runtime?.requests[actorSide].moves.find(
     (m) => m.id === moveId,
@@ -41,6 +52,10 @@ function WildMoveExecutionDialog({
   const unavailable =
     runtime?.pending[actorSide] ||
     runtime?.ended ||
+    (!synthetic &&
+      !!raw &&
+      getCurrentMovePp(raw) === 0 &&
+      !runtime?.requests[actorSide].locked) ||
     (runtime && (!option || option.disabled));
   async function confirm() {
     setBusy(true);
@@ -80,6 +95,11 @@ function WildMoveExecutionDialog({
         {option && (
           <p className="text-sm">
             PP: {option.pp}/{option.maxpp}
+          </p>
+        )}
+        {!option && raw && (
+          <p className="text-sm">
+            PP: {getCurrentMovePp(raw)}/{getMaxMovePp(raw)}
           </p>
         )}
         <p className="text-xs text-muted-foreground">

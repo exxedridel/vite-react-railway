@@ -3,7 +3,7 @@
 Frontend del juego con React, TypeScript y Vite. `mysql-restapi` autentica y
 administra usuarios; `nest-mongo-pokedex` comunica jugadores y conserva las
 batallas PvP, las carteras y los recibos del Poké Mart. El motor de combate se
-ejecuta en el panel administrador. Versión de la aplicación: **2.3.0**.
+ejecuta en el panel administrador. Versión de la aplicación: **2.4.0**.
 
 ## Desarrollo y comprobaciones
 
@@ -116,8 +116,8 @@ No se permite comprar durante PvP, Trainer Battle ni un encuentro local activo.
 Una compra en curso también bloquea temporalmente las acciones de la Party y
 una nueva reserva de batalla. Una respuesta antigua no retira ese bloqueo. Si
 falla el guardado local, la pantalla ofrece **Recuperar compra** y conserva el
-recibo pendiente. Full Restore ya consume existencias; los demás objetos todavía
-conservan sus cantidades sin uso desde el inventario.
+recibo pendiente. Full Restore, Max Ether y Max Elixir consumen existencias;
+los demás objetos conservan sus cantidades sin uso desde el inventario.
 
 ### Full Restore desde la Bag
 
@@ -148,6 +148,34 @@ admin, un checkpoint pendiente se guarda antes del débito; la recuperación
 completa ese mismo checkpoint y deduplica por batalla/comando. Se conserva el
 motor y su azar en React. No se traslada la Party general al servidor.
 
+### PP, Max Ether y Max Elixir
+
+Cada movimiento aprendido conserva sus **PP restantes** al salir del combate,
+recargar y entrar en otra batalla. `moves[].pp` es el máximo del catálogo y
+`moves[].currentPp` es el recurso de ese Pokémon. Los movimientos nuevos y los
+guardados antiguos sin PP restantes comienzan al máximo; si existe un encuentro
+nativo guardado, se recuperan sus PP gastados antes de retirar ese encuentro.
+Los PP0 se conservan. No hay PP Ups ni reinicio general de partidas.
+
+Usar un movimiento descuenta PP según el motor Pokémon: una unidad por
+lanzamiento normal, sin repetir el descuento en una continuación, recarga o
+golpe de un ataque múltiple. Los ataques agotados no pueden seleccionarse;
+si todos están agotados aparece **Struggle**, sin añadirlo al moveset.
+
+- **Max Ether — 350 Pokedollars:** restaura todos los PP de un movimiento que
+  se selecciona explícitamente.
+- **Max Elixir — 700 Pokedollars:** restaura los PP de todos los movimientos
+  del Pokémon seleccionado.
+
+Ambos están en Poké Mart y en las acciones de la Party y del combate individual.
+En PvP/Trainer los selecciona el administrador usando la Bag del lado humano.
+Se puede elegir cualquier miembro propio, incluso debilitado, sin curarle HP.
+Si no faltan PP, no se consume objeto ni turno. En batalla gastan la acción del
+turno y respetan los reemplazos y continuaciones obligatorios. Mantienen los
+mismos bloqueos, guardado comprobado y recuperación idempotente que Full Restore.
+Full Restore continúa sin restaurar PP. El NPC conserva su elección automática
+entre movimientos legales y no utiliza objetos de jugadores.
+
 La cartera es la autoridad para saldo y objetos comprados; el resto de la partida
 sigue en el navegador. No hay sondeo periódico de saldos: se publican cambios por
 Socket.IO. Se mantiene una sola réplica Nest. Protocolo: `../SHOP_PROTOCOL.md`.
@@ -159,6 +187,7 @@ nuevas; `/shop` usa el mismo origen WebSocket ya configurado. Nest crea
 ```bash
 npm run test:shop:wallet
 npm run test:shop:ui
+npm run test:pp
 npm run test:shop:browser
 ```
 
@@ -223,9 +252,9 @@ este frontend y recargar los navegadores originales. No requiere variables nueva
    temporales y modificadores se limpian al finalizar. Pokedollars, medallas, especie,
    nivel y movimientos permanecen en sus respectivas partidas.
 
-La mochila conserva cantidades de objetos comprados. Full Restore puede usarse
-en combate con existencias y consume la acción de ese lado. Los PP se consumen
-en el runtime de esta batalla; `moves[].pp` sigue siendo información del catálogo.
+La mochila conserva cantidades de objetos comprados. Full Restore, Max Ether y
+Max Elixir requieren existencias y consumen la acción de ese lado. Los PP restantes
+se conservan al salir mediante `movesPp`; `moves[].pp` sigue siendo el máximo del catálogo.
 No se añade XP, premios o intercambio de Pokémon en este flujo.
 
 Durante la reserva se bloquean globalmente las acciones `party/*`: curación,

@@ -30,6 +30,7 @@ import {
 } from "../src/lib/shop/wallet";
 import type { GameReset, ItemUse, Wallet } from "../src/lib/shop/types";
 import { applyItemUse, prepareItemUse } from "../src/lib/shop/itemUse";
+import { preparePartyItem } from "../src/lib/fullRestorePlan";
 import { getCurrentHp, getMaxHp } from "../src/lib/pokemonStats";
 declare const testStorage: {
   getItem(key: string): string | null;
@@ -555,6 +556,153 @@ export async function runAccountStorageTests() {
   assert.equal(saved(606).itemUseLock, undefined);
   passed.push(
     "Full Restore saves its exact effect before debit, heals and consumes once before ACK, and recovers storage/ACK loss without reusing stock",
+  );
+  const ppParty = clone(store.getState().party);
+  ppParty.bag = {
+    ...ppParty.bag!,
+    items: { "full-restore": 1, "max-ether": 2, "max-elixir": 1 },
+    walletRevision: 1,
+  };
+  ppParty.pokemons[0].moves = [
+    {
+      id: 33,
+      name: "tackle",
+      displayName: "Tackle",
+      type: "normal",
+      damageClass: "physical",
+      power: 35,
+      accuracy: 95,
+      pp: 35,
+      currentPp: 0,
+      priority: 0,
+      description: "Test",
+      source: "starter",
+    },
+    {
+      id: 45,
+      name: "growl",
+      displayName: "Growl",
+      type: "normal",
+      damageClass: "status",
+      power: null,
+      accuracy: 100,
+      pp: 40,
+      currentPp: 2,
+      priority: 0,
+      description: "Test",
+      source: "starter",
+    },
+  ];
+  store.dispatch({ type: PVP_PARTY_COMMIT, payload: ppParty });
+  await persistor.flush();
+  await prepareItemUse(
+    606,
+    "item-client",
+    "ether-use",
+    targetId,
+    1,
+    (party, captureId) => preparePartyItem(party, captureId, "max-ether", 33),
+    "max-ether",
+    33,
+  );
+  const etherLock = store.getState().party.itemUseLock!;
+  assert.equal(saved(606).pokemons[0].moves[0].currentPp, 0);
+  const etherReceipt: ItemUse = {
+    ...receipt,
+    requestId: "ether-use",
+    itemId: "max-ether",
+    moveId: 33,
+    planHash: etherLock.planHash,
+    expectedWalletRevision: 1,
+    walletRevision: 2,
+  };
+  const etherWallet = wallet(606, 2, 200, {
+    "full-restore": 1,
+    "max-ether": 1,
+    "max-elixir": 1,
+  });
+  await assert.rejects(
+    applyItemUse(etherWallet, { ...etherReceipt, moveId: 45 }, "item-client"),
+    /recibo/,
+  );
+  await assert.rejects(
+    applyItemUse(
+      { ...etherWallet, items: { ...etherWallet.items, "max-elixir": 0 } },
+      etherReceipt,
+      "item-client",
+    ),
+    /inventario/,
+  );
+  testStorage.failWritesFor.add(accountStorageKey(606));
+  await assert.rejects(
+    applyItemUse(etherWallet, etherReceipt, "item-client"),
+    /guardar/,
+  );
+  testStorage.failWritesFor.clear();
+  await applyItemUse(etherWallet, etherReceipt, "item-client");
+  assert.equal(saved(606).pokemons[0].moves[0].currentPp, 35);
+  assert.equal(saved(606).pokemons[0].moves[1].currentPp, 2);
+  await clearAccountStore();
+  await activateAccountStore(606);
+  await applyItemUse(
+    etherWallet,
+    { ...etherReceipt, status: "applied" },
+    "item-client",
+  );
+  assert.equal(saved(606).bag.items["max-ether"], 1);
+  await assert.rejects(
+    prepareItemUse(
+      606,
+      "item-client",
+      "ether-full",
+      targetId,
+      2,
+      (party, captureId) => preparePartyItem(party, captureId, "max-ether", 33),
+      "max-ether",
+      33,
+    ),
+    /efecto/,
+  );
+  assert.equal(saved(606).itemUseLock, undefined);
+  await prepareItemUse(
+    606,
+    "item-client",
+    "elixir-use",
+    targetId,
+    2,
+    (party, captureId) => preparePartyItem(party, captureId, "max-elixir"),
+    "max-elixir",
+  );
+  const elixirReceipt: ItemUse = {
+    ...receipt,
+    requestId: "elixir-use",
+    itemId: "max-elixir",
+    planHash: store.getState().party.itemUseLock!.planHash,
+    expectedWalletRevision: 2,
+    walletRevision: 3,
+  };
+  const elixirWallet = wallet(606, 3, 200, {
+    "full-restore": 1,
+    "max-ether": 1,
+    "max-elixir": 0,
+  });
+  await applyItemUse(elixirWallet, elixirReceipt, "item-client");
+  assert.deepEqual(
+    saved(606).pokemons[0].moves.map(
+      (move: { currentPp: number }) => move.currentPp,
+    ),
+    [35, 40],
+  );
+  await applyItemUse(
+    elixirWallet,
+    { ...elixirReceipt, status: "applied" },
+    "item-client",
+  );
+  await applyItemUse(elixirWallet, elixirReceipt, "item-client");
+  assert.equal(saved(606).bag.items["max-elixir"], 0);
+  assert.equal(saved(606).bag.money, 200);
+  passed.push(
+    "Max Ether restores only its bound move, Max Elixir restores every move, exact debits survive storage/ACK failure and reload, and a full move costs no object",
   );
   await transactPvpParty(606, async (party) => {
     const before = JSON.stringify(store.getState().party);

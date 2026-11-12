@@ -103,6 +103,14 @@ import {
 import { PVP_PARTY_COMMIT } from "@/store/accountStorage";
 import { finishLegacyDelayedAttacks } from "@/lib/legacyDelayedAttacks";
 import type { PvpPartyLock, PvpPartyReceipt } from "@/lib/pvpParty";
+import type { ConsumableItemId } from "@/lib/shop/types";
+import {
+  getCurrentMovePp,
+  getStruggleMove,
+  hydratePartyMovePp,
+  normalizeMovePp,
+  restoreMovePp,
+} from "@/lib/movePp";
 type ExecuteMoveInput = {
   options?: MoveExecutionOptions;
   actorSide?: "player" | "opponent";
@@ -138,6 +146,8 @@ export type PartyState = {
     userId: number;
     clientId: string;
     captureId: string;
+    itemId?: ConsumableItemId;
+    moveId?: number;
     context: "party" | "local-battle";
     planHash: string;
     expectedWalletRevision: number;
@@ -611,11 +621,19 @@ const partySlice = createSlice({
         const opponent = state.opponent;
         if (actorSide !== "player" && actorSide !== "opponent") return;
         if (actorSide === "opponent" && opponent?.kind !== "wild") return;
-        const move = (
-          actorSide === "opponent" ? opponent?.moves : capture?.moves
-        )?.find((m) => m.id === moveId);
+        const learnedMoves =
+          actorSide === "opponent" ? opponent?.moves : capture?.moves;
+        const learnedMove = learnedMoves?.find((m) => m.id === moveId);
+        const struggling =
+          moveId === 165 &&
+          !learnedMove &&
+          !!learnedMoves?.length &&
+          learnedMoves.every((m) => getCurrentMovePp(m) === 0);
+        const move =
+          learnedMove ?? (struggling ? getStruggleMove() : undefined);
         if (!capture || !opponent || !move || !isGenerationThreeMove(move.id))
           return;
+        if (!struggling && getCurrentMovePp(move) === 0) return;
         if (
           battleContextKey(capture, opponent, state.battleField) !==
           expectedContext
@@ -659,6 +677,15 @@ const partySlice = createSlice({
             : { side: "opponent" },
         );
         result.actorSide = actorSide;
+        // An attempted move spends PP even when it misses or has no effect.
+        // Sleep/other inability to act and the all-empty fallback spend none.
+        const asleepWithoutMove =
+          attacker.statuses?.includes("asleep") &&
+          ![173, 214].includes(move.id);
+        if (learnedMove && result.outcome !== "blocked" && !asleepWithoutMove)
+          Object.assign(learnedMove, {
+            currentPp: getCurrentMovePp(learnedMove) - 1,
+          });
         if (result.delayedAttack) {
           state.battleField.pendingDelayedAttacks ??= [];
           state.battleField.pendingDelayedAttacks.push({
@@ -805,7 +832,9 @@ const partySlice = createSlice({
           // La limpieza de secundarios se aplica abajo, también a esta captura.
           statuses: [...(opponent.statuses ?? [])],
           statusTurns: { ...opponent.statusTurns },
-          moves: moves.map((move) => ({ ...move, source: "wild" })),
+          moves: moves.map((move) =>
+            normalizeMovePp({ ...move, source: "wild" as const }),
+          ),
           initialMovesChosen: 0,
         });
         state.starterClaimed = true;
@@ -919,7 +948,7 @@ const partySlice = createSlice({
           moves.filter((m) => m.source === "starter").length,
         );
       }
-      const learned = { ...move, source: "tm" as const };
+      const learned = restoreMovePp({ ...move, source: "tm" as const });
       if (replaceMoveId === undefined) {
         capture.moves = [...moves, learned];
       } else {
@@ -955,7 +984,10 @@ const partySlice = createSlice({
       )
         return;
       if (!["physical", "special", "status"].includes(move.damageClass)) return;
-      capture.moves = [...moves, { ...move, source: "starter" }];
+      capture.moves = [
+        ...moves,
+        restoreMovePp({ ...move, source: "starter" as const }),
+      ];
       capture.initialMovesChosen = used + 1;
     },
     resetGame(state) {
@@ -1443,6 +1475,19 @@ export default function partyReducer(
       }
     }
   }
+  // Migrate an old native encounter before an action can discard its snapshot.
+  // Reserved snapshots and prepared inventory effects retain their original hash.
+  if (
+    state?.emerald &&
+    ["party/setBattleOpponent", "party/captureWildOpponent"].includes(
+      action.type,
+    ) &&
+    !state.pvpLock &&
+    !state.shopLock &&
+    !state.resetLock &&
+    !state.itemUseLock
+  )
+    state = hydratePartyMovePp(state);
   const before = state ?? initialState;
   let next = partySlice.reducer(state, action);
   // Reiniciar la partida conserva las últimas acciones, incluso si se usa una acción sin meta.

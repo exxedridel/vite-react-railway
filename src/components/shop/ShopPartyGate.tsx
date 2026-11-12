@@ -13,6 +13,13 @@ export default function ShopPartyGate({ children }: { children: ReactNode }) {
   const itemLock = useAppSelector((state) => state.party.itemUseLock);
   const pendingUse = shop.uses.find((use) => use.status === "pending");
   const usingItem = !!itemLock || !!pendingUse;
+  const itemId = itemLock?.itemId ?? pendingUse?.itemId ?? "full-restore";
+  const itemName =
+    itemId === "max-ether"
+      ? "Max Ether"
+      : itemId === "max-elixir"
+        ? "Max Elixir"
+        : "Full Restore";
   const [retrying, setRetrying] = useState(false);
   const [localError, setLocalError] = useState("");
   const pendingReset = shop.resets.find((reset) => reset.status === "pending");
@@ -49,14 +56,14 @@ export default function ShopPartyGate({ children }: { children: ReactNode }) {
       <h1 className="flex items-center gap-2 text-2xl font-bold">
         <Coins className="text-brand" />{" "}
         {usingItem
-          ? "Confirmando Full Restore"
+          ? `Confirmando ${itemName}`
           : resetting
             ? "Reiniciando partida"
             : "Procesando compra del Poké Mart"}
       </h1>
       <p>
         {usingItem
-          ? "Guardamos el consumo y su efecto una sola vez. Reconecta el navegador que solicitó Full Restore para recuperar la operación."
+          ? `Guardamos el consumo y su efecto una sola vez. Reconecta el navegador que solicitó ${itemName} para recuperar la operación.`
           : resetting
             ? otherBrowser
               ? "Esta cuenta tiene un reinicio pendiente en otro navegador. Vuelve al navegador que lo solicitó para terminarlo."
@@ -82,7 +89,7 @@ export default function ShopPartyGate({ children }: { children: ReactNode }) {
           {retrying
             ? "Recuperando…"
             : usingItem
-              ? "Recuperar Full Restore"
+              ? `Recuperar ${itemName}`
               : resetting
                 ? "Recuperar reinicio"
                 : "Recuperar compra"}

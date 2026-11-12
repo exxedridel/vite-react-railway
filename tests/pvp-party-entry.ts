@@ -92,6 +92,7 @@ export async function runAccountStorageTests() {
     recoverPvpPartyLock,
     syncPvpSavedParty,
     setPvpSyncBlocked,
+    hashPvpPokemons,
   } = await import("../src/lib/pvpParty");
   const id = 2001,
     other = 2002,
@@ -112,6 +113,7 @@ export async function runAccountStorageTests() {
   assert.equal(getCurrentHp(snapshot.pokemons[0].pokemon), 17);
   assert.deepEqual(snapshot.pokemons[0].statuses, ["burned", "confused"]);
   assert.equal(snapshot.baseHash.length, 64);
+  assert.equal(snapshot.pokemons[0].moves![0].currentPp, 35);
   const reserved = clone(store.getState().party);
   store.dispatch(resetGame());
   store.dispatch(changeBagMoney({ amount: 300, direction: "add" }));
@@ -183,7 +185,7 @@ export async function runAccountStorageTests() {
   assert.equal(getCurrentHp(applied.pokemons[0].pokemon), 2);
   assert.deepEqual(applied.pokemons[0].statuses, ["poisoned"]);
   assert.deepEqual(applied.bag, original.bag);
-  assert.deepEqual(applied.pokemons[0].moves, original.pokemons[0].moves);
+  assert.deepEqual(applied.pokemons[0].moves, snapshot.pokemons[0].moves);
   assert.equal(applied.pvpLock!.phase, "saved");
   assert.equal(saved(id).pvpReceipts!.length, 1);
   passed.push(
@@ -258,6 +260,95 @@ export async function runAccountStorageTests() {
   }
   passed.push(
     "pending purchases and new-game intents cannot submit a PvP snapshot or erase their existing lock",
+  );
+  const ppUser = 2005;
+  const depleted = fixture();
+  depleted.pokemons[0].moves![0].currentPp = 2;
+  testStorage.seed(accountStorageKey(ppUser), encodeAccountParty(depleted));
+  await activateAccountStore(ppUser);
+  const ppSnapshot = await reservePvpParty({
+    battleId: "battle-pp",
+    userId: ppUser,
+    clientId: "pp-client",
+  });
+  assert.equal(ppSnapshot.pokemons[0].moves![0].currentPp, 2);
+  const ppResult: PvpResult = {
+    ...result,
+    battleId: ppSnapshot.battleId,
+    resultId: "result-pp",
+    userId: ppUser,
+    snapshotId: ppSnapshot.snapshotId,
+    baseHash: ppSnapshot.baseHash,
+    patches: ppSnapshot.pokemons.map((capture) => ({
+      captureId: capture.captureId,
+      hp: 10,
+      statuses: [],
+      statusTurns: {},
+      movesPp: [{ moveId: 33, currentPp: 0 }],
+    })),
+  };
+  for (const movesPp of [
+    [],
+    [{ moveId: 33, currentPp: 36 }],
+    [{ moveId: 34, currentPp: 0 }],
+    [{ moveId: 33, currentPp: -1 }],
+    [{ moveId: 33, currentPp: 0.5 }],
+  ]) {
+    await assert.rejects(
+      applyPvpResult({
+        ...ppResult,
+        patches: [{ ...ppResult.patches[0], movesPp }],
+      }),
+      /PP|movimientos/,
+    );
+    assert.equal(saved(ppUser).pokemons[0].moves![0].currentPp, 2);
+    assert.equal(saved(ppUser).pvpLock!.phase, "reserved");
+  }
+  await applyPvpResult(ppResult);
+  assert.equal(saved(ppUser).pokemons[0].moves![0].currentPp, 0);
+  assert.equal(saved(ppUser).pokemons[0].moves![0].pp, 35);
+  assert.deepEqual(saved(ppUser).bag, depleted.bag);
+  await applyPvpResult(ppResult);
+  await releasePvpParty(ppSnapshot.battleId, ppResult.resultId);
+  await clearAccountStore();
+  await activateAccountStore(ppUser);
+  assert.equal(saved(ppUser).pokemons[0].moves![0].currentPp, 0);
+  passed.push(
+    "PP result maps must match every original learned move and its maximum; empty PP persist through duplicate ACK, release and reload without changing Bag or catalog PP",
+  );
+  const legacyUser = 2006;
+  const legacy = fixture();
+  const legacySnapshot = {
+    ...snapshot,
+    battleId: "old-battle",
+    userId: legacyUser,
+    baseHash: await hashPvpPokemons(legacy.pokemons),
+    pokemons: clone(legacy.pokemons),
+    activeCaptureId: legacy.pokemons[0].captureId,
+  };
+  legacy.pvpLock = {
+    version: 1,
+    battleId: legacySnapshot.battleId,
+    userId: legacyUser,
+    clientId: legacySnapshot.clientId,
+    phase: "reserved",
+    snapshot: legacySnapshot,
+    lockedAt: "legacy",
+  };
+  testStorage.seed(accountStorageKey(legacyUser), encodeAccountParty(legacy));
+  await activateAccountStore(legacyUser);
+  assert.equal(
+    store.getState().party.pokemons[0].moves![0].currentPp,
+    undefined,
+  );
+  assert.equal(
+    await hashPvpPokemons(store.getState().party.pokemons),
+    legacySnapshot.baseHash,
+  );
+  await recoverPvpPartyLock(legacySnapshot);
+  assert.equal(store.getState().party.pvpLock!.conflict, undefined);
+  passed.push(
+    "an unresolved older battle keeps its original snapshot hash without a PP migration before recovery",
   );
   return passed;
 }

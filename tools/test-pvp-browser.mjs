@@ -1183,9 +1183,8 @@ try {
         assert.deepEqual(capture.statuses, evolved.statuses);
         assert.deepEqual(
           capture.moves,
-          original.pokemons.find(
-            (entry) => entry.captureId === capture.captureId,
-          ).moves,
+          evolved.moves,
+          "final Party preserves the engine's learned moves and remaining PP",
         );
       }
     }
@@ -1442,9 +1441,8 @@ try {
       assert.deepEqual(capture.statuses, expected.statuses);
       assert.deepEqual(
         capture.moves,
-        trainerOriginal.pokemons.find(
-          (entry) => entry.captureId === capture.captureId,
-        ).moves,
+        expected.moves,
+        "Trainer result persists remaining PP as well as learned move metadata",
       );
     }
     assert.deepEqual(

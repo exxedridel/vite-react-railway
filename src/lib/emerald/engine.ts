@@ -29,6 +29,9 @@ import { clearBattleConditions } from "@/lib/pokemonCondition";
 import { emptyBattleField, type BattleField } from "@/lib/battleField";
 import { normalizeStages } from "@/lib/battleModifiers";
 import type { StatusCarrier, TimedStatus } from "@/lib/statusTurns";
+import type { LearnedMove } from "@/types/moves";
+import type { ConsumableItemId } from "@/lib/shop/types";
+import { getCurrentMovePp, getMaxMovePp } from "@/lib/movePp";
 import {
   encounterKey,
   type CombatState,
@@ -125,6 +128,120 @@ export function applyEmeraldFullRestore(
   battle.add("boardend");
   return true;
 }
+/** Learned PP remain authoritative while Transform/Mimic replace active slots. */
+type OriginalPpPokemon = SimPokemon & {
+  boardOriginalPp?: Record<string, SimPokemon["baseMoveSlots"][number]>;
+};
+function originalPpSlots(target: SimPokemon) {
+  const pokemon = target as OriginalPpPokemon;
+  const originals = new Set(
+    target.set.moves.map((name) => dex.moves.get(name).id),
+  );
+  const slots = target.baseMoveSlots.filter((slot) => originals.has(slot.id));
+  for (const [id, slot] of Object.entries(pokemon.boardOriginalPp ?? {}))
+    if (
+      originals.has(id as typeof slot.id) &&
+      !slots.some((entry) => entry.id === id)
+    )
+      slots.push(slot);
+  return slots;
+}
+
+/** Sketch can remove a slot after it has spent PP. Keep that original resource
+ * separate from the copied move, which must not overwrite the learned catalog. */
+export function retainEmeraldOriginalPp(
+  target: SimPokemon,
+  before: SimPokemon["baseMoveSlots"],
+) {
+  const originals = new Set(
+    target.set.moves.map((name) => dex.moves.get(name).id),
+  );
+  for (const slot of before) {
+    if (
+      !originals.has(slot.id) ||
+      target.baseMoveSlots.some((entry) => entry.id === slot.id)
+    )
+      continue;
+    const pokemon = target as OriginalPpPokemon;
+    pokemon.boardOriginalPp ??= {};
+    pokemon.boardOriginalPp[slot.id] = { ...slot };
+  }
+}
+export function initializeEmeraldPp(
+  target: SimPokemon,
+  learned: LearnedMove[] = [],
+) {
+  for (const slot of target.baseMoveSlots) {
+    const move = learned.find(
+      (entry) => dex.moves.get(slot.id).num === entry.id,
+    );
+    slot.maxpp = move ? getMaxMovePp(move) : dex.moves.get(slot.id).pp;
+    slot.pp = move ? getCurrentMovePp(move) : slot.maxpp;
+  }
+}
+export function readEmeraldPp(
+  target: SimPokemon,
+  learned: LearnedMove[] = [],
+): LearnedMove[] {
+  return learned.map((move) => {
+    const slot = originalPpSlots(target).find(
+      (entry) => dex.moves.get(entry.id).num === move.id,
+    );
+    return {
+      ...move,
+      currentPp: slot
+        ? Math.min(getMaxMovePp(move), Math.max(0, slot.pp))
+        : target.set.moves.some((name) => dex.moves.get(name).num === move.id)
+          ? 0
+          : getCurrentMovePp(move),
+    };
+  });
+}
+function ppItemSlots(
+  target: SimPokemon,
+  item: ConsumableItemId,
+  moveId?: number,
+) {
+  if (item === "max-ether") {
+    if (!Number.isSafeInteger(moveId)) return [];
+    return originalPpSlots(target).filter(
+      (slot) => dex.moves.get(slot.id).num === moveId,
+    );
+  }
+  return item === "max-elixir" && moveId === undefined
+    ? originalPpSlots(target)
+    : [];
+}
+export function emeraldItemNeeded(
+  target: SimPokemon,
+  item: ConsumableItemId,
+  moveId?: number,
+): boolean {
+  if (item === "full-restore")
+    return moveId === undefined && emeraldFullRestoreNeeded(target);
+  return ppItemSlots(target, item, moveId).some((slot) => slot.pp < slot.maxpp);
+}
+export function applyEmeraldItem(
+  battle: Battle,
+  target: SimPokemon,
+  trainerName: string,
+  targetName: string,
+  item: ConsumableItemId,
+  moveId?: number,
+): boolean {
+  if (!emeraldItemNeeded(target, item, moveId)) return false;
+  if (item === "full-restore")
+    return applyEmeraldFullRestore(battle, target, trainerName, targetName);
+  const slots = ppItemSlots(target, item, moveId);
+  for (const slot of slots) slot.pp = slot.maxpp;
+  const label = item === "max-ether" ? "Max Ether" : "Max Elixir";
+  battle.add(
+    "message",
+    `${trainerName} usó ${label} en ${targetName}${item === "max-ether" ? ` (${slots[0].move})` : ""}.`,
+  );
+  battle.add("boardend");
+  return true;
+}
 const primary: Partial<Record<PokemonStatus, string>> = {
   burned: "brn",
   frozen: "frz",
@@ -163,6 +280,33 @@ const weatherIds = {
 } as const;
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x));
 const eq = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+/** @pkmn/sim 0.10.11 dereferences moveSlots[i] while restoring every base
+ * slot. Transform can copy fewer moves. Pad only the transient input so its
+ * deserializer can rebuild base identities, then retain the exact active list. */
+export function restoreEmeraldBattle(engine: string): Battle {
+  const snapshot = JSON.parse(engine);
+  const lengths = new Map<string, number>();
+  for (const side of snapshot.sides ?? [])
+    for (const pokemon of side.pokemon ?? []) {
+      const slots = pokemon.moveSlots;
+      if (
+        !Array.isArray(slots) ||
+        !Array.isArray(pokemon.baseMoveSlots) ||
+        slots.length >= pokemon.baseMoveSlots.length
+      )
+        continue;
+      lengths.set(`${side.id}:${pokemon.set.name}`, slots.length);
+      while (slots.length < pokemon.baseMoveSlots.length)
+        slots.push({ ...pokemon.baseMoveSlots[slots.length], virtual: true });
+    }
+  const battle = Battle.fromJSON(snapshot);
+  for (const side of battle.sides)
+    for (const pokemon of side.pokemon) {
+      const length = lengths.get(`${side.id}:${pokemon.set.name}`);
+      if (length !== undefined) pokemon.moveSlots.length = length;
+    }
+  return battle;
+}
 const species = new Map(
   dex.species
     .all()
@@ -337,12 +481,15 @@ function initialise(
   applyStats(b.p2.active[0], state.opponent.pokemon);
   applyStages(b.p2.active[0], state.opponent.stages);
   syncStatus(b.p2.active[0], state.opponent, undefined, b.p1.active[0]);
-  // Use the displayed base PP, without hidden PP Ups.
+  // Persistent resources use the displayed maximum, without hidden PP Ups.
   for (const side of b.sides)
-    for (const p of side.pokemon)
-      for (const slot of p.moveSlots) {
-        slot.pp = slot.maxpp = dex.moves.get(slot.id).pp;
-      }
+    for (const p of side.pokemon) {
+      const capture =
+        side.id === "p1"
+          ? team.find((c) => c.captureId === p.set.name)
+          : state.opponent;
+      initializeEmeraldPp(p, capture?.moves);
+    }
   b.p1.pokemonLeft = b.p1.pokemon.filter((p) => p.hp > 0).length;
   syncWeather(b, state.battleField ?? emptyBattleField());
   b.makeRequest("move");
@@ -413,21 +560,32 @@ function synchronise(
     if (!eq(c.moves, old.moves)) {
       const slots = (c.moves ?? []).map((m) => {
         const move = moves.get(m.id)!;
-        const previous = p.moveSlots.find((s) => s.id === move.id);
-        return (
-          previous ?? {
-            move: move.name,
-            id: move.id,
-            pp: move.pp,
-            maxpp: move.pp,
-            target: move.target,
-            disabled: false,
-            used: false,
-          }
-        );
+        const previous = p.baseMoveSlots.find((s) => s.id === move.id);
+        if (previous) {
+          const oldMove = old.moves?.find((entry) => entry.id === m.id);
+          // Metadata corrections must not replenish legacy active engines.
+          if (
+            m.currentPp !== undefined &&
+            (oldMove?.currentPp === undefined ||
+              getCurrentMovePp(m) !== getCurrentMovePp(oldMove))
+          )
+            previous.pp = getCurrentMovePp(m);
+          previous.maxpp = getMaxMovePp(m);
+          previous.pp = Math.min(previous.pp, previous.maxpp);
+          return previous;
+        }
+        return {
+          move: move.name,
+          id: move.id,
+          pp: getCurrentMovePp(m),
+          maxpp: getMaxMovePp(m),
+          target: move.target,
+          disabled: false,
+          used: false,
+        };
       });
-      p.moveSlots = slots;
-      Object.assign(p, { baseMoveSlots: slots.map((s) => ({ ...s })) });
+      if (!p.transformed) p.moveSlots = slots;
+      Object.assign(p, { baseMoveSlots: slots });
     }
   }
   syncWeather(b, state.battleField ?? emptyBattleField(), oldField);
@@ -464,7 +622,7 @@ export function refreshEmeraldState(
   const state = clone(input);
   const runtime = state.emerald;
   if (!runtime || runtime.encounterKey !== encounterKey(state)) return state;
-  const b = Battle.fromJSON(runtime.engine);
+  const b = restoreEmeraldBattle(runtime.engine);
   synchronise(b, state, runtime.mirror, fullRestores);
   runtime.engine = JSON.stringify(b.toJSON());
   runtime.mirror = projection(state);
@@ -504,8 +662,6 @@ function request(side: Side): EmeraldRequest {
 function choose(b: Battle, side: Side, choice: EmeraldChoice) {
   if (choice.kind === "item") {
     const current = request(side);
-    if (choice.item !== "full-restore")
-      throw new Error("Este objeto no está disponible.");
     if (b.requestState !== "move" || current.waiting || current.forceSwitch)
       throw new Error(
         "Elige el reemplazo obligatorio antes de usar un objeto.",
@@ -521,8 +677,12 @@ function choose(b: Battle, side: Side, choice: EmeraldChoice) {
       throw new Error(
         "El objeto solo puede usarse en un Pokémon de tu equipo.",
       );
-    if (!emeraldFullRestoreNeeded(target))
-      throw new Error("Este Pokémon no necesita Full Restore.");
+    if (!emeraldItemNeeded(target, choice.item, choice.moveId))
+      throw new Error(
+        choice.item === "full-restore"
+          ? "Este Pokémon no necesita Full Restore."
+          : "El objeto no tendría efecto en el Pokémon o movimiento elegido.",
+      );
     side.clearChoice();
     side.choice.actions.push({
       choice: "event",
@@ -575,6 +735,7 @@ function exportState(
       if (!c) continue;
       const hp = c.pokemon.stats.find((s) => s.name === "hp");
       if (hp) hp.value = p.hp;
+      if (c.moves) c.moves = readEmeraldPp(p, c.moves);
       readStatus(p, c);
       if (side.id === "p1") c.pokemon.battleStages = readStages(p);
       else (c as BattleOpponent).stages = readStages(p);
@@ -840,7 +1001,7 @@ export function runEmeraldAction(
       ? state.emerald
       : undefined;
   const b = existing
-    ? Battle.fromJSON(existing.engine)
+    ? restoreEmeraldBattle(existing.engine)
     : initialise(state, captureId, seed);
   // Simulator display nicknames are truncated to 20 chars by default. Capture IDs
   // are 21 chars: keep the full ID so logs and duplicate species map correctly.
@@ -947,9 +1108,22 @@ export function runEmeraldAction(
         );
         if (!target || !entry)
           throw new Error("El objetivo del objeto ya no pertenece al equipo.");
-        applyEmeraldFullRestore(this, target, "Tu equipo", entry.pokemon.name);
+        applyEmeraldItem(
+          this,
+          target,
+          "Tu equipo",
+          entry.pokemon.name,
+          itemChoice.item,
+          itemChoice.moveId,
+        );
       }
+      const originalSlots =
+        action.choice === "move"
+          ? action.pokemon.baseMoveSlots.slice()
+          : undefined;
       const value = run.call(this, action);
+      if (originalSlots && action.choice === "move")
+        retainEmeraldOriginalPp(action.pokemon, originalSlots);
       if (action.choice === "move") this.add("boardend");
       return value;
     };
@@ -1035,9 +1209,9 @@ export function cancelEmeraldChoice(
   if (!runtime?.pending[side]) return state;
   if (runtime.pending[side]?.kind === "item")
     throw new Error(
-      "El uso de Full Restore ya fue confirmado y no se puede cancelar.",
+      "El uso del objeto ya fue confirmado y no se puede cancelar.",
     );
-  const b = Battle.fromJSON(runtime.engine);
+  const b = restoreEmeraldBattle(runtime.engine);
   b.undoChoice(side === "player" ? "p1" : "p2");
   const player = side === "player" ? b.p1 : b.p2;
   if (player.choice.actions.length)

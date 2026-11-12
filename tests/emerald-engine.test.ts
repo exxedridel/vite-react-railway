@@ -390,7 +390,14 @@ test("Teleport ends a wild encounter; trapping prevents escape", () => {
       ...old.pokemon,
       battleStages: neutralBattleStages(),
     });
-    assert.deepEqual(member.moves, old.moves);
+    assert.deepEqual(
+      member.moves,
+      old.moves!.map((move) => ({
+        ...move,
+        currentPp:
+          move.pp! - (member.captureId === "own" && move.id === 100 ? 1 : 0),
+      })),
+    );
   }
   assert(r.events.some((e) => e.includes("huida")));
   s = fixture([100]);

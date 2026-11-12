@@ -51,6 +51,18 @@ export const SHOP_ITEMS = [
     price: 350,
     image: "/admin-shop/full-restore.png",
   },
+  {
+    id: "max-ether",
+    name: "Max Ether",
+    price: 350,
+    image: "/admin-shop/max-ether.png",
+  },
+  {
+    id: "max-elixir",
+    name: "Max Elixir",
+    price: 700,
+    image: "/admin-shop/max-elixir.png",
+  },
   { id: "tm", name: "TM", price: 500, image: "/admin-shop/tm-normal.png" },
   {
     id: "bicycle",

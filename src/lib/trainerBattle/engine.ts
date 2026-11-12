@@ -18,8 +18,12 @@ import {
   chooseEmeraldAction,
   emeraldPublicLines,
   describeEmeraldLine,
-  applyEmeraldFullRestore,
-  emeraldFullRestoreNeeded,
+  applyEmeraldItem,
+  emeraldItemNeeded,
+  initializeEmeraldPp,
+  readEmeraldPp,
+  restoreEmeraldBattle,
+  retainEmeraldOriginalPp,
 } from "@/lib/emerald/engine";
 import type {
   TrainerBattleSession,
@@ -28,6 +32,7 @@ import type {
   TrainerTurnSummary,
 } from "./types";
 import { trainerSetupErrors } from "./model";
+import type { ConsumableItemId } from "@/lib/shop/types";
 
 const dex = Dex.forGen(3);
 const sides = ["a", "b"] as const;
@@ -113,6 +118,7 @@ function exportSession(
         );
       const hp = capture.pokemon.stats.find((stat) => stat.name === "hp");
       if (hp) hp.value = pokemon.hp;
+      if (capture.moves) capture.moves = readEmeraldPp(pokemon, capture.moves);
       capture.pokemon.battleStages = readEmeraldStages(pokemon);
       readEmeraldStatus(pokemon, capture);
       // Native Perish Song uses duration; imported board counters use the same visible count.
@@ -275,8 +281,7 @@ export function startTrainerBattle(
         pokemon.hp = 0;
         pokemon.fainted = true;
       }
-      for (const slot of pokemon.moveSlots)
-        slot.pp = slot.maxpp = dex.moves.get(slot.id).pp;
+      initializeEmeraldPp(pokemon, capture.moves);
     }
     simulated.pokemonLeft = simulated.pokemon.filter(
       (pokemon) => pokemon.hp > 0,
@@ -299,7 +304,7 @@ export function startTrainerBattle(
 function loadBattle(input: TrainerBattleSession) {
   if (input.phase !== "battle" || !input.runtime || input.runtime.ended)
     throw new Error("No hay un combate activo.");
-  return Battle.fromJSON(input.runtime.engine);
+  return restoreEmeraldBattle(input.runtime.engine);
 }
 
 function chooseTrainerItem(
@@ -310,8 +315,6 @@ function chooseTrainerItem(
 ) {
   const simulated = simSide(battle, side);
   const request = readEmeraldRequest(simulated);
-  if (choice.item !== "full-restore")
-    throw new Error("Este objeto no está disponible.");
   if (battle.requestState !== "move" || request.forceSwitch || request.waiting)
     throw new Error("Elige el reemplazo obligatorio antes de usar un objeto.");
   if (request.locked)
@@ -331,8 +334,12 @@ function chooseTrainerItem(
   const target = simulated.pokemon.find(
     (pokemon) => pokemon.set.name === entry?.key,
   );
-  if (!target || !emeraldFullRestoreNeeded(target))
-    throw new Error("Este Pokémon no necesita Full Restore.");
+  if (!target || !emeraldItemNeeded(target, choice.item, choice.moveId))
+    throw new Error(
+      choice.item === "full-restore"
+        ? "Este Pokémon no necesita Full Restore."
+        : "El objeto no tendría efecto en el Pokémon o movimiento elegido.",
+    );
   simulated.clearChoice();
   // The native queue accepts serializable event actions. Side's public choice
   // type is narrower than the queue's supported ActionChoice union.
@@ -353,11 +360,16 @@ function applyTrainerFullRestore(
   battle: Battle,
   actingPokemon: SimPokemon,
   pending: Partial<Record<TrainerSide, TrainerChoice>>,
-  onItemUsed?: (side: TrainerSide, captureId: string) => void,
+  onItemUsed?: (
+    side: TrainerSide,
+    captureId: string,
+    itemId: ConsumableItemId,
+    moveId?: number,
+  ) => void,
 ) {
   const side: TrainerSide = actingPokemon.side.id === "p1" ? "a" : "b";
   const choice = pending[side];
-  if (choice?.kind !== "item" || choice.item !== "full-restore")
+  if (choice?.kind !== "item")
     throw new Error("El objeto pendiente ya no es válido.");
   const entry = entries(session).find(
     (entry) =>
@@ -369,14 +381,16 @@ function applyTrainerFullRestore(
   if (!entry || !target)
     throw new Error("El objetivo del objeto ya no pertenece al equipo.");
   if (
-    applyEmeraldFullRestore(
+    applyEmeraldItem(
       battle,
       target,
       session.teams[side].name,
       entry.capture.pokemon.name,
+      choice.item,
+      choice.moveId,
     )
   )
-    onItemUsed?.(side, choice.captureId);
+    onItemUsed?.(side, choice.captureId, choice.item, choice.moveId);
 }
 
 function resultsFrom(
@@ -528,7 +542,12 @@ export function chooseTrainerAction(
   choice: TrainerChoice,
   options: {
     allowNetworkItem?: boolean;
-    onItemUsed?: (side: TrainerSide, captureId: string) => void;
+    onItemUsed?: (
+      side: TrainerSide,
+      captureId: string,
+      itemId: ConsumableItemId,
+      moveId?: number,
+    ) => void;
   } = {},
 ): TrainerBattleSession {
   if (choice.kind === "forfeit") return forfeitTrainerBattle(input, side);
@@ -594,7 +613,13 @@ export function chooseTrainerAction(
           pending,
           options.onItemUsed,
         );
+      const originalSlots =
+        action.choice === "move"
+          ? action.pokemon.baseMoveSlots.slice()
+          : undefined;
       const result = original.call(this, action);
+      if (originalSlots && action.choice === "move")
+        retainEmeraldOriginalPp(action.pokemon, originalSlots);
       if (action.choice === "move") this.add("boardend");
       return result;
     };

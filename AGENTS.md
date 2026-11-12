@@ -9,7 +9,32 @@ Acuerdo del usuario confirmado el 2026-11-08:
 
 Si esta disponible, leer [la memoria compartida](../PROJECT_MEMORY.md). Este resumen se conserva tambien aqui para sesiones que abran solo este repositorio.
 
-Full Restore con stock Bag autorizado 2026-11-12, versión2.3.0. Acciones del
+Etapa vigente2026-11-12 frontend2.4.0: PP persistentes y Max Ether350pd/
+Max Elixir700pd. Usuario confirmó conservar PP entre batallas/reloads; missing/
+movimiento nuevo a máximo. moves[].pp sigue catálogo inmutable, currentPp guarda
+restantes. Un uso gasta1; PP0 impide elegir; Struggle nativo con todos agotados,
+continuaciones/recarga sin PP adicional. Ether requiere elegir un movimiento,
+Elixir restaura todos del Pokémon; admite KO sin cambiar HP. Sin PP faltantes
+no gasta objeto ni acción. Mismas reglas de compra/Bag/locks/turno Full Restore,
+que no restaura PP. UI dashboard y combate individual/admin disponibles; NPC
+automático sin objetos. useItem(itemId,captureId,moveId?) conserva plan durable,
+itemUseLock y ACK sólo después de escribir efecto/wallet/marca. Grants y pending
+enlazan itemId/moveId; used sólo tras evento nativo. Cancelar/forfeit previo no
+cobra. Result.movesPp por IDs originales exactos no sustituye otros datos.
+No normalizar fotos/planes legacy antes de hashes ni alterar resultados previos;
+los que omiten PP siguen válidos. Motores persisten baseMoveSlots originales,
+incluido KO/reservas; Transform/Mimic temporales no reemplazan moves guardados.
+FallbackGenIII src/lib/movePpData.json debe coincidir con copia Nest/assetdist;
+máximo pp catálogo entero0..100 prevalece. Conserva guardia transactPvpParty,
+RNG/FutureSight y reservas. Sketch guarda PP originales removidos en
+boardOriginalPp; wrapper restoreEmeraldBattle conserva Transform con menos slots.
+Pruebas14 motor PP/6 legacy/9 Party/15 wallet/7 cuentas y Nest63 Shop/47 PvP/29
+chat pasan. Suite combinada152, TS y builds correctos; Chrome Tienda/PP/wild/
+Trainer/JcJ/reconexión pasan, incluidos stock y PP tras resultado/reload.
+Producción no verificada. Desplegar Nest primero y React después, sin vars/MySQL/seed ni borrar
+batallas. Ver Punto de continuacion de memoria compartida.
+
+Etapa anterior: Full Restore con stock Bag autorizado 2026-11-12, versión2.3.0. Acciones del
 dashboard y BATTLE MOVES usan ShopContext.useFullRestore: plan persistido antes
 del débito y ACK después de guardar efecto+wallet. itemUseLock/recibos impiden
 repetir curación/turno/consumo tras fallo Storage o reload. Wild usa evento nativo
@@ -34,7 +59,7 @@ Compras y combates bloquean reinicio; reset pendiente bloquea Party/import/
 snapshotPvP/compra. Tienda sólo observa saldo500 en vivo, no reinicia al abrir.
 Otros dispositivos no borran su Party por el reset de otro navegador. Nest es
 autoridad de saldo/items; partida general permanece local. Full Restore se habilitó
-después; el uso de otros objetos continúa pendiente.
+después, seguido de Max Ether/Max Elixir2.4.0; otros objetos continúan sin uso.
 Desplegar Nest primero y React después, sin variables nuevas ni MySQL.
 
 FutureSight global corregido 2026-11-11: auditoría native boardfuture produce

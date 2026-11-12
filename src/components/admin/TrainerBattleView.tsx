@@ -13,6 +13,8 @@ import {
 import PokemonTypeBadges from "@/components/pokemon/PokemonTypeBadges";
 import BattleTurnHighlightsDialog from "@/components/pokemon/BattleTurnHighlightsDialog";
 import TrainerBattleArena from "./TrainerBattleArena";
+import TrainerPpItems from "./TrainerPpItems";
+import type { ConsumableItemId } from "@/lib/shop/types";
 import {
   chooseTrainerAction,
   cancelTrainerAction,
@@ -41,6 +43,9 @@ type Props = {
   disabled?: boolean;
   allowItems?: boolean;
   itemStock?: Partial<Record<TrainerSide, number>>;
+  consumableStock?: Partial<
+    Record<TrainerSide, Partial<Record<ConsumableItemId, number>>>
+  >;
   allowForfeit?: boolean;
   automaticSide?: TrainerSide;
   onExit?: () => void | Promise<void>;
@@ -112,6 +117,7 @@ function TrainerControls({
   onCancel,
   allowItems,
   itemStock,
+  consumableStock,
   allowForfeit,
 }: {
   session: TrainerBattleSession;
@@ -121,6 +127,7 @@ function TrainerControls({
   onCancel: (side: TrainerSide) => void;
   allowItems: boolean;
   itemStock?: number;
+  consumableStock?: Partial<Record<ConsumableItemId, number>>;
   allowForfeit: boolean;
 }) {
   const [choosingRestore, setChoosingRestore] = useState(false);
@@ -311,6 +318,12 @@ function TrainerControls({
                 </Button>
               </div>
             )}
+            <TrainerPpItems
+              team={team}
+              stock={consumableStock}
+              disabled={!canChoose || request.forceSwitch || request.locked}
+              onChoose={chooseAction}
+            />
           </div>
         )}
 
@@ -416,6 +429,7 @@ export default function TrainerBattleView({
   disabled = false,
   allowItems = true,
   itemStock,
+  consumableStock,
   allowForfeit = false,
   automaticSide,
   onExit,
@@ -596,6 +610,7 @@ export default function TrainerBattleView({
               disabled={busy || disabled}
               allowItems={allowItems}
               itemStock={itemStock?.[side]}
+              consumableStock={consumableStock?.[side]}
               allowForfeit={allowForfeit}
               onChoose={act}
               onCancel={(target) => act(target, "cancel")}
