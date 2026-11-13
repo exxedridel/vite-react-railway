@@ -9,6 +9,7 @@ import {
 } from "react";
 import { io, type Socket } from "socket.io-client";
 import type { ChatUser } from "@/lib/testMessages";
+import type { PokemonMove } from "@/types/moves";
 import { testMessagesUrl } from "@/lib/testMessages";
 import { store } from "@/store/store";
 import {
@@ -38,6 +39,7 @@ import type {
   GameReset,
   ItemUse,
   ConsumableItemId,
+  UsableItemId,
   Wallet,
 } from "@/lib/shop/types";
 
@@ -58,6 +60,11 @@ type ShopContextValue = {
   sync: () => Promise<void>;
   restartGame: () => Promise<void>;
   useFullRestore: (captureId: string) => Promise<void>;
+  useTm: (
+    captureId: string,
+    move: PokemonMove,
+    replaceMoveId?: number,
+  ) => Promise<void>;
   useItem: (
     itemId: ConsumableItemId,
     captureId: string,
@@ -184,9 +191,10 @@ export default function ShopProvider({
   const recoverItemUseRef = useRef<() => Promise<void>>(async () => {});
   const useItemRef = useRef<
     (
-      itemId: ConsumableItemId,
+      itemId: UsableItemId,
       captureId: string,
       moveId?: number,
+      learning?: { move: PokemonMove; replaceMoveId?: number },
     ) => Promise<void>
   >(async () => {
     throw new Error("Inicia sesión para usar objetos de tu Bag.");
@@ -198,6 +206,14 @@ export default function ShopProvider({
   );
   const useFullRestore = useCallback(
     (captureId: string) => useItemRef.current("full-restore", captureId),
+    [],
+  );
+  const useTm = useCallback(
+    (captureId: string, move: PokemonMove, replaceMoveId?: number) =>
+      useItemRef.current("tm", captureId, move.id, {
+        move,
+        ...(replaceMoveId === undefined ? {} : { replaceMoveId }),
+      }),
     [],
   );
 
@@ -772,7 +788,7 @@ export default function ShopProvider({
       return operation;
     }
     recoverItemUseRef.current = recoverItemUse;
-    useItemRef.current = async (itemId, captureId, moveId) => {
+    useItemRef.current = async (itemId, captureId, moveId, learning) => {
       if (itemStarting || itemRecovery)
         throw new Error("Espera a que termine el uso del objeto anterior.");
       if (
@@ -799,7 +815,7 @@ export default function ShopProvider({
         // Load before the storage transaction. The resulting effects are planned
         // once against its latest state and persisted before any server debit.
         const planner = await import("@/lib/fullRestorePlan");
-        await planner.loadFullRestoreEngine();
+        if (itemId !== "tm") await planner.loadFullRestoreEngine();
         if (!current() || !socket.connected)
           throw new Error("La conexión cambió antes de preparar el objeto.");
         await prepareItemUse(
@@ -808,8 +824,21 @@ export default function ShopProvider({
           crypto.randomUUID(),
           captureId,
           latestWallet.revision,
-          (party, target) =>
-            planner.preparePartyItem(party, target, itemId, moveId),
+          (party, target) => {
+            if (itemId === "tm") {
+              if (!learning || learning.move.id !== moveId)
+                throw new Error(
+                  "Selecciona un movimiento compatible antes de usar una TM.",
+                );
+              return planner.prepareTmParty(
+                party,
+                target,
+                learning.move,
+                learning.replaceMoveId,
+              );
+            }
+            return planner.preparePartyItem(party, target, itemId, moveId);
+          },
           itemId,
           moveId,
         );
@@ -1029,6 +1058,7 @@ export default function ShopProvider({
         sync,
         restartGame,
         useFullRestore,
+        useTm,
         useItem,
         purchase,
       }}

@@ -103,7 +103,7 @@ import {
 import { PVP_PARTY_COMMIT } from "@/store/accountStorage";
 import { finishLegacyDelayedAttacks } from "@/lib/legacyDelayedAttacks";
 import type { PvpPartyLock, PvpPartyReceipt } from "@/lib/pvpParty";
-import type { ConsumableItemId } from "@/lib/shop/types";
+import type { UsableItemId } from "@/lib/shop/types";
 import {
   getCurrentMovePp,
   getStruggleMove,
@@ -119,6 +119,11 @@ type ExecuteMoveInput = {
   commandId: string;
   expectedContext: string;
   conditionsConfirmed: boolean;
+};
+export type TmLearningInput = {
+  captureId: string;
+  move: PokemonMove;
+  replaceMoveId?: number;
 };
 export type PartyState = {
   pvpLock?: PvpPartyLock | null;
@@ -146,7 +151,7 @@ export type PartyState = {
     userId: number;
     clientId: string;
     captureId: string;
-    itemId?: ConsumableItemId;
+    itemId?: UsableItemId;
     moveId?: number;
     context: "party" | "local-battle";
     planHash: string;
@@ -912,12 +917,15 @@ const partySlice = createSlice({
     },
     learnPokemonMoveWithTm(
       state,
-      action: PayloadAction<{
-        captureId: string;
-        move: PokemonMove;
-        replaceMoveId?: number;
-      }>,
+      action: PayloadAction<TmLearningInput & { expected: string }>,
     ) {
+      if (action.payload.expected !== combatKey(state)) return;
+      if (
+        state.shopLock ||
+        evolutionBattleActive(state.opponent) ||
+        (state.emerald && !state.emerald.ended)
+      )
+        return;
       const { captureId, move, replaceMoveId } = action.payload;
       if (!isGenerationThreeMove(move.id)) return;
       const capture = state.pokemons.find((p) => p.captureId === captureId);
@@ -961,6 +969,12 @@ const partySlice = createSlice({
       state,
       action: PayloadAction<{ captureId: string; move: PokemonMove }>,
     ) {
+      if (
+        state.shopLock ||
+        evolutionBattleActive(state.opponent) ||
+        (state.emerald && !state.emerald.ended)
+      )
+        return;
       const { captureId, move } = action.payload;
       if (!isGenerationThreeMove(move.id)) return;
       const capture = state.pokemons.find((p) => p.captureId === captureId);
@@ -1341,9 +1355,30 @@ export const finishBattleTurn = withActivityMeta(
 export const executePokemonMove = withActivityMeta(
   partySlice.actions.executePokemonMove,
 );
-export const learnPokemonMoveWithTm = withActivityMeta(
+const commitTmLearning = withActivityMeta(
   partySlice.actions.learnPokemonMoveWithTm,
 );
+/** Pure draft used by the inventory coordinator, never a free store dispatch. */
+export function applyTmToParty(
+  state: PartyState,
+  input: TmLearningInput,
+): PartyState {
+  return partyReducer(
+    state,
+    commitTmLearning({ ...input, expected: combatKey(state) }),
+  );
+}
+/** Legacy callers cannot activate a move without consuming their Bag stock. */
+export function learnPokemonMoveWithTm(
+  input: TmLearningInput,
+): ThunkAction<Promise<void>, { party: PartyState }, unknown, UnknownAction> {
+  return async () => {
+    void input;
+    throw new Error(
+      "Confirma el aprendizaje mediante la Bag para consumir una TM de tu inventario.",
+    );
+  };
+}
 export const setPokemonLearnset = withActivityMeta(
   partySlice.actions.setPokemonLearnset,
 );

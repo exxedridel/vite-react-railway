@@ -433,7 +433,7 @@ function BattleDialogContent({ captureId, onClose }: Props) {
                   className="shrink-0 rounded-2xl border bg-card p-4 text-card-foreground"
                 >
                   <summary className="cursor-pointer text-sm font-semibold">
-                    Items
+                    ITEMS
                   </summary>
                   <div className="mt-3 space-y-3">
                     <FullRestoreBattleControl

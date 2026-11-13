@@ -183,7 +183,10 @@ export async function fullRestoreBrowserScenario({
     );
     if (
       !items ||
-      items.querySelector(":scope > summary")?.textContent.trim() !== "Items" ||
+      items
+        .querySelector(":scope > summary")
+        ?.textContent.trim()
+        .toLowerCase() !== "items" ||
       !moves
     )
       throw new Error(

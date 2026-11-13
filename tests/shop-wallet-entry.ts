@@ -4,6 +4,7 @@ import reducer, {
   changeBagMoney,
   addPokemon,
   configureGame,
+  learnPokemonMoveWithTm,
   resetGame,
   toggleGymBadge,
 } from "../src/slices/partySlice";
@@ -30,8 +31,10 @@ import {
 } from "../src/lib/shop/wallet";
 import type { GameReset, ItemUse, Wallet } from "../src/lib/shop/types";
 import { applyItemUse, prepareItemUse } from "../src/lib/shop/itemUse";
-import { preparePartyItem } from "../src/lib/fullRestorePlan";
-import { getCurrentHp, getMaxHp } from "../src/lib/pokemonStats";
+import { preparePartyItem, prepareTmParty } from "../src/lib/fullRestorePlan";
+import { trainerMoves } from "../src/lib/trainerBattle/catalog";
+import { getCurrentHp, getMaxHp, neutralBattleStages } from "../src/lib/pokemonStats";
+import { combatKey } from "../src/lib/emerald/types";
 declare const testStorage: {
   getItem(key: string): string | null;
   failWritesFor: Set<string>;
@@ -703,6 +706,252 @@ export async function runAccountStorageTests() {
   assert.equal(saved(606).bag.money, 200);
   passed.push(
     "Max Ether restores only its bound move, Max Elixir restores every move, exact debits survive storage/ACK failure and reload, and a full move costs no object",
+  );
+
+  const tmParty = clone(store.getState().party);
+  tmParty.opponent = null;
+  delete tmParty.emerald;
+  tmParty.bag!.items = { ...tmParty.bag!.items, tm: 2 };
+  const tmTarget = tmParty.pokemons[0];
+  tmTarget.pokemon.learnset = {
+    versionGroup: "emerald",
+    moves: [33, 45, 52, 55, 150].map((id) => {
+      const move = trainerMoves.find((move) => move.id === id)!;
+      return { id, name: move.name };
+    }),
+  };
+  tmTarget.origin = "starter";
+  tmTarget.initialMovesChosen = 2;
+  const tmMove = {
+    ...clone(trainerMoves.find((move) => move.id === 150)!),
+    currentPp: 0,
+  };
+  store.dispatch({ type: PVP_PARTY_COMMIT, payload: tmParty });
+  await persistor.flush();
+  const beforeFreeTm = JSON.stringify(store.getState().party);
+  await assert.rejects(
+    store.dispatch(
+      learnPokemonMoveWithTm({ captureId: targetId, move: tmMove }),
+    ),
+    /inventario/,
+  );
+  store.dispatch({
+    type: "party/learnPokemonMoveWithTm",
+    payload: { captureId: targetId, move: tmMove, expected: combatKey(store.getState().party) },
+  });
+  assert.equal(JSON.stringify(store.getState().party), beforeFreeTm);
+  const tmPlan = (party: typeof tmParty, captureId: string) =>
+    prepareTmParty(party, captureId, tmMove);
+  testStorage.failWritesFor.add(accountStorageKey(606));
+  await assert.rejects(
+    prepareItemUse(
+      606,
+      "item-client",
+      "tm-use",
+      targetId,
+      3,
+      tmPlan,
+      "tm",
+      150,
+    ),
+    /guardar/,
+  );
+  testStorage.failWritesFor.clear();
+  assert.equal(saved(606).itemUseLock, undefined);
+  await prepareItemUse(
+    606,
+    "item-client",
+    "tm-use",
+    targetId,
+    3,
+    tmPlan,
+    "tm",
+    150,
+  );
+  assert.equal(
+    saved(606).pokemons[0].moves.some(
+      (move: { id: number }) => move.id === 150,
+    ),
+    false,
+  );
+  assert.equal(saved(606).bag.items.tm, 2);
+  const tmReceipt: ItemUse = {
+    ...receipt,
+    requestId: "tm-use",
+    itemId: "tm",
+    moveId: 150,
+    planHash: store.getState().party.itemUseLock!.planHash,
+    expectedWalletRevision: 3,
+    walletRevision: 4,
+  };
+  const tmWallet = wallet(606, 4, 200, { ...elixirWallet.items, tm: 1 });
+  await assert.rejects(
+    applyItemUse(tmWallet, { ...tmReceipt, moveId: 52 }, "item-client"),
+    /recibo/,
+  );
+  testStorage.failWritesFor.add(accountStorageKey(606));
+  await assert.rejects(
+    applyItemUse(tmWallet, tmReceipt, "item-client"),
+    /guardar/,
+  );
+  testStorage.failWritesFor.clear();
+  assert.equal(saved(606).itemUseLock.appliedWalletRevision, undefined);
+  await clearAccountStore();
+  await activateAccountStore(606);
+  await applyItemUse(tmWallet, tmReceipt, "item-client");
+  assert.equal(
+    saved(606).pokemons[0].moves.find((move: { id: number }) => move.id === 150)
+      .currentPp,
+    40,
+  );
+  assert.equal(saved(606).bag.items.tm, 1);
+  const tmApplied = JSON.stringify(store.getState().party);
+  await applyItemUse(tmWallet, tmReceipt, "item-client");
+  assert.equal(JSON.stringify(store.getState().party), tmApplied);
+  await applyItemUse(
+    tmWallet,
+    { ...tmReceipt, status: "applied" },
+    "item-client",
+  );
+  assert.equal(saved(606).itemUseLock, undefined);
+  assert.equal(saved(606).activityHistory[0].kind, "tm");
+  const tmHistoryLength = saved(606).activityHistory.length;
+  await assert.rejects(
+    prepareItemUse(
+      606,
+      "item-client",
+      "tm-known",
+      targetId,
+      4,
+      tmPlan,
+      "tm",
+      150,
+    ),
+    /compatibilidad/,
+  );
+  assert.equal(saved(606).itemUseLock, undefined);
+  assert.equal(saved(606).activityHistory.length, tmHistoryLength);
+  passed.push(
+    "TM stock is required for learning, paid moves start with full PP, legacy dispatch cannot learn for free, and checked-save failure/reload/replayed ACK preserve one effect and debit",
+  );
+
+  const replacement = clone(store.getState().party);
+  replacement.pokemons[0].moves!.push({
+    ...clone(trainerMoves.find((move) => move.id === 52)!),
+    currentPp: 0,
+  });
+  store.dispatch({ type: PVP_PARTY_COMMIT, payload: replacement });
+  await persistor.flush();
+  const waterGun = clone(trainerMoves.find((move) => move.id === 55)!);
+  const replacePlan = (party: typeof tmParty, captureId: string) =>
+    prepareTmParty(party, captureId, waterGun, 33);
+  await prepareItemUse(
+    606,
+    "item-client",
+    "tm-cancel",
+    targetId,
+    4,
+    replacePlan,
+    "tm",
+    55,
+  );
+  const cancelledTm: ItemUse = {
+    ...tmReceipt,
+    requestId: "tm-cancel",
+    moveId: 55,
+    planHash: store.getState().party.itemUseLock!.planHash,
+    expectedWalletRevision: 4,
+    walletRevision: 4,
+    status: "cancelled",
+  };
+  await applyItemUse(tmWallet, cancelledTm, "item-client");
+  assert.equal(saved(606).itemUseLock, undefined);
+  assert.equal(
+    saved(606).pokemons[0].moves.some((move: { id: number }) => move.id === 55),
+    false,
+  );
+  assert.equal(saved(606).bag.items.tm, 1);
+  const battling = clone(store.getState().party);
+  battling.opponent = {
+    kind: "wild",
+    pokemon: clone(battling.pokemons[0].pokemon),
+    statuses: [],
+    stages: neutralBattleStages(),
+  };
+  store.dispatch({ type: PVP_PARTY_COMMIT, payload: battling });
+  await persistor.flush();
+  await assert.rejects(
+    prepareItemUse(
+      606,
+      "item-client",
+      "tm-battle",
+      targetId,
+      4,
+      replacePlan,
+      "tm",
+      55,
+    ),
+    /fuera de combate/,
+  );
+  assert.equal(saved(606).itemUseLock, undefined);
+  await transactPvpParty(606, async () => ({ party: clone(replacement), value: undefined }));
+  await prepareItemUse(
+    606,
+    "item-client",
+    "tm-replace",
+    targetId,
+    4,
+    replacePlan,
+    "tm",
+    55,
+  );
+  const replacementReceipt: ItemUse = {
+    ...tmReceipt,
+    requestId: "tm-replace",
+    moveId: 55,
+    planHash: store.getState().party.itemUseLock!.planHash,
+    expectedWalletRevision: 4,
+    walletRevision: 5,
+  };
+  const spentTm = wallet(606, 5, 200, { ...tmWallet.items, tm: 0 });
+  await applyItemUse(spentTm, replacementReceipt, "item-client");
+  await applyItemUse(
+    spentTm,
+    { ...replacementReceipt, status: "applied" },
+    "item-client",
+  );
+  const afterReplace = saved(606);
+  assert.equal(afterReplace.pokemons[0].moves.length, 4);
+  assert.deepEqual(
+    afterReplace.pokemons[0].moves.map((move: { id: number }) => move.id),
+    [55, 45, 150, 52],
+  );
+  assert.equal(afterReplace.pokemons[0].initialMovesChosen, 2);
+  assert.equal(afterReplace.bag.items.tm, 0);
+  assert.equal(afterReplace.bag.money, 200);
+  await assert.rejects(
+    prepareItemUse(
+      606,
+      "item-client",
+      "tm-empty",
+      targetId,
+      5,
+      tmPlan,
+      "tm",
+      150,
+    ),
+    /existencias/,
+  );
+  await clearAccountStore();
+  await activateAccountStore(606);
+  await applyItemUse(spentTm, replacementReceipt, "item-client");
+  assert.deepEqual(
+    saved(606).pokemons[0].moves,
+    afterReplace.pokemons[0].moves,
+  );
+  assert.equal(saved(606).bag.items.tm, 0);
+  passed.push(
+    "TM replacement spends one unit at four moves without restoring starter choices; cancellation keeps stock, battle/empty-stock guards preserve the Party and results survive reload",
   );
   await transactPvpParty(606, async (party) => {
     const before = JSON.stringify(store.getState().party);

@@ -4,9 +4,9 @@ import { transactPvpParty } from "@/store/store";
 import { pvpPartyRevision } from "@/store/accountStorage";
 import { localBattleActive, partyWithWallet, validWallet } from "./wallet";
 import {
-  CONSUMABLE_ITEM_IDS,
+  USABLE_ITEM_IDS,
   SHOP_ITEM_IDS,
-  type ConsumableItemId,
+  type UsableItemId,
   type ItemUse,
   type Wallet,
 } from "./types";
@@ -25,13 +25,14 @@ export function validItemUse(value: unknown): value is ItemUse {
     id(item.captureId) &&
     Number.isSafeInteger(item.userId) &&
     item.userId > 0 &&
-    CONSUMABLE_ITEM_IDS.includes(item.itemId) &&
-    (item.itemId === "max-ether"
+    USABLE_ITEM_IDS.includes(item.itemId) &&
+    (item.itemId === "max-ether" || item.itemId === "tm"
       ? Number.isSafeInteger(item.moveId) &&
         Number(item.moveId) >= 1 &&
         Number(item.moveId) <= 354
       : item.moveId === undefined) &&
     ["party", "local-battle"].includes(item.context) &&
+    (item.itemId !== "tm" || item.context === "party") &&
     typeof item.planHash === "string" &&
     /^[a-f0-9]{64}$/.test(item.planHash) &&
     revision(item.expectedWalletRevision) &&
@@ -57,7 +58,7 @@ export function prepareItemUse(
   captureId: string,
   expectedWalletRevision: number,
   plan: (party: PartyState, captureId: string) => Promise<PartyState>,
-  itemId: ConsumableItemId = "full-restore",
+  itemId: UsableItemId = "full-restore",
   moveId?: number,
 ): Promise<void> {
   return transactPvpParty(userId, async (party) => {
@@ -66,8 +67,8 @@ export function prepareItemUse(
       !id(requestId) ||
       !id(captureId) ||
       !revision(expectedWalletRevision) ||
-      !CONSUMABLE_ITEM_IDS.includes(itemId) ||
-      (itemId === "max-ether"
+      !USABLE_ITEM_IDS.includes(itemId) ||
+      (itemId === "max-ether" || itemId === "tm"
         ? !Number.isSafeInteger(moveId) ||
           Number(moveId) < 1 ||
           Number(moveId) > 354
@@ -86,6 +87,8 @@ export function prepareItemUse(
     if ((party.bag.items?.[itemId] ?? 0) < 1)
       throw new Error("No tienes existencias de este objeto en tu Bag.");
     const context = localBattleActive(party) ? "local-battle" : "party";
+    if (itemId === "tm" && context !== "party")
+      throw new Error("Las TM sólo pueden usarse fuera de combate.");
     const prepared = clone(await plan(clone(party), captureId));
     if (
       prepared.pvpLock ||

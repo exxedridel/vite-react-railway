@@ -4,12 +4,15 @@ import PokemonMoveExecutionDialog, {
   BattleResultView,
 } from "./PokemonMoveExecutionDialog";
 import { getCurrentHp } from "@/lib/pokemonStats";
-import { useState } from "react";
-import { Plus, RefreshCw, Swords } from "lucide-react";
+import { useRef, useState } from "react";
+import { Loader2, Plus, RefreshCw, Swords } from "lucide-react";
 import { toast } from "sonner";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { store } from "@/store/store";
-import { learnInitialMove, learnPokemonMoveWithTm } from "@/slices/partySlice";
+import { learnInitialMove } from "@/slices/partySlice";
+import { useShopContext } from "@/context/ShopContext";
+import { isLocalPartyMutationBlocked } from "@/store/accountStorage";
+import { localBattleActive } from "@/lib/shop/wallet";
 import { usePokemonMoveCatalog } from "@/hooks/usePokemonMoveCatalog";
 import type { CapturedPokemon } from "@/types/pokemon";
 import type { PokemonMove } from "@/types/moves";
@@ -127,9 +130,12 @@ function MovePicker({
   onClose: () => void;
 }) {
   const dispatch = useAppDispatch();
+  const shop = useShopContext();
+  const party = useAppSelector((state) => state.party);
+  const [learning, setLearning] = useState(false);
+  const learningRef = useRef(false);
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [cardConfirmed, setCardConfirmed] = useState(false);
   const { catalog, loading, error, failedCount, progress, retry } =
     usePokemonMoveCatalog(capture.captureId, capture.pokemon.id);
   const knownMoves = capture.moves ?? [];
@@ -146,53 +152,74 @@ function MovePicker({
       .includes(term),
   );
   const isTm = choice.kind === "tm";
+  const stock = party.bag?.items?.tm ?? 0;
+  const learningBlocked =
+    localBattleActive(party) || isLocalPartyMutationBlocked(party);
+  const tmUnavailable =
+    learning ||
+    shop.usingItem ||
+    !shop.connected ||
+    !shop.synced ||
+    stock < 1 ||
+    learningBlocked;
   const targetStillValid =
     replacingId === undefined ? knownMoves.length < 4 : !!replacedMove;
 
-  function learn() {
-    if (!move || !targetStillValid || (isTm && !cardConfirmed)) return;
+  async function learn() {
+    if (
+      learningRef.current ||
+      !move ||
+      !targetStillValid ||
+      learningBlocked ||
+      (isTm && tmUnavailable)
+    )
+      return;
     const before = store
       .getState()
       .party.pokemons.find((p) => p.captureId === capture.captureId);
     if (!before || before.moves?.some((m) => m.id === move.id)) return;
-    if (choice.kind === "initial") {
-      dispatch(learnInitialMove({ captureId: capture.captureId, move }));
-    } else {
-      dispatch(
-        learnPokemonMoveWithTm({
-          captureId: capture.captureId,
-          move,
-          replaceMoveId: choice.replaceMoveId,
-        }),
+    learningRef.current = true;
+    setLearning(true);
+    try {
+      if (choice.kind === "initial") {
+        dispatch(learnInitialMove({ captureId: capture.captureId, move }));
+      } else {
+        await shop.useTm(capture.captureId, move, choice.replaceMoveId);
+      }
+      const after = store
+        .getState()
+        .party.pokemons.find((p) => p.captureId === capture.captureId);
+      if (!after?.moves?.some((m) => m.id === move.id)) {
+        throw new Error(
+          "No se pudo aprender el movimiento. Revisa la compatibilidad y los espacios disponibles.",
+        );
+      }
+      toast.success(
+        `${move.displayName} aprendido.`,
+        isTm
+          ? {
+              description: replacedMove
+                ? `Sustituyó a ${replacedMove.displayName}. Se consumió 1 TM de tu Bag.`
+                : "Se consumió 1 TM de tu Bag.",
+            }
+          : undefined,
       );
-    }
-    const after = store
-      .getState()
-      .party.pokemons.find((p) => p.captureId === capture.captureId);
-    if (!after?.moves?.some((m) => m.id === move.id)) {
+      onClose();
+    } catch (error) {
       toast.error(
-        "No se pudo aprender el movimiento. Revisa la compatibilidad y los espacios disponibles.",
+        error instanceof Error ? error.message : "No se pudo usar la TM.",
       );
-      return;
+    } finally {
+      learningRef.current = false;
+      setLearning(false);
     }
-    toast.success(
-      `${move.displayName} aprendido.`,
-      isTm
-        ? {
-            description: replacedMove
-              ? `Sustituyó a ${replacedMove.displayName}. Descarta la carta TM utilizada.`
-              : "Descarta la carta TM utilizada.",
-          }
-        : undefined,
-    );
-    onClose();
   }
 
   return (
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open) onClose();
+        if (!open && !learning) onClose();
       }}
     >
       <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-[520px]">
@@ -207,18 +234,33 @@ function MovePicker({
           <DialogDescription>
             {isTm
               ? replacedMove
-                ? `Gasta una carta TM para reemplazar ${replacedMove.displayName} por otro movimiento compatible.`
-                : "Gasta una carta TM para aprender un movimiento compatible en un espacio libre."
-              : "Esta elección utiliza uno de los dos movimientos gratuitos de tu inicial. Cambiarlo después requiere una carta TM."}
+                ? `Consume 1 TM de tu Bag para reemplazar ${replacedMove.displayName} por otro movimiento compatible, fuera de combate.`
+                : "Consume 1 TM de tu Bag para aprender un movimiento compatible en un espacio libre, fuera de combate."
+              : "Esta elección utiliza uno de los dos movimientos gratuitos de tu inicial. Cambiarlo después requiere una TM."}
           </DialogDescription>
         </DialogHeader>
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-1">
+          {isTm && (
+            <p className="text-sm" data-testid="tm-available-stock">
+              TM disponibles: <strong>{stock}</strong>
+            </p>
+          )}
+          {isTm && tmUnavailable && !learning && (
+            <p role="status" className="text-sm text-muted-foreground">
+              {localBattleActive(party)
+                ? "Las TM sólo pueden usarse fuera de combate."
+                : stock < 1
+                  ? "No tienes TM en tu Bag. Puedes comprarlas en el Poké Mart con el administrador."
+                  : "Conecta y sincroniza tu inventario, y termina cualquier operación pendiente para usar una TM."}
+            </p>
+          )}
           <Input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Buscar movimiento en inglés…"
             aria-label="Buscar movimiento"
             autoComplete="off"
+            disabled={learning}
           />
           {loading && (
             <p role="status" className="text-xs text-muted-foreground">
@@ -256,9 +298,9 @@ function MovePicker({
                 key={option.id}
                 type="button"
                 aria-pressed={selectedId === option.id}
+                disabled={learning}
                 onClick={() => {
                   setSelectedId(option.id);
-                  setCardConfirmed(false);
                 }}
                 className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selectedId === option.id ? "bg-muted font-semibold text-brand" : "hover:bg-muted"}`}
               >
@@ -283,23 +325,6 @@ function MovePicker({
             <article className="space-y-3 rounded-xl border bg-muted/30 p-3">
               <h3 className="font-semibold">{move.displayName}</h3>
               <MoveDetails move={move} />
-              {isTm && (
-                <label className="flex cursor-pointer items-start gap-2 border-t pt-3 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={cardConfirmed}
-                    onChange={(event) => setCardConfirmed(event.target.checked)}
-                    className="mt-1 h-4 w-4 shrink-0 accent-current"
-                  />
-                  <span>
-                    Confirmo que gastaré una carta TM para{" "}
-                    {replacedMove
-                      ? `sustituir ${replacedMove.displayName} por ${move.displayName}`
-                      : `aprender ${move.displayName}`}
-                    .
-                  </span>
-                </label>
-              )}
             </article>
           ) : (
             <p className="text-sm text-muted-foreground">
@@ -314,19 +339,40 @@ function MovePicker({
           )}
         </div>
         <DialogFooter className="shrink-0 gap-2 border-t pt-3">
-          <Button type="button" variant="outline" onClick={onClose}>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={learning}
+            onClick={onClose}
+          >
             Cancelar
           </Button>
           <Button
             type="button"
-            disabled={!move || !targetStillValid || (isTm && !cardConfirmed)}
-            onClick={learn}
+            data-testid={isTm ? "tm-confirm" : "initial-move-confirm"}
+            disabled={
+              learning ||
+              !move ||
+              !targetStillValid ||
+              learningBlocked ||
+              (isTm && tmUnavailable)
+            }
+            onClick={() => void learn()}
           >
-            {isTm
-              ? replacedMove
-                ? "Gastar 1 TM y sustituir"
-                : "Gastar 1 TM y aprender"
-              : "Aprender gratis"}
+            {learning ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Guardando…
+              </>
+            ) : isTm ? (
+              replacedMove ? (
+                "Gastar 1 TM y sustituir"
+              ) : (
+                "Gastar 1 TM y aprender"
+              )
+            ) : (
+              "Aprender gratis"
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -349,6 +395,16 @@ export default function PokemonMovesPanel({
   const opponent = useAppSelector((state) => state.party.opponent);
   const runtime = useAppSelector((state) => state.party.emerald);
   const lastResult = useAppSelector((state) => state.party.lastBattleResult);
+  const party = useAppSelector((state) => state.party);
+  const shop = useShopContext();
+  const tmStock = party.bag?.items?.tm ?? 0;
+  const tmUnavailable =
+    shop.usingItem ||
+    !shop.connected ||
+    !shop.synced ||
+    tmStock < 1 ||
+    localBattleActive(party) ||
+    isLocalPartyMutationBlocked(party);
   const fieldActionUsed = useAppSelector(
     (state) =>
       !state.party.emerald &&
@@ -378,6 +434,12 @@ export default function PokemonMovesPanel({
         <h2 className="font-semibold">Movimientos</h2>
         <span className="text-xs text-muted-foreground">{moves.length}/4</span>
       </div>
+      <p
+        className="mt-2 text-xs text-muted-foreground"
+        data-testid="party-tm-stock"
+      >
+        TM en la Bag: {tmStock}. Se usan fuera de combate.
+      </p>
       {freeSlots > 0 && (
         <p className="mt-2 text-sm text-muted-foreground">
           Puedes elegir {freeSlots} movimiento{freeSlots === 1 ? "" : "s"}{" "}
@@ -424,7 +486,7 @@ export default function PokemonMovesPanel({
               size="sm"
               variant="outline"
               className="mt-auto w-full gap-2"
-              disabled={!!runtime && !runtime.ended}
+              disabled={tmUnavailable}
               onClick={() => setChoice({ kind: "tm", replaceMoveId: move.id })}
               aria-label={`Sustituir ${move.displayName} con una TM`}
             >
@@ -435,7 +497,13 @@ export default function PokemonMovesPanel({
         {Array.from({ length: Math.max(0, 4 - moves.length) }, (_, index) => (
           <Button
             key={`empty-${index}`}
-            disabled={!!runtime && !runtime.ended}
+            disabled={
+              index < freeSlots
+                ? localBattleActive(party) ||
+                  isLocalPartyMutationBlocked(party) ||
+                  shop.usingItem
+                : tmUnavailable
+            }
             type="button"
             variant="outline"
             className="h-auto min-h-20 whitespace-normal border-dashed p-4"
@@ -478,7 +546,7 @@ export default function PokemonMovesPanel({
           </div>
         )}
       <p className="mt-3 text-xs text-muted-foreground">
-        Aprender o sustituir con TM cuesta una carta física por movimiento. Los
+        Aprender o sustituir con TM consume una unidad de tu Bag. Los
         movimientos aprendidos se guardan en tu equipo.
       </p>
       <p className="mt-1 text-xs text-muted-foreground">

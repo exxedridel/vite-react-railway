@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import reducer, {
   executePokemonMove,
-  learnPokemonMoveWithTm,
+  applyTmToParty,
   learnInitialMove,
   setBattleOpponent,
   type PartyState,
@@ -104,8 +104,10 @@ test("newly learned starter and TM moves begin at maximum even if a reused paylo
     versionGroup: "emerald",
     moves: [{ id: learned.id, name: learned.name }],
   };
-  for (const learn of [learnPokemonMoveWithTm, learnInitialMove]) {
-    const result = reducer(initial, learn({ captureId: "own", move: learned }));
+  for (const result of [
+    applyTmToParty(initial, { captureId: "own", move: learned }),
+    reducer(initial, learnInitialMove({ captureId: "own", move: learned })),
+  ]) {
     assert.equal(
       result.pokemons[0].moves!.find((m) => m.id === 150)!.currentPp,
       learned.pp,

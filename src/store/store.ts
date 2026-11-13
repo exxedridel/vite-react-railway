@@ -71,7 +71,8 @@ const pvpPartyGuard: Middleware<{}, { party: AppState["party"] }> =
       typeof action === "object" &&
       "type" in action &&
       (action.type === resetGame.type ||
-        action.type === "party/fullRestorePokemon")
+        action.type === "party/fullRestorePokemon" ||
+        action.type === "party/learnPokemonMoveWithTm")
     )
       return action;
     if (

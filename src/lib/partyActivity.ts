@@ -428,7 +428,7 @@ export function describePartyActivity(
           ? `${replaced.displayName} → ${learned.displayName}`
           : `Aprendió ${learned.displayName}.`,
         tm
-          ? "Uso de 1 carta TM declarado por el jugador."
+          ? "Consumo de 1 TM del inventario confirmado."
           : "Elección gratuita del inicial.",
       ],
     };

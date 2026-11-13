@@ -1,7 +1,7 @@
 import type { PartyState } from "@/slices/partySlice";
 import { stablePvpJson } from "@/lib/pvp/types";
 import { getMaxMovePp } from "@/lib/movePp";
-import { CONSUMABLE_ITEM_IDS } from "@/lib/shop/types";
+import { USABLE_ITEM_IDS } from "@/lib/shop/types";
 
 export const PVP_PARTY_COMMIT = "party/pvpCommit";
 let pvpSyncBlocked = false;
@@ -222,13 +222,14 @@ export function decodeAccountParty(
         typeof lock.captureId !== "string" ||
         !lock.captureId ||
         (lock.itemId !== undefined &&
-          !(CONSUMABLE_ITEM_IDS as readonly unknown[]).includes(lock.itemId)) ||
-        (lock.itemId === "max-ether"
+          !(USABLE_ITEM_IDS as readonly unknown[]).includes(lock.itemId)) ||
+        (lock.itemId === "max-ether" || lock.itemId === "tm"
           ? !Number.isSafeInteger(lock.moveId) ||
             Number(lock.moveId) < 1 ||
             Number(lock.moveId) > 354
           : lock.moveId !== undefined) ||
         !["party", "local-battle"].includes(String(lock.context)) ||
+        (lock.itemId === "tm" && lock.context !== "party") ||
         typeof lock.planHash !== "string" ||
         !/^[a-f0-9]{64}$/.test(lock.planHash) ||
         typeof lock.expectedCombatHash !== "string" ||

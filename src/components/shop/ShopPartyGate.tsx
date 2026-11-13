@@ -16,11 +16,13 @@ export default function ShopPartyGate({ children }: { children: ReactNode }) {
   const usingItem = !!itemLock || !!pendingUse;
   const itemId = itemLock?.itemId ?? pendingUse?.itemId ?? "full-restore";
   const itemName =
-    itemId === "max-ether"
-      ? "Max Ether"
-      : itemId === "max-elixir"
-        ? "Max Elixir"
-        : "Full Restore";
+    itemId === "tm"
+      ? "TM"
+      : itemId === "max-ether"
+        ? "Max Ether"
+        : itemId === "max-elixir"
+          ? "Max Elixir"
+          : "Full Restore";
   const [retrying, setRetrying] = useState(false);
   const [localError, setLocalError] = useState("");
   const pendingReset = shop.resets.find((reset) => reset.status === "pending");

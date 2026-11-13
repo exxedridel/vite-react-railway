@@ -3,7 +3,7 @@
 Frontend del juego con React, TypeScript y Vite. `mysql-restapi` autentica y
 administra usuarios; `nest-mongo-pokedex` comunica jugadores y conserva las
 batallas PvP, las carteras y los recibos del Poké Mart. El motor de combate se
-ejecuta en el panel administrador. Versión de la aplicación: **2.4.1**.
+ejecuta en el panel administrador. Versión de la aplicación: **2.5.0**.
 
 ## Desarrollo y comprobaciones
 
@@ -116,7 +116,7 @@ No se permite comprar durante PvP, Trainer Battle ni un encuentro local activo.
 Una compra en curso también bloquea temporalmente las acciones de la Party y
 una nueva reserva de batalla. Una respuesta antigua no retira ese bloqueo. Si
 falla el guardado local, la pantalla ofrece **Recuperar compra** y conserva el
-recibo pendiente. Full Restore, Max Ether y Max Elixir consumen existencias;
+recibo pendiente. Full Restore, Max Ether, Max Elixir y TM consumen existencias;
 los demás objetos conservan sus cantidades sin uso desde el inventario.
 
 ### Full Restore desde la Bag
@@ -184,6 +184,26 @@ continua. No se puede cerrar ese aviso con Escape o clic fuera; si falla la
 conexión o el guardado, permite recuperar la misma operación. Esta corrección
 sólo requiere desplegar React; conserva inventario, PP y protocolo Nest.
 
+### TM: aprender movimientos fuera de combate
+
+Las TM conservan su precio de **500 Pokedollars** y se compran en Poké Mart con
+el administrador. En el panel **Movimientos** del Pokémon, **Aprender con TM**
+consume una unidad de la Bag al confirmar un movimiento compatible. Si ya
+hay cuatro movimientos, **Sustituir con TM** reemplaza el elegido por una unidad.
+El nuevo movimiento comienza con todos sus PP; los restantes conservan los suyos.
+
+Las dos elecciones gratuitas del Pokémon inicial siguen siendo gratuitas y no
+gastan TM. Sustituir después uno de esos movimientos sí cuesta una TM; no vuelve
+a conceder elecciones gratis. Los movimientos ya aprendidos permanecen intactos.
+
+Sin TM, conexión/sincronización o con una batalla u operación pendiente, el canje
+no está disponible. Las TM **sólo se usan fuera de combate** y no aparecen entre
+los objetos de turno del jugador o administrador. Cancelar el selector no consume.
+El inventario y el movimiento se guardan antes de confirmar el uso; una caída de
+red o Storage conserva el mismo plan para recuperarlo sin aprender o gastar dos
+veces. Para habilitar este flujo, desplegar **Nest primero y React después**;
+sin cambios en MySQL, variables ni reinicio de partidas.
+
 La cartera es la autoridad para saldo y objetos comprados; el resto de la partida
 sigue en el navegador. No hay sondeo periódico de saldos: se publican cambios por
 Socket.IO. Se mantiene una sola réplica Nest. Protocolo: `../SHOP_PROTOCOL.md`.
@@ -196,6 +216,7 @@ nuevas; `/shop` usa el mismo origen WebSocket ya configurado. Nest crea
 npm run test:shop:wallet
 npm run test:shop:ui
 npm run test:pp
+npm run test:tm
 npm run test:shop:browser
 ```
 

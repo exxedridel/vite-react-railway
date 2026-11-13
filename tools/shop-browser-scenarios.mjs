@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { fullRestoreBrowserScenario } from "./full-restore-browser-scenarios.mjs";
 import { ppItemsBrowserScenario } from "./pp-items-browser-scenarios.mjs";
+import { tmBrowserScenario } from "./tm-browser-scenarios.mjs";
 
 /** Real UI scenarios, using the identity/Nest/Chrome harness in test-pvp-browser. */
 export async function runShopBrowserScenario({
@@ -809,6 +810,21 @@ export async function runShopBrowserScenario({
     closeDialog,
   });
   await ppItemsBrowserScenario({
+    admin,
+    playerA,
+    cdp,
+    evalArgs,
+    waitArgs,
+    clickButton,
+    field,
+    seedPvpTeam,
+    shopRepository,
+    shopGateway,
+    select,
+    openItem,
+    closeDialog,
+  });
+  await tmBrowserScenario({
     admin,
     playerA,
     cdp,

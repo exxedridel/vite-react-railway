@@ -1,6 +1,7 @@
 import { nanoid } from "@reduxjs/toolkit";
 import partyReducer, {
   applyFullRestoreToParty,
+  applyTmToParty,
   commitEmeraldAction,
   type PartyState,
 } from "@/slices/partySlice";
@@ -9,6 +10,8 @@ import { combatKey } from "@/lib/emerald/types";
 import { emptyBattleField } from "@/lib/battleField";
 import type { ConsumableItemId } from "@/lib/shop/types";
 import { getCurrentMovePp, getMaxMovePp, restoreMovePp } from "@/lib/movePp";
+import type { PokemonMove } from "@/types/moves";
+import { localBattleActive } from "@/lib/shop/wallet";
 
 type Engine = typeof import("@/lib/emerald/engine");
 let engine: Promise<Engine> | undefined;
@@ -165,4 +168,39 @@ export function prepareFullRestoreParty(
   captureId: string,
 ): Promise<PartyState> {
   return preparePartyItem(input, captureId, "full-restore");
+}
+
+/** A TM plan is persisted before any stock is debited. It never changes Bag. */
+export async function prepareTmParty(
+  input: PartyState,
+  captureId: string,
+  move: PokemonMove,
+  replaceMoveId?: number,
+): Promise<PartyState> {
+  if (input.pvpLock || input.shopLock || input.resetLock || input.itemUseLock)
+    throw new Error(
+      "La Party tiene una batalla u operación pendiente. Recupérala antes de usar una TM.",
+    );
+  if (localBattleActive(input))
+    throw new Error("Las TM sólo pueden usarse fuera de combate.");
+  const target = input.pokemons.find(
+    (capture) => capture.captureId === captureId,
+  );
+  if (!target || !isLeveled(target.pokemon))
+    throw new Error("Elige un Pokémon válido de tu equipo.");
+  const next = applyTmToParty(input, {
+    captureId,
+    move,
+    ...(replaceMoveId === undefined ? {} : { replaceMoveId }),
+  });
+  if (
+    next === input ||
+    !next.pokemons
+      .find((capture) => capture.captureId === captureId)
+      ?.moves?.some((learned) => learned.id === move.id)
+  )
+    throw new Error(
+      "No se pudo aprender el movimiento. Revisa la compatibilidad y los espacios disponibles.",
+    );
+  return next;
 }

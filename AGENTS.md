@@ -9,7 +9,21 @@ Acuerdo del usuario confirmado el 2026-11-08:
 
 Si esta disponible, leer [la memoria compartida](../PROJECT_MEMORY.md). Este resumen se conserva tambien aqui para sesiones que abran solo este repositorio.
 
-Corrección vigente2026-11-12 frontend2.4.1: ShopPartyGate mantiene siempre
+Etapa vigente2026-11-12 frontend2.5.0: TM consumible500, sólo fuera combate.
+Usuario conserva2movimientos inicialesgratis y sustituye con4 por1TM. UI usa
+useTm(captureId,move,replaceMoveId?), stock/conexión/sync/locks controlan botón;
+no carta física. Plan durable antes débito, movimiento+wallet+marca antesACK,
+recuperación exacta sin repetir. PPnuevo máximo y contadorgratis conservado.
+Store bloquea thunk/raw dispatch TM gratis; plannerpuro interno valida learnset/
+GenIII/espacio/reemplazo. USABLE4 para uso local, CONSUMABLE3 para batalla;
+TM sólo contextparty+moveId y no carga motor. Modal2.4.1/música intactos, no
+tocar ITEMS mayúsculo editado por usuario. TS/build/157pruebas combinadas y
+wallet17/cuentas7/Party9 pasan; Chrome TM completo+flujosprevios pasa (500,
+cancelación/dobleclick/stock0/offline/batalla/Storage-reload/reemplazo4).
+Nest primero luego React,
+sin variables nuevas/MySQL/schema/seed ni borrar partidas. Ver memoria.
+
+Corrección anterior2026-11-12 frontend2.4.1: ShopPartyGate mantiene siempre
 children en el mismo slot al activar/desactivar itemUseLock/pendingUse; no
 desmontar Layout/BattleMusicProvider/arena/diálogo al aplicar objetos. Modal
 compacto role=alertdialog con fondo ligero, sin X/Escape/exterior, foco/acciones
