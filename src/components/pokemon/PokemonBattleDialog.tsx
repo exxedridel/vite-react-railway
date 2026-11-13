@@ -142,6 +142,12 @@ function PokemonBattleDialog({ captureId, onClose }: Props) {
 function BattleDialogContent({ captureId, onClose }: Props) {
   const dispatch = useAppDispatch();
   const [manageOpen, setManageOpen] = useState(false);
+  const paidCaptureId = useAppSelector(
+    (state) => state.party.captureAttempt?.attemptId,
+  );
+  useEffect(() => {
+    if (paidCaptureId) setManageOpen(false);
+  }, [paidCaptureId]);
   const batch = useAppSelector((state) => state.party.lastEmeraldBatch);
   const seenBatch = useRef(batch?.id);
   const [turnSummary, setTurnSummary] = useState<typeof batch>(undefined);

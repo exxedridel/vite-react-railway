@@ -1,4 +1,4 @@
-import PokemonCaptureRequirements from "./PokemonCaptureRequirements";
+import PokemonBallThrowDialog from "./PokemonBallThrowDialog";
 import {
   CATCH_TIERS,
   encounterPool,
@@ -12,7 +12,9 @@ import { pokemonAllowed, regionSummary, gameBalance } from "@/lib/gameSettings";
 import { hasLivingHp, isPokemonFainted } from "@/lib/pokemonCondition";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { store } from "@/store/store";
-import { captureWildOpponent } from "@/slices/partySlice";
+import { useShopContext } from "@/context/ShopContext";
+import { BALL_ITEM_IDS } from "@/lib/shop/types";
+import { isLocalPartyMutationBlocked } from "@/store/accountStorage";
 import { canChooseStarter } from "@/lib/starterPokemon";
 import { generateWildEncounter } from "@/lib/wildEncounter";
 import PokemonTypeBadges from "./PokemonTypeBadges";
@@ -105,6 +107,7 @@ function OpponentSummary({
 }
 export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
   const dispatch = useAppDispatch();
+  const shop = useShopContext();
   const settings = useAppSelector((state) => state.party.gameSettings);
   const balance = gameBalance(settings);
   const allowedRegionsLabel = useAppSelector((state) =>
@@ -130,7 +133,6 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const generationRef = useRef<AbortController | null>(null);
   const captureButtonRef = useRef<HTMLButtonElement>(null);
-  const cancelCaptureRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
   const cancelRemoveRef = useRef<HTMLButtonElement>(null);
@@ -156,6 +158,23 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
     !!opponent.encounterId &&
     (opponent.moves?.length ?? 0) >= 1 &&
     (opponent.moves?.length ?? 0) <= 3;
+  const hasBalls = BALL_ITEM_IDS.some(
+    (id) => (party.bag?.items?.[id] ?? 0) > 0,
+  );
+  const request = party.emerald?.requests.player;
+  const canThrowNow =
+    canCapture &&
+    hasBalls &&
+    shop.connected &&
+    shop.synced &&
+    !shop.usingItem &&
+    !isLocalPartyMutationBlocked(party) &&
+    !party.emerald?.pending.player &&
+    !request?.forceSwitch &&
+    !request?.waiting &&
+    !request?.locked &&
+    !party.battleField?.playerItemUsedThisTurn &&
+    !party.battleField?.playerSwitchedThisTurn;
   // Si el rival cae a cero con la confirmación abierta, invalida ese intento.
   useEffect(() => {
     if (
@@ -336,43 +355,6 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
       }
     }
   };
-  const handleCapture = () => {
-    if (!captureTargetId) return;
-    const current = store.getState().party;
-    if (current.pokemons.length >= 6) {
-      toast.error(
-        "Tu equipo está lleno. Libera un espacio antes de registrar la captura.",
-      );
-      return;
-    }
-    if (current.opponent?.encounterId !== captureTargetId) {
-      setCaptureTargetId(null);
-      toast.error("Este encuentro ya no está disponible.");
-      return;
-    }
-    if (!hasLivingHp(current.opponent.pokemon)) {
-      setCaptureTargetId(null);
-      toast.error("No puedes capturar un Pokémon debilitado.");
-      return;
-    }
-    const name = current.opponent.pokemon.name;
-    const action = captureWildOpponent(captureTargetId);
-    dispatch(action);
-    if (
-      !store
-        .getState()
-        .party.pokemons.some((p) => p.captureId === action.payload.captureId)
-    ) {
-      toast.error(
-        "No se pudo registrar la captura. Revisa que el encuentro tenga movimientos compatibles con Emerald.",
-      );
-      return;
-    }
-    setCaptureTargetId(null);
-    toast.success(`${name} se unió a tu equipo.`, {
-      description: "Conserva su nivel, HP y sus movimientos.",
-    });
-  };
   const handleChangeLevel = (amount: number) => {
     onChange((current) =>
       current ? changeOpponentLevel(current, amount) : null,
@@ -478,7 +460,8 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
                 type="button"
                 ref={captureButtonRef}
                 className="w-full gap-2"
-                disabled={!canCapture}
+                disabled={!canThrowNow}
+                data-testid="capture-open"
                 onClick={() => setCaptureTargetId(opponent.encounterId ?? null)}
               >
                 <img src="/Pokeball-PNG.png" alt="" className="h-5 w-5" />{" "}
@@ -491,7 +474,11 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
                     ? "Equipo lleno (6/6). El salvaje seguirá guardado hasta que liberes un espacio."
                     : needsStarter
                       ? "Primero debes elegir tu Pokémon inicial."
-                      : "Consulta el mínimo de tu D20 según la pokebola que lanzarás."}
+                      : !hasBalls
+                        ? "No tienes pokebolas en tu Bag. Compra más en el Poké Mart."
+                        : !shop.connected || !shop.synced
+                          ? "Conecta y sincroniza tu Bag para lanzar una pokebola."
+                          : "Elige una pokebola de tu Bag y confirma su lanzamiento antes de tirar el D20."}
               </p>
             </div>
           )}
@@ -511,7 +498,8 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
           Busca al Pokémon rival para cargar sus tipos y estadísticas.
         </p>
       )}
-      <Dialog
+      <PokemonBallThrowDialog
+        opponent={opponent}
         open={
           canCapture &&
           captureTargetId !== null &&
@@ -520,47 +508,7 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
         onOpenChange={(next) => {
           if (!next) setCaptureTargetId(null);
         }}
-      >
-        <DialogContent
-          className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-[425px]"
-          onOpenAutoFocus={(event) => {
-            event.preventDefault();
-            cancelCaptureRef.current?.focus();
-          }}
-          onCloseAutoFocus={(event) => {
-            event.preventDefault();
-            const target = captureButtonRef.current;
-            (target && !target.disabled ? target : triggerRef.current)?.focus();
-          }}
-        >
-          <DialogHeader>
-            <DialogTitle>Lanzar pokebola</DialogTitle>
-            <DialogDescription>
-              Consulta el mínimo para atrapar a {opponent?.pokemon.name}, tira
-              tu D20 físico y confirma solo si lo conseguiste. Se conservarán su
-              nivel, HP y movimientos.
-            </DialogDescription>
-          </DialogHeader>
-          {opponent && <PokemonCaptureRequirements opponent={opponent} />}
-          <DialogFooter className="gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              ref={cancelCaptureRef}
-              onClick={() => setCaptureTargetId(null)}
-            >
-              Cancelar
-            </Button>
-            <Button
-              type="button"
-              disabled={!canCapture}
-              onClick={handleCapture}
-            >
-              Captura conseguida
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      />
       <Dialog
         open={removeDialogOpen && opponent !== null}
         onOpenChange={setRemoveDialogOpen}

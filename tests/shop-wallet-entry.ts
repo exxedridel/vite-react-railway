@@ -6,6 +6,7 @@ import reducer, {
   configureGame,
   learnPokemonMoveWithTm,
   resetGame,
+  captureWildOpponent,
   toggleGymBadge,
 } from "../src/slices/partySlice";
 import {
@@ -38,6 +39,10 @@ import type {
   Wallet,
 } from "../src/lib/shop/types";
 import { applyItemUse, prepareItemUse } from "../src/lib/shop/itemUse";
+import {
+  prepareBallCaptureParty,
+  resolveCaptureAttempt,
+} from "../src/lib/shop/ballCapture";
 import {
   applyCenterHealing,
   prepareCenterHealing,
@@ -1527,6 +1532,283 @@ export async function runAccountStorageTests() {
   );
   passed.push(
     "Terminal Center receipts survive reload, fence late PENDING and release only their own reservation; cancellation preserves unhealed Pokémon instead of reconstructing or replaying effects",
+  );
+  const ballUser = 613;
+  await activateAccountStore(ballUser);
+  await applyShopWallet(
+    wallet(ballUser, 0, 777, { "poke-ball": 2, "great-ball": 1 }),
+  );
+  await transactPvpParty(ballUser, async (current) => {
+    const actor = clone(legacyTeam[0]);
+    actor.captureId = "ball-actor";
+    actor.pokemon.stats.find((stat) => stat.name === "hp")!.value = getMaxHp(
+      actor.pokemon,
+    )!;
+    actor.statuses = [];
+    actor.statusTurns = {};
+    actor.pokemon.battleStages = neutralBattleStages();
+    const wildPokemon = clone(actor.pokemon);
+    wildPokemon.id = 19;
+    wildPokemon.name = "rattata";
+    wildPokemon.learnset = {
+      versionGroup: "emerald",
+      moves: [{ id: 150, name: "splash" }],
+    };
+    return {
+      party: {
+        ...current,
+        gameSettings: clone(legacySettings),
+        starterClaimed: true,
+        pokemons: [actor],
+        opponent: {
+          kind: "wild",
+          encounterId: "ball-wild-1",
+          pokemon: wildPokemon,
+          moves: [
+            {
+              ...clone(trainerMoves.find((move) => move.id === 150)!),
+              currentPp: 40,
+              source: "wild",
+            },
+          ],
+          statuses: ["poisoned"],
+          statusTurns: {},
+          stages: neutralBattleStages(),
+        },
+        emerald: undefined,
+        battleField: {
+          version: 1,
+          turn: 1,
+          activeCaptureId: actor.captureId,
+          weather: null,
+          waterSport: null,
+          mudSport: null,
+        },
+      },
+      value: undefined,
+    };
+  });
+  const ballBefore = clone(store.getState().party);
+  store.dispatch(captureWildOpponent("ball-wild-1"));
+  assert.deepEqual(
+    clone(store.getState().party),
+    ballBefore,
+    "legacy raw capture dispatch cannot bypass spending",
+  );
+  const ballSeed: [number, number, number, number] = [3, 7, 11, 17];
+  const ballPlan = (party: typeof ballBefore, captureId: string) =>
+    prepareBallCaptureParty(
+      party,
+      captureId,
+      "poke-ball",
+      { userId: ballUser, clientId: "ball-client", requestId: "ball-use-1" },
+      ballSeed,
+      "ball-caught-1",
+    );
+  testStorage.failWritesFor.add(accountStorageKey(ballUser));
+  await assert.rejects(
+    prepareItemUse(
+      ballUser,
+      "ball-client",
+      "ball-use-1",
+      "ball-actor",
+      0,
+      ballPlan,
+      "poke-ball",
+    ),
+    /guardar/,
+  );
+  testStorage.failWritesFor.clear();
+  assert.equal(saved(ballUser).bag.items["poke-ball"], 2);
+  assert.equal(saved(ballUser).captureAttempt, undefined);
+  await assert.rejects(
+    prepareBallCaptureParty(
+      ballBefore,
+      "ball-actor",
+      "ultra-ball",
+      { userId: ballUser, clientId: "ball-client", requestId: "no-stock" },
+      ballSeed,
+      "no-stock-capture",
+    ),
+    /existencias/,
+  );
+  await assert.rejects(
+    prepareBallCaptureParty(
+      ballBefore,
+      "ball-actor",
+      "poke-ball",
+      { userId: ballUser, clientId: "ball-client", requestId: "stale-quote" },
+      ballSeed,
+      "stale-capture",
+      { minimum: 20, encounterId: "ball-wild-1" },
+    ),
+    /mínimo cambió/,
+  );
+  await prepareItemUse(
+    ballUser,
+    "ball-client",
+    "ball-use-1",
+    "ball-actor",
+    0,
+    ballPlan,
+    "poke-ball",
+  );
+  const ballLock = store.getState().party.itemUseLock!;
+  const ballReceipt: ItemUse = {
+    requestId: ballLock.requestId,
+    userId: ballUser,
+    clientId: "ball-client",
+    itemId: "poke-ball",
+    captureId: "ball-actor",
+    context: "local-battle",
+    planHash: ballLock.planHash,
+    expectedWalletRevision: 0,
+    walletRevision: 1,
+    status: "pending",
+  };
+  const ballWallet = wallet(ballUser, 1, 777, {
+    "poke-ball": 1,
+    "great-ball": 1,
+  });
+  testStorage.failWritesFor.add(accountStorageKey(ballUser));
+  await assert.rejects(
+    applyItemUse(ballWallet, ballReceipt, "ball-client"),
+    /guardar/,
+  );
+  testStorage.failWritesFor.clear();
+  assert.equal(saved(ballUser).captureAttempt, undefined);
+  await applyItemUse(ballWallet, ballReceipt, "ball-client");
+  assert.equal(saved(ballUser).captureAttempt.attemptId, "ball-use-1");
+  assert.equal(saved(ballUser).bag.items["poke-ball"], 1);
+  await assert.rejects(
+    resolveCaptureAttempt(ballUser, "ball-use-1", "caught"),
+    /Confirma el consumo/,
+  );
+  await applyItemUse(
+    ballWallet,
+    { ...ballReceipt, status: "applied" },
+    "ball-client",
+  );
+  const paidAttempt = saved(ballUser).captureAttempt;
+  assert.equal(isLocalPartyMutationBlocked(store.getState().party), true);
+  await assert.rejects(
+    prepareGameReset(ballUser, "ball-client", "ball-racing-reset", 1),
+    /batalla|pendiente/,
+  );
+  await assert.rejects(
+    prepareShopParty(ballUser, "ball-client", "ball-racing-buy", 1),
+    /batalla|pendiente/,
+  );
+  await clearAccountStore();
+  await activateAccountStore(ballUser);
+  assert.deepEqual(
+    saved(ballUser).captureAttempt,
+    paidAttempt,
+    "paid die prompt survives reload",
+  );
+  const actorPp = clone(store.getState().party.pokemons[0].moves);
+  testStorage.failWritesFor.add(accountStorageKey(ballUser));
+  await assert.rejects(
+    resolveCaptureAttempt(ballUser, "ball-use-1", "escaped"),
+    /guardar/,
+  );
+  testStorage.failWritesFor.clear();
+  assert.deepEqual(
+    saved(ballUser).captureAttempt,
+    paidAttempt,
+    "failed outcome save retains exact seed and target",
+  );
+  const missed = await resolveCaptureAttempt(ballUser, "ball-use-1", "escaped");
+  assert.equal(missed.outcome, "escaped");
+  const missedParty = saved(ballUser);
+  assert.equal(missedParty.captureAttempt, undefined);
+  assert.equal(missedParty.bag.items["poke-ball"], 1);
+  assert.deepEqual(
+    missedParty.pokemons[0].moves,
+    actorPp,
+    "throw uses no player PP",
+  );
+  assert.equal(
+    missedParty.opponent.moves[0].currentPp,
+    39,
+    "wild response spends one PP",
+  );
+  assert.ok(missedParty.battleField.turn >= 2);
+  await resolveCaptureAttempt(ballUser, "ball-use-1", "escaped");
+  assert.deepEqual(
+    saved(ballUser),
+    missedParty,
+    "repeat miss cannot run the enemy twice",
+  );
+  await assert.rejects(
+    resolveCaptureAttempt(ballUser, "ball-use-1", "caught"),
+    /otro resultado/,
+  );
+  passed.push(
+    "Pokeballs are paid before the external die; zero stock/stale quotes and legacy raw capture are rejected, reload preserves the attempt, and a failed saved outcome runs exactly one deterministic enemy turn without player PP",
+  );
+  const successPlan = (party: typeof ballBefore, captureId: string) =>
+    prepareBallCaptureParty(
+      party,
+      captureId,
+      "great-ball",
+      { userId: ballUser, clientId: "ball-client", requestId: "ball-use-2" },
+      [19, 23, 29, 31],
+      "ball-caught-2",
+    );
+  await prepareItemUse(
+    ballUser,
+    "ball-client",
+    "ball-use-2",
+    "ball-actor",
+    1,
+    successPlan,
+    "great-ball",
+  );
+  const successLock = store.getState().party.itemUseLock!;
+  const successReceipt: ItemUse = {
+    ...ballReceipt,
+    requestId: "ball-use-2",
+    itemId: "great-ball",
+    planHash: successLock.planHash,
+    expectedWalletRevision: 1,
+    walletRevision: 2,
+    status: "applied",
+  };
+  const successWallet = wallet(ballUser, 2, 777, {
+    "poke-ball": 1,
+    "great-ball": 0,
+  });
+  await applyItemUse(successWallet, successReceipt, "ball-client");
+  const beforeCatch = saved(ballUser);
+  testStorage.failWritesFor.add(accountStorageKey(ballUser));
+  await assert.rejects(
+    resolveCaptureAttempt(ballUser, "ball-use-2", "caught"),
+    /guardar/,
+  );
+  testStorage.failWritesFor.clear();
+  assert.equal(saved(ballUser).captureAttempt.attemptId, "ball-use-2");
+  await resolveCaptureAttempt(ballUser, "ball-use-2", "caught");
+  const caughtParty = saved(ballUser);
+  assert.equal(caughtParty.opponent, null);
+  assert.equal(caughtParty.pokemons.length, 2);
+  assert.equal(caughtParty.pokemons[1].captureId, "ball-caught-2");
+  assert.equal(
+    getCurrentHp(caughtParty.pokemons[1].pokemon),
+    getCurrentHp(beforeCatch.opponent.pokemon),
+  );
+  assert.equal(caughtParty.bag.items["great-ball"], 0);
+  assert.equal(caughtParty.bag.money, 777);
+  await clearAccountStore();
+  await activateAccountStore(ballUser);
+  await resolveCaptureAttempt(ballUser, "ball-use-2", "caught");
+  assert.deepEqual(
+    saved(ballUser),
+    caughtParty,
+    "success replay cannot add or pay twice",
+  );
+  passed.push(
+    "A favorable paid physical throw captures once with current HP, statuses and moves, consumes exactly its chosen ball, retains money, and survives outcome-storage failure plus reload/replay",
   );
   await clearAccountStore();
   persistor.pause();

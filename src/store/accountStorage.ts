@@ -1,7 +1,7 @@
 import type { PartyState } from "@/slices/partySlice";
 import { stablePvpJson } from "@/lib/pvp/types";
 import { getMaxMovePp } from "@/lib/movePp";
-import { USABLE_ITEM_IDS } from "@/lib/shop/types";
+import { BALL_ITEM_IDS, USABLE_ITEM_IDS } from "@/lib/shop/types";
 
 export const PVP_PARTY_COMMIT = "party/pvpCommit";
 let pvpSyncBlocked = false;
@@ -235,6 +235,59 @@ export function decodeAccountParty(
         validateStoredMovePp(capture.moves);
       }
     }
+    if (party.captureAttempt !== undefined) {
+      const attempt = party.captureAttempt;
+      const id = (value: unknown) =>
+        typeof value === "string" && /^[\w.:-]{1,128}$/.test(value);
+      if (
+        !isRecord(attempt) ||
+        attempt.version !== 1 ||
+        ![
+          attempt.attemptId,
+          attempt.clientId,
+          attempt.encounterId,
+          attempt.captureId,
+          attempt.resultCaptureId,
+        ].every(id) ||
+        !Number.isSafeInteger(attempt.userId) ||
+        Number(attempt.userId) <= 0 ||
+        !(BALL_ITEM_IDS as readonly unknown[]).includes(attempt.ballId) ||
+        !Number.isSafeInteger(attempt.minimum) ||
+        Number(attempt.minimum) < 1 ||
+        Number(attempt.minimum) > 20 ||
+        typeof attempt.pokemonName !== "string" ||
+        !attempt.pokemonName ||
+        attempt.pokemonName.length > 128 ||
+        !Array.isArray(attempt.seed) ||
+        attempt.seed.length !== 4 ||
+        !attempt.seed.every(
+          (n) =>
+            Number.isSafeInteger(n) && Number(n) >= 0 && Number(n) <= 65535,
+        ) ||
+        typeof attempt.expectedCombatHash !== "string" ||
+        !/^[a-f0-9]{64}$/.test(attempt.expectedCombatHash)
+      )
+        throw new Error();
+    }
+    if (party.lastCaptureResult !== undefined) {
+      const result = party.lastCaptureResult;
+      const id = (value: unknown) =>
+        typeof value === "string" && /^[\w.:-]{1,128}$/.test(value);
+      if (
+        !isRecord(result) ||
+        !id(result.attemptId) ||
+        !Number.isSafeInteger(result.userId) ||
+        Number(result.userId) <= 0 ||
+        !(BALL_ITEM_IDS as readonly unknown[]).includes(result.ballId) ||
+        typeof result.pokemonName !== "string" ||
+        !result.pokemonName ||
+        result.pokemonName.length > 128 ||
+        (result.outcome === "caught"
+          ? !id(result.captureId)
+          : result.outcome !== "escaped" || result.captureId !== undefined)
+      )
+        throw new Error();
+    }
     if (party.shopLock !== undefined) {
       const lock = party.shopLock;
       if (
@@ -297,6 +350,8 @@ export function decodeAccountParty(
           : lock.moveId !== undefined) ||
         !["party", "local-battle"].includes(String(lock.context)) ||
         (lock.itemId === "tm" && lock.context !== "party") ||
+        ((BALL_ITEM_IDS as readonly unknown[]).includes(lock.itemId) &&
+          lock.context !== "local-battle") ||
         typeof lock.planHash !== "string" ||
         !/^[a-f0-9]{64}$/.test(lock.planHash) ||
         typeof lock.expectedCombatHash !== "string" ||
@@ -313,7 +368,9 @@ export function decodeAccountParty(
         lock.prepared.pvpLock ||
         lock.prepared.shopLock ||
         lock.prepared.resetLock ||
-        lock.prepared.centerLock
+        lock.prepared.centerLock ||
+        (lock.prepared.captureAttempt &&
+          !(BALL_ITEM_IDS as readonly unknown[]).includes(lock.itemId))
       )
         throw new Error();
       // Prepared effects are local, never sent to Nest. Reject corrupt snapshots
@@ -385,7 +442,8 @@ function writeNormalAccountRoot(userId: number, raw: string): void {
         previous.shopLock ||
         previous.resetLock ||
         previous.itemUseLock ||
-        previous.centerLock) &&
+        previous.centerLock ||
+        previous.captureAttempt) &&
       pvpPartyRevision(previous) === pvpPartyRevision(incoming) &&
       stablePvpJson(previous) !== stablePvpJson(incoming)
     )
@@ -432,6 +490,7 @@ export function isLocalPartyMutationBlocked(party: PartyState): boolean {
     party.resetLock ||
     party.itemUseLock ||
     party.centerLock ||
+    party.captureAttempt ||
     activeAccountId === null
   )
     return true;
@@ -443,6 +502,7 @@ export function isLocalPartyMutationBlocked(party: PartyState): boolean {
       !!saved?.resetLock ||
       !!saved?.itemUseLock ||
       !!saved?.centerLock ||
+      !!saved?.captureAttempt ||
       pvpPartyRevision(saved) > pvpPartyRevision(party)
     );
   } catch {

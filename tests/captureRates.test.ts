@@ -123,15 +123,15 @@ test("colores HP exactos: 50% verde; 20% amarillo; menos de 20% rojo; fainted no
     assert.equal(captureRequirements(pokemon(hp))!.hpBonus, bonus);
   assert.equal(captureRequirements(pokemon(0)), null);
 });
-test("un principal da 4 y secundarios dan 2, sin acumulación de estados", () => {
+test("Frozen/Asleep dan 4, otros principales 2 y secundarios 0, sin acumulación", () => {
   assert.equal(captureRequirements(pokemon(), [])!.statusBonus, 0);
   assert.equal(
     captureRequirements(pokemon(), ["tormented", "confused"])!.statusBonus,
-    2,
+    0,
   );
   assert.equal(
     captureRequirements(pokemon(), ["burned", "confused"])!.statusBonus,
-    4,
+    2,
   );
   assert.equal(captureRequirements(pokemon(), ["asleep"])!.statusBonus, 4);
 });

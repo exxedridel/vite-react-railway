@@ -78,8 +78,36 @@ export const CONSUMABLE_ITEM_IDS = [
   "max-elixir",
 ] as const;
 export type ConsumableItemId = (typeof CONSUMABLE_ITEM_IDS)[number];
+export const BALL_ITEM_IDS = ["poke-ball", "great-ball", "ultra-ball"] as const;
+export type BallItemId = (typeof BALL_ITEM_IDS)[number];
+export type CaptureAttempt = {
+  version: 1;
+  attemptId: string;
+  userId: number;
+  clientId: string;
+  ballId: BallItemId;
+  minimum: number;
+  encounterId: string;
+  pokemonName: string;
+  captureId: string;
+  resultCaptureId: string;
+  seed: [number, number, number, number];
+  expectedCombatHash: string;
+};
+export type CaptureAttemptResult = {
+  attemptId: string;
+  userId: number;
+  ballId: BallItemId;
+  pokemonName: string;
+  outcome: "caught" | "escaped";
+  captureId?: string;
+};
 /** TM is usable only from the Party; combat choices keep the narrower union. */
-export const USABLE_ITEM_IDS = [...CONSUMABLE_ITEM_IDS, "tm"] as const;
+export const USABLE_ITEM_IDS = [
+  ...CONSUMABLE_ITEM_IDS,
+  "tm",
+  ...BALL_ITEM_IDS,
+] as const;
 export type UsableItemId = (typeof USABLE_ITEM_IDS)[number];
 export type Wallet = {
   userId: number;

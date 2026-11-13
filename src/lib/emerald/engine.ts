@@ -980,6 +980,56 @@ function resultsFrom(
   }
   return output;
 }
+/** Validate a physical capture action without choosing moves or advancing the
+ * persisted simulator/PRNG. This runs before inventory can be consumed. */
+export function assertEmeraldCaptureTurnAvailable(
+  input: CombatState,
+  captureId: string,
+  seed: [number, number, number, number],
+): void {
+  if (input.opponent?.kind !== "wild" || !input.opponent.encounterId)
+    throw new Error("Las pokebolas sólo se lanzan en encuentros salvajes.");
+  if (
+    input.battleField?.playerItemUsedThisTurn ||
+    input.battleField?.playerSwitchedThisTurn
+  )
+    throw new Error(
+      "Ya usaste la acción del turno. Finaliza el turno antes de lanzar una pokebola.",
+    );
+  const state = clone(input);
+  const runtime = state.emerald;
+  if (runtime && runtime.encounterKey !== encounterKey(state))
+    throw new Error("El encuentro cambió. Vuelve a abrir el combate.");
+  if (runtime?.pending.player)
+    throw new Error(
+      "Cancela tu movimiento pendiente antes de lanzar una pokebola.",
+    );
+  const battle = runtime
+    ? restoreEmeraldBattle(runtime.engine)
+    : initialise(state, captureId, seed);
+  if (battle.ended || getCurrentHp(state.opponent!.pokemon) <= 0)
+    throw new Error("El encuentro terminó o el rival está debilitado.");
+  if (runtime) synchronise(battle, state, runtime.mirror);
+  const active = battle.p1.active[0];
+  const current = request(battle.p1);
+  if (
+    !active ||
+    active.set.name !== captureId ||
+    active.hp <= 0 ||
+    current.forceSwitch ||
+    current.waiting
+  )
+    throw new Error(
+      "Elige el reemplazo obligatorio y abre el Pokémon activo antes de lanzar.",
+    );
+  if (current.locked)
+    throw new Error(
+      "Debes completar el movimiento forzado o la recarga antes de lanzar.",
+    );
+  if (battle.requestState !== "move")
+    throw new Error("Espera a que termine la acción actual antes de lanzar.");
+}
+
 export function runEmeraldAction(
   input: CombatState,
   captureId: string,

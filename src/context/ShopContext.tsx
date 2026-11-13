@@ -10,6 +10,8 @@ import {
 import { io, type Socket } from "socket.io-client";
 import type { ChatUser } from "@/lib/testMessages";
 import type { PokemonMove } from "@/types/moves";
+import { getCurrentHp } from "@/lib/pokemonStats";
+import { BALL_ITEM_IDS } from "@/lib/shop/types";
 import { testMessagesUrl } from "@/lib/testMessages";
 import { store } from "@/store/store";
 import {
@@ -58,6 +60,7 @@ import type {
   CenterHeal,
   CenterPreview,
   CenterPrepare,
+  BallItemId,
 } from "@/lib/shop/types";
 
 type ShopContextValue = {
@@ -105,6 +108,10 @@ type ShopContextValue = {
   sync: () => Promise<void>;
   restartGame: () => Promise<void>;
   useFullRestore: (captureId: string) => Promise<void>;
+  throwBall: (
+    ballId: BallItemId,
+    quote?: { minimum: number; encounterId: string },
+  ) => Promise<void>;
   useTm: (
     captureId: string,
     move: PokemonMove,
@@ -263,6 +270,7 @@ export default function ShopProvider({
       captureId: string,
       moveId?: number,
       learning?: { move: PokemonMove; replaceMoveId?: number },
+      captureQuote?: { minimum: number; encounterId: string },
     ) => Promise<void>
   >(async () => {
     throw new Error("Inicia sesión para usar objetos de tu Bag.");
@@ -274,6 +282,28 @@ export default function ShopProvider({
   );
   const useFullRestore = useCallback(
     (captureId: string) => useItemRef.current("full-restore", captureId),
+    [],
+  );
+  const throwBall = useCallback(
+    (ballId: BallItemId, quote?: { minimum: number; encounterId: string }) => {
+      const party = store.getState().party;
+      const active =
+        party.pokemons.find(
+          (capture) => capture.captureId === party.battleField?.activeCaptureId,
+        ) ??
+        party.pokemons.find((capture) => getCurrentHp(capture.pokemon) > 0);
+      if (!active)
+        return Promise.reject(
+          new Error("Selecciona un Pokémon con HP antes de lanzar."),
+        );
+      return useItemRef.current(
+        ballId,
+        active.captureId,
+        undefined,
+        undefined,
+        quote,
+      );
+    },
     [],
   );
   const useTm = useCallback(
@@ -474,6 +504,7 @@ export default function ShopProvider({
         !party.resetLock &&
         !party.itemUseLock &&
         !party.centerLock &&
+        !party.captureAttempt &&
         !latestResets.some((reset) => reset.status === "pending") &&
         !latestUses.some((use) => use.status === "pending") &&
         !latestAdjustments.some((entry) => entry.status === "pending") &&
@@ -795,7 +826,8 @@ export default function ShopProvider({
           !store.getState().party.pvpLock &&
           !store.getState().party.itemUseLock &&
           !store.getState().party.resetLock &&
-          !store.getState().party.centerLock
+          !store.getState().party.centerLock &&
+          !store.getState().party.captureAttempt
             ? ownAdjustments
                 .filter(
                   (entry) =>
@@ -1153,7 +1185,13 @@ export default function ShopProvider({
         });
       return operation;
     };
-    useItemRef.current = async (itemId, captureId, moveId, learning) => {
+    useItemRef.current = async (
+      itemId,
+      captureId,
+      moveId,
+      learning,
+      captureQuote,
+    ) => {
       if (itemStarting || itemRecovery)
         throw new Error("Espera a que termine el uso del objeto anterior.");
       if (
@@ -1180,16 +1218,42 @@ export default function ShopProvider({
         // Load before the storage transaction. The resulting effects are planned
         // once against its latest state and persisted before any server debit.
         const planner = await import("@/lib/fullRestorePlan");
+        const ball = (BALL_ITEM_IDS as readonly string[]).includes(itemId);
         if (itemId !== "tm") await planner.loadFullRestoreEngine();
+        const capturePlanner = ball
+          ? await import("@/lib/shop/ballCapture")
+          : null;
+        if (ball) await import("@/lib/captureTurn");
+        const requestId = crypto.randomUUID();
+        const resultCaptureId = ball ? crypto.randomUUID() : "";
+        const seed: [number, number, number, number] = ball
+          ? (Array.from(crypto.getRandomValues(new Uint16Array(4))) as [
+              number,
+              number,
+              number,
+              number,
+            ])
+          : [0, 0, 0, 0];
         if (!current() || !socket.connected)
           throw new Error("La conexión cambió antes de preparar el objeto.");
         await prepareItemUse(
           actor.id,
           id,
-          crypto.randomUUID(),
+          requestId,
           captureId,
           latestWallet.revision,
           (party, target) => {
+            if (ball && capturePlanner) {
+              return capturePlanner.prepareBallCaptureParty(
+                party,
+                target,
+                itemId as BallItemId,
+                { userId: actor.id, clientId: id, requestId },
+                seed,
+                resultCaptureId,
+                captureQuote,
+              );
+            }
             if (itemId === "tm") {
               if (!learning || learning.move.id !== moveId)
                 throw new Error(
@@ -1202,7 +1266,12 @@ export default function ShopProvider({
                 learning.replaceMoveId,
               );
             }
-            return planner.preparePartyItem(party, target, itemId, moveId);
+            return planner.preparePartyItem(
+              party,
+              target,
+              itemId as ConsumableItemId,
+              moveId,
+            );
           },
           itemId,
           moveId,
@@ -1694,6 +1763,7 @@ export default function ShopProvider({
         sync,
         restartGame,
         useFullRestore,
+        throwBall,
         useTm,
         useItem,
         purchase,

@@ -116,6 +116,7 @@ export function validGameReset(value: unknown): value is GameReset {
 
 export function localBattleActive(party: PartyState): boolean {
   return (
+    !!party.captureAttempt ||
     !!party.pvpLock ||
     !!(party.emerald && !party.emerald.ended) ||
     !!(party.opponent && getCurrentHp(party.opponent.pokemon) > 0)
@@ -234,7 +235,12 @@ export function prepareShopParty(
   operation?: "balance-adjustment",
 ): Promise<number> {
   return transactPvpParty(userId, async (party) => {
-    if (party.resetLock || party.itemUseLock || party.centerLock)
+    if (
+      party.resetLock ||
+      party.itemUseLock ||
+      party.centerLock ||
+      party.captureAttempt
+    )
       throw new Error("Hay un reinicio de partida pendiente de confirmación.");
     if (localBattleActive(party))
       throw new Error("El jugador está en batalla.");
@@ -316,7 +322,8 @@ export function applyBalanceAdjustment(
       party.pvpLock ||
       party.resetLock ||
       party.itemUseLock ||
-      party.centerLock
+      party.centerLock ||
+      party.captureAttempt
     )
       throw new Error(
         "La Party conserva otra operación. Recupera el ajuste sin eliminar su reserva.",
@@ -399,7 +406,12 @@ export function prepareGameReset(
   return transactPvpParty(userId, async (party) => {
     if (localBattleActive(party))
       throw new Error("Termina la batalla antes de reiniciar la partida.");
-    if (party.shopLock || party.itemUseLock || party.centerLock)
+    if (
+      party.shopLock ||
+      party.itemUseLock ||
+      party.centerLock ||
+      party.captureAttempt
+    )
       throw new Error(
         "Recupera la compra pendiente antes de reiniciar la partida.",
       );
@@ -476,7 +488,12 @@ export function applyGameReset(
         value: "cancelled" as const,
       };
     }
-    if (party.pvpLock || party.shopLock || party.centerLock)
+    if (
+      party.pvpLock ||
+      party.shopLock ||
+      party.centerLock ||
+      party.captureAttempt
+    )
       throw new Error(
         "La partida conserva otra reserva pendiente; no se aplicó el reinicio.",
       );

@@ -103,7 +103,12 @@ import {
 import { PVP_PARTY_COMMIT } from "@/store/accountStorage";
 import { finishLegacyDelayedAttacks } from "@/lib/legacyDelayedAttacks";
 import type { PvpPartyLock, PvpPartyReceipt } from "@/lib/pvpParty";
-import type { CenterLock, UsableItemId } from "@/lib/shop/types";
+import type {
+  CaptureAttempt,
+  CaptureAttemptResult,
+  CenterLock,
+  UsableItemId,
+} from "@/lib/shop/types";
 import {
   getCurrentMovePp,
   getStruggleMove,
@@ -143,6 +148,8 @@ export type PartyState = {
   /** Terminal Center receipt sequence, independent from the economic wallet. */
   centerHealingRevision?: number;
   centerLock?: CenterLock;
+  captureAttempt?: CaptureAttempt;
+  lastCaptureResult?: CaptureAttemptResult;
   shopLock?: {
     requestId: string;
     userId: number;
@@ -1491,7 +1498,8 @@ export default function partyReducer(
     (state?.pvpLock ||
       state?.resetLock ||
       state?.itemUseLock ||
-      state?.centerLock) &&
+      state?.centerLock ||
+      state?.captureAttempt) &&
     action.type.startsWith("party/")
   )
     return state;
@@ -1509,7 +1517,8 @@ export default function partyReducer(
           ("shopLock" in saved && saved.shopLock) ||
           ("resetLock" in saved && saved.resetLock) ||
           ("itemUseLock" in saved && saved.itemUseLock) ||
-          ("centerLock" in saved && saved.centerLock))
+          ("centerLock" in saved && saved.centerLock) ||
+          ("captureAttempt" in saved && saved.captureAttempt))
       )
         return { ...initialState, ...saved } as PartyState;
       if (
@@ -1539,7 +1548,8 @@ export default function partyReducer(
     !state.shopLock &&
     !state.resetLock &&
     !state.itemUseLock &&
-    !state.centerLock
+    !state.centerLock &&
+    !state.captureAttempt
   )
     state = hydratePartyMovePp(state);
   const before = state ?? initialState;

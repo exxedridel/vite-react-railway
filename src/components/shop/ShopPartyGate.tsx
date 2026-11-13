@@ -7,6 +7,7 @@ import { useShopContext } from "@/context/ShopContext";
 import { useAppSelector } from "@/store/hooks";
 import BalanceAbortButton from "./BalanceAbortButton";
 import CenterCancelButton from "./CenterCancelButton";
+import { SHOP_ITEMS } from "@/lib/adminShop";
 
 /** Keep local item use modal so Layout, the arena and its music stay mounted. */
 export default function ShopPartyGate({ children }: { children: ReactNode }) {
@@ -24,13 +25,7 @@ export default function ShopPartyGate({ children }: { children: ReactNode }) {
   const usingItem = !!itemLock || !!pendingUse;
   const itemId = itemLock?.itemId ?? pendingUse?.itemId ?? "full-restore";
   const itemName =
-    itemId === "tm"
-      ? "TM"
-      : itemId === "max-ether"
-        ? "Max Ether"
-        : itemId === "max-elixir"
-          ? "Max Elixir"
-          : "Full Restore";
+    SHOP_ITEMS.find((item) => item.id === itemId)?.name ?? "Full Restore";
   const [retrying, setRetrying] = useState(false);
   const [localError, setLocalError] = useState("");
   const pendingReset = shop.resets.find((reset) => reset.status === "pending");

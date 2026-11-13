@@ -4,6 +4,7 @@ import { ppItemsBrowserScenario } from "./pp-items-browser-scenarios.mjs";
 import { tmBrowserScenario } from "./tm-browser-scenarios.mjs";
 import { backOfficeBrowserScenario } from "./back-office-browser-scenarios.mjs";
 import { runCenterBrowserScenario } from "./center-browser-scenarios.mjs";
+import { runBallCaptureBrowserScenario } from "./ball-capture-browser-scenarios.mjs";
 
 /** Real UI scenarios, using the identity/Nest/Chrome harness in test-pvp-browser. */
 export async function runShopBrowserScenario({
@@ -871,6 +872,20 @@ export async function runShopBrowserScenario({
     cdp,
     evalArgs,
     waitArgs,
+    clickButton,
+    seedPvpTeam,
+    shopRepository,
+    shopService,
+    shopGateway,
+  });
+  await runBallCaptureBrowserScenario({
+    admin,
+    playerA,
+    playerB,
+    cdp,
+    evalArgs,
+    waitArgs,
+    field,
     clickButton,
     seedPvpTeam,
     shopRepository,

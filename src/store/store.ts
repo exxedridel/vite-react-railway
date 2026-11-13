@@ -72,7 +72,8 @@ const pvpPartyGuard: Middleware<{}, { party: AppState["party"] }> =
       "type" in action &&
       (action.type === resetGame.type ||
         action.type === "party/fullRestorePokemon" ||
-        action.type === "party/learnPokemonMoveWithTm")
+        action.type === "party/learnPokemonMoveWithTm" ||
+        action.type === "party/captureWildOpponent")
     )
       return action;
     if (
@@ -216,7 +217,8 @@ export function activateAccountStore(userId: number): Promise<void> {
         !incoming.party.shopLock &&
         !incoming.party.resetLock &&
         !incoming.party.itemUseLock &&
-        !incoming.party.centerLock
+        !incoming.party.centerLock &&
+        !incoming.party.captureAttempt
       )
         incoming.party = hydratePartyMovePp(incoming.party);
       selectAccountStorage(userId);
@@ -265,7 +267,8 @@ function legacyParty() {
     decoded.party.shopLock ||
     decoded.party.resetLock ||
     decoded.party.itemUseLock ||
-    decoded.party.centerLock
+    decoded.party.centerLock ||
+    decoded.party.captureAttempt
   )
     throw new Error(
       "La partida anterior contiene una compra pendiente. Recupérala desde su cuenta original antes de importar.",
@@ -363,6 +366,8 @@ export function importLegacyParty(userId: number): Promise<void> {
               balanceAdjustmentRevision: undefined,
               centerHealingRevision: current.centerHealingRevision,
               centerLock: undefined,
+              captureAttempt: undefined,
+              lastCaptureResult: undefined,
               bag: { ...bag, badges: [...(legacy.party.bag?.badges ?? [])] },
             },
           });

@@ -9,6 +9,19 @@ Acuerdo del usuario confirmado el 2026-11-08:
 
 Si esta disponible, leer [la memoria compartida](../PROJECT_MEMORY.md). Este resumen se conserva tambien aqui para sesiones que abran solo este repositorio.
 
+Etapa vigente2026-11-13 frontend2.8.0: Bag Poké/Great/Ultra, confirmar1bola+
+mínimoD20existente, gastar antesmanual Capturada/Escapó. Usuario confirmóacción
+consumida+respuestaautomáticasalvajealfallar. Reusarshop:use; captureAttempt se
+persisteenplan, habilitarrollsólotrasAPPLIEDquita itemUseLock. FreezeParty+snapshot/
+reset/import/items/Center mientraspending; rawcapturegratis bloqueado. Semilla/ID
+previos ylastCaptureResult guardan outcomeuna vez (Storage/reload/retry), KOexige
+reemplazosinrepetirrespuesta. PPpropiosintactos, rivales/efectosnativos. combatKey/
+hasheslegacyintactos, CONSUMABLE3admin. TS/build/wallet26/cuentas7/Party9/captura12/
+audit163 yChromeCapture+Shopcompleto/Center pasan sinJSerrors. Cerrar manageOpen
+cuando captureAttempt aparece, así tiradaquedasinmodalesapilados sobrearena.
+Viewport1280/375 sin overflow. Ver memoria/
+POKEBALL_PROTOCOL. Nest→React/recargarambos2.8.0 sinvars/MySQL/seed/reset/borrados.
+
 Etapa vigente2026-11-12 frontend2.7.0: Poké Center admin juntoaTienda, fondoFireRed
 local original. ADMIN selecciona1–2 gratis/sinespera, reviveKO/HP/PP/status/stages
 neutrales sin cambiarstatspermanentes/level/moves/progreso/Bag/PD. Previewtemporal

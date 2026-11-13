@@ -3,7 +3,7 @@
 Frontend del juego con React, TypeScript y Vite. `mysql-restapi` autentica y
 administra usuarios; `nest-mongo-pokedex` comunica jugadores y conserva las
 batallas PvP, las carteras y los recibos del Poké Mart. El motor de combate se
-ejecuta en el panel administrador. Versión de la aplicación: **2.7.0**.
+ejecuta en el panel administrador. Versión de la aplicación: **2.8.0**.
 
 ## Desarrollo y comprobaciones
 
@@ -64,6 +64,33 @@ o falla el guardado, se muestra el error y se conserva la partida original.
 Los datos del escenario administrador siguen siendo locales al dispositivo.
 Importar una partida antigua conserva la cartera actual; no recupera su saldo
 antiguo. Tampoco se importa mientras hay una batalla o compra pendiente.
+
+## Pokebolas y captura
+
+**Lanzar pokebola** permite elegir Poké Ball, Great Ball o Ultra Ball según las
+existencias de la Bag. Muestra el mínimo del D20 según especie, HP, estados y
+bola. Confirmar descuenta una unidad, tanto si acierta como si falla. Cancelar
+antes de confirmar conserva el objeto; una bola agotada queda deshabilitada.
+
+Después del consumo, tira el dado físico y marca **Capturada** o **Escapó**.
+La captura gratuita anterior desapareció. Capturada incorpora el Pokémon
+conservando nivel, HP, estados principales y PP. Escapó gasta tu acción y resuelve
+automáticamente la respuesta legal del salvaje, sin gastar PP de tus movimientos.
+Sin bolas no puedes intentar otra captura. No se usan contra jugadores/trainers.
+
+Recargar conserva la misma tirada pendiente con bola y mínimo fijos. Mientras
+se resuelve bloquea otras acciones. Fallos de red/guardado se recuperan sin
+volver a cobrar, capturar o sortear la respuesta. Equipo lleno, rival debilitado
+y acciones/reemplazos obligatorios impiden lanzar antes de gastar.
+
+Desplegar **Nest primero y React después**, sin variables nuevas ni MySQL,
+y recargar ambos frontends a2.8.0. No ejecutar seed ni reiniciar partidas.
+Ver [POKEBALL_PROTOCOL.md](../POKEBALL_PROTOCOL.md).
+
+```bash
+npm run test:capture
+npm run test:capture:browser
+```
 
 ## Poké Center
 

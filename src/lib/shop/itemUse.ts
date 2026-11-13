@@ -6,6 +6,7 @@ import { localBattleActive, partyWithWallet, validWallet } from "./wallet";
 import {
   USABLE_ITEM_IDS,
   SHOP_ITEM_IDS,
+  BALL_ITEM_IDS,
   type UsableItemId,
   type ItemUse,
   type Wallet,
@@ -33,6 +34,8 @@ export function validItemUse(value: unknown): value is ItemUse {
       : item.moveId === undefined) &&
     ["party", "local-battle"].includes(item.context) &&
     (item.itemId !== "tm" || item.context === "party") &&
+    (!(BALL_ITEM_IDS as readonly string[]).includes(item.itemId) ||
+      item.context === "local-battle") &&
     typeof item.planHash === "string" &&
     /^[a-f0-9]{64}$/.test(item.planHash) &&
     revision(item.expectedWalletRevision) &&
@@ -80,7 +83,8 @@ export function prepareItemUse(
       party.shopLock ||
       party.resetLock ||
       party.itemUseLock ||
-      party.centerLock
+      party.centerLock ||
+      party.captureAttempt
     )
       throw new Error(
         "Termina la batalla reservada o la operación pendiente antes de usar un objeto.",
@@ -95,6 +99,11 @@ export function prepareItemUse(
     const context = localBattleActive(party) ? "local-battle" : "party";
     if (itemId === "tm" && context !== "party")
       throw new Error("Las TM sólo pueden usarse fuera de combate.");
+    const ball = (BALL_ITEM_IDS as readonly string[]).includes(itemId);
+    if (ball && (context !== "local-battle" || party.opponent?.kind !== "wild"))
+      throw new Error(
+        "Las pokebolas sólo pueden usarse en un encuentro salvaje.",
+      );
     const prepared = clone(await plan(clone(party), captureId));
     if (
       prepared.pvpLock ||
@@ -104,7 +113,19 @@ export function prepareItemUse(
       prepared.centerLock
     )
       throw new Error("No se pudo preparar el objeto para esta partida.");
-    if (combatKey(prepared) === combatKey(party))
+    if (
+      ball &&
+      (!prepared.captureAttempt ||
+        prepared.captureAttempt.attemptId !== requestId ||
+        prepared.captureAttempt.userId !== userId ||
+        prepared.captureAttempt.clientId !== clientId ||
+        prepared.captureAttempt.ballId !== itemId ||
+        prepared.captureAttempt.captureId !== captureId)
+    )
+      throw new Error("No se pudo guardar el lanzamiento seleccionado.");
+    if (!ball && prepared.captureAttempt)
+      throw new Error("Hay un lanzamiento pendiente de resolver.");
+    if (!ball && combatKey(prepared) === combatKey(party))
       throw new Error(
         "El objeto no tendría efecto; no se consumió ninguna unidad.",
       );

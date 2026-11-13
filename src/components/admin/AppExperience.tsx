@@ -8,6 +8,7 @@ import AdminShopPage from "@/pages/AdminShopPage";
 import AdminCenterPage from "@/pages/AdminCenterPage";
 import PvpPartyGate from "@/components/pvp/PvpPartyGate";
 import ShopPartyGate from "@/components/shop/ShopPartyGate";
+import CaptureAttemptGate from "@/components/pokemon/CaptureAttemptGate";
 
 const AdminBattlePanel = lazy(() => import("@/pages/AdminBattlePanel"));
 const ADMIN_PANEL_KEY = "pokemon-admin-active-panel:v1";
@@ -118,7 +119,9 @@ export default function AppExperience({ children }: { children: ReactNode }) {
   return (
     <PvpPartyGate>
       <ShopPartyGate>
-        <Layout>{children}</Layout>
+        <CaptureAttemptGate>
+          <Layout>{children}</Layout>
+        </CaptureAttemptGate>
       </ShopPartyGate>
     </PvpPartyGate>
   );

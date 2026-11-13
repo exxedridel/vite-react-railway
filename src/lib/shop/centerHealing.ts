@@ -121,7 +121,8 @@ function assertAvailable(party: PartyState): void {
     party.shopLock ||
     party.resetLock ||
     party.itemUseLock ||
-    party.centerLock
+    party.centerLock ||
+    party.captureAttempt
   )
     throw new Error(
       "Termina la batalla u operación pendiente antes de usar Poké Center.",
@@ -323,7 +324,8 @@ export function applyCenterHealing(
       party.shopLock ||
       party.resetLock ||
       party.itemUseLock ||
-      localBattleActive(party)
+      localBattleActive(party) ||
+      party.captureAttempt
     )
       throw new Error(
         "La Party conserva otra operación; no se sobrescribió el equipo.",

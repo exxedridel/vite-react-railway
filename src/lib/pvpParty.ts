@@ -229,7 +229,7 @@ function heldLock(input: PvpReservation): PvpPartyLock {
 export function holdPvpParty(input: PvpReservation): Promise<void> {
   validateReservation(input);
   return transactPvpParty(input.userId, async (party) => {
-    if (party.centerLock)
+    if (party.centerLock || party.captureAttempt)
       throw new Error(
         "Termina la recuperación de Poké Center antes de ingresar a PvP.",
       );
@@ -249,7 +249,8 @@ export function reservePvpParty(input: PvpReservation): Promise<PvpSnapshot> {
       party.shopLock ||
       party.resetLock ||
       party.itemUseLock ||
-      party.centerLock
+      party.centerLock ||
+      party.captureAttempt
     )
       throw new Error(
         "Recupera la compra o el reinicio pendiente antes de ingresar a PvP.",

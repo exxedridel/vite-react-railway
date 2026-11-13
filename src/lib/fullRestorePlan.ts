@@ -56,7 +56,8 @@ export async function preparePartyItem(
     input.shopLock ||
     input.resetLock ||
     input.itemUseLock ||
-    input.centerLock
+    input.centerLock ||
+    input.captureAttempt
   )
     throw new Error(
       "La Party tiene una batalla u operación pendiente. Recupérala antes de usar un objeto.",
@@ -188,7 +189,8 @@ export async function prepareTmParty(
     input.shopLock ||
     input.resetLock ||
     input.itemUseLock ||
-    input.centerLock
+    input.centerLock ||
+    input.captureAttempt
   )
     throw new Error(
       "La Party tiene una batalla u operación pendiente. Recupérala antes de usar una TM.",

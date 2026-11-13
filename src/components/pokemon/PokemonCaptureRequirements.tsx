@@ -48,29 +48,29 @@ export default function PokemonCaptureRequirements({
           </tr>
         </thead>
         <tbody>
-          {info.balls.map((ball) => (
-            <tr key={ball.id} className="border-b">
-              <td className="py-2">
-                {ball.name}
-                {ball.id !== "master" && (
+          {info.balls
+            .filter((ball) => ball.id !== "master")
+            .map((ball) => (
+              <tr key={ball.id} className="border-b">
+                <td className="py-2">
+                  {ball.name}
                   <span className="ml-1 text-xs text-muted-foreground">
                     (−{ball.bonus})
                   </span>
-                )}
-              </td>
-              <td className="py-2 text-right font-bold tabular-nums">
-                {ball.minimum === null ? "Garantizada" : `${ball.minimum}+`}
-              </td>
-            </tr>
-          ))}
+                </td>
+                <td className="py-2 text-right font-bold tabular-nums">
+                  {ball.minimum === null ? "Garantizada" : `${ball.minimum}+`}
+                </td>
+              </tr>
+            ))}
         </tbody>
       </table>
       <p className="text-xs text-muted-foreground">
         Frozen y Asleep descuentan 4. Paralyzed, Burned, Poisoned y Badly
         poisoned descuentan 2. Los estados secundarios no dan descuento y los
         bonos no se acumulan. Tira tu D20 físico y compara con la pokebola
-        usada. Master Ball no requiere tirada. El mínimo es 1; un 1 natural no
-        falla automáticamente en estas reglas.
+        usada. El mínimo es 1; un 1 natural no falla automáticamente en estas
+        reglas.
       </p>
     </div>
   );
