@@ -129,6 +129,7 @@ export default function DropdownUser() {
     shop.busy ||
     !!party.shopLock ||
     !!party.resetLock ||
+    !!party.centerLock ||
     localBattleActive(party);
   const handleResetGame = async () => {
     if (resetSubmittedRef.current || resetUnavailable) return;
@@ -314,8 +315,8 @@ export default function DropdownUser() {
             <DialogTitle>¿Reiniciar el juego?</DialogTitle>
             <DialogDescription>
               Se eliminará todo tu equipo, incluido el inicial, con sus niveles,
-              movimientos y estados. También se quitará al oponente guardado.
-              Tu saldo quedará en 500 Pokedollars, se vaciarán los objetos de la
+              movimientos y estados. También se quitará al oponente guardado. Tu
+              saldo quedará en 500 Pokedollars, se vaciarán los objetos de la
               mochila y se retirarán tus medallas. El saldo se actualizará
               también en la Tienda. Necesitas conexión para confirmar el
               reinicio. Podrás elegir un nuevo Pokémon inicial. Esta acción no

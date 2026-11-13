@@ -103,7 +103,7 @@ import {
 import { PVP_PARTY_COMMIT } from "@/store/accountStorage";
 import { finishLegacyDelayedAttacks } from "@/lib/legacyDelayedAttacks";
 import type { PvpPartyLock, PvpPartyReceipt } from "@/lib/pvpParty";
-import type { UsableItemId } from "@/lib/shop/types";
+import type { CenterLock, UsableItemId } from "@/lib/shop/types";
 import {
   getCurrentMovePp,
   getStruggleMove,
@@ -140,6 +140,9 @@ export type PartyState = {
   bag?: TrainerBag;
   /** Highest terminal balance receipt revision; fences old pending envelopes. */
   balanceAdjustmentRevision?: number;
+  /** Terminal Center receipt sequence, independent from the economic wallet. */
+  centerHealingRevision?: number;
+  centerLock?: CenterLock;
   shopLock?: {
     requestId: string;
     userId: number;
@@ -1016,6 +1019,7 @@ const partySlice = createSlice({
     resetGame(state) {
       return {
         balanceAdjustmentRevision: state.balanceAdjustmentRevision,
+        centerHealingRevision: state.centerHealingRevision,
         pvpRevision: state.pvpRevision,
         pvpReceipts: state.pvpReceipts,
         bag: emptyTrainerBag(),
@@ -1484,7 +1488,10 @@ export default function partyReducer(
 ): PartyState {
   if (action.type === PVP_PARTY_COMMIT) return action.payload as PartyState;
   if (
-    (state?.pvpLock || state?.resetLock || state?.itemUseLock) &&
+    (state?.pvpLock ||
+      state?.resetLock ||
+      state?.itemUseLock ||
+      state?.centerLock) &&
     action.type.startsWith("party/")
   )
     return state;
@@ -1501,7 +1508,8 @@ export default function partyReducer(
         (("pvpLock" in saved && saved.pvpLock) ||
           ("shopLock" in saved && saved.shopLock) ||
           ("resetLock" in saved && saved.resetLock) ||
-          ("itemUseLock" in saved && saved.itemUseLock))
+          ("itemUseLock" in saved && saved.itemUseLock) ||
+          ("centerLock" in saved && saved.centerLock))
       )
         return { ...initialState, ...saved } as PartyState;
       if (
@@ -1530,7 +1538,8 @@ export default function partyReducer(
     !state.pvpLock &&
     !state.shopLock &&
     !state.resetLock &&
-    !state.itemUseLock
+    !state.itemUseLock &&
+    !state.centerLock
   )
     state = hydratePartyMovePp(state);
   const before = state ?? initialState;

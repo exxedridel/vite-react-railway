@@ -8,6 +8,10 @@ let pvpSyncBlocked = false;
 let shopSyncBlocked = false;
 let resetSyncBlocked = false;
 let itemUseSyncBlocked = false;
+let centerSyncBlocked = false;
+export function setCenterSyncBlocked(blocked: boolean): void {
+  centerSyncBlocked = blocked;
+}
 let accountTransactionBlocked = false;
 export function setAccountTransactionBlocked(blocked: boolean): void {
   accountTransactionBlocked = blocked;
@@ -185,6 +189,52 @@ export function decodeAccountParty(
         Number(party.balanceAdjustmentRevision) < 0)
     )
       throw new Error();
+    if (
+      party.centerHealingRevision !== undefined &&
+      (!Number.isSafeInteger(party.centerHealingRevision) ||
+        Number(party.centerHealingRevision) < 0)
+    )
+      throw new Error();
+    if (party.centerLock !== undefined) {
+      const lock = party.centerLock;
+      const identifier = (value: unknown) =>
+        typeof value === "string" && /^[\w.:-]{1,128}$/.test(value);
+      const digest = (value: unknown) =>
+        typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+      if (
+        !isRecord(lock) ||
+        !identifier(lock.requestId) ||
+        !identifier(lock.clientId) ||
+        !Number.isSafeInteger(lock.userId) ||
+        Number(lock.userId) <= 0 ||
+        !Number.isSafeInteger(lock.adminUserId) ||
+        Number(lock.adminUserId) <= 0 ||
+        !digest(lock.partyHash) ||
+        !digest(lock.planHash) ||
+        !Number.isSafeInteger(lock.partyRevision) ||
+        Number(lock.partyRevision) < 0 ||
+        !Number.isSafeInteger(lock.centerRevision) ||
+        Number(lock.centerRevision) <= 0 ||
+        (lock.applied !== undefined && typeof lock.applied !== "boolean") ||
+        !Array.isArray(lock.captureIds) ||
+        lock.captureIds.length < 1 ||
+        lock.captureIds.length > 2 ||
+        !lock.captureIds.every(identifier) ||
+        new Set(lock.captureIds).size !== lock.captureIds.length ||
+        !Array.isArray(lock.preparedPokemons) ||
+        lock.preparedPokemons.length !== lock.captureIds.length
+      )
+        throw new Error();
+      for (const [index, capture] of lock.preparedPokemons.entries()) {
+        if (
+          !isRecord(capture) ||
+          capture.captureId !== lock.captureIds[index] ||
+          !validPokemon(capture.pokemon)
+        )
+          throw new Error();
+        validateStoredMovePp(capture.moves);
+      }
+    }
     if (party.shopLock !== undefined) {
       const lock = party.shopLock;
       if (
@@ -262,7 +312,8 @@ export function decodeAccountParty(
         lock.prepared.itemUseLock ||
         lock.prepared.pvpLock ||
         lock.prepared.shopLock ||
-        lock.prepared.resetLock
+        lock.prepared.resetLock ||
+        lock.prepared.centerLock
       )
         throw new Error();
       // Prepared effects are local, never sent to Nest. Reject corrupt snapshots
@@ -333,7 +384,8 @@ function writeNormalAccountRoot(userId: number, raw: string): void {
       (previous.pvpLock ||
         previous.shopLock ||
         previous.resetLock ||
-        previous.itemUseLock) &&
+        previous.itemUseLock ||
+        previous.centerLock) &&
       pvpPartyRevision(previous) === pvpPartyRevision(incoming) &&
       stablePvpJson(previous) !== stablePvpJson(incoming)
     )
@@ -374,10 +426,12 @@ export function isLocalPartyMutationBlocked(party: PartyState): boolean {
     shopSyncBlocked ||
     resetSyncBlocked ||
     itemUseSyncBlocked ||
+    centerSyncBlocked ||
     party.pvpLock ||
     party.shopLock ||
     party.resetLock ||
     party.itemUseLock ||
+    party.centerLock ||
     activeAccountId === null
   )
     return true;
@@ -388,6 +442,7 @@ export function isLocalPartyMutationBlocked(party: PartyState): boolean {
       !!saved?.shopLock ||
       !!saved?.resetLock ||
       !!saved?.itemUseLock ||
+      !!saved?.centerLock ||
       pvpPartyRevision(saved) > pvpPartyRevision(party)
     );
   } catch {

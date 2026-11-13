@@ -3,7 +3,7 @@
 Frontend del juego con React, TypeScript y Vite. `mysql-restapi` autentica y
 administra usuarios; `nest-mongo-pokedex` comunica jugadores y conserva las
 batallas PvP, las carteras y los recibos del Poké Mart. El motor de combate se
-ejecuta en el panel administrador. Versión de la aplicación: **2.6.1**.
+ejecuta en el panel administrador. Versión de la aplicación: **2.7.0**.
 
 ## Desarrollo y comprobaciones
 
@@ -64,6 +64,33 @@ o falla el guardado, se muestra el error y se conserva la partida original.
 Los datos del escenario administrador siguen siendo locales al dispositivo.
 Importar una partida antigua conserva la cartera actual; no recupera su saldo
 antiguo. Tampoco se importa mientras hay una batalla o compra pendiente.
+
+## Poké Center
+
+**Poké Center**, junto a Tienda en la barra admin, muestra a los jugadores
+conectados sobre el interior original de FireRed. Selecciona un jugador,
+marca uno o dos Pokémon y confirma. Revive debilitados, restaura HP y PP al
+máximo y elimina estados, contadores y cambios temporales de estadísticas.
+La atención es gratuita y se puede repetir de inmediato para el resto del equipo.
+No modifica nivel, movimientos, progreso, objetos ni Pokedollars. El color de
+cada jugador comparte las preferencias del Poké Mart y puede cambiarse siempre.
+
+Sólo se atiende fuera de batalla y sin otras operaciones pendientes. El jugador
+se bloquea brevemente mientras guarda el plan confirmado, antes del ACK a Nest.
+Una recarga recupera la misma operación sin curar otra vez. **Cancelar
+recuperación**, en el diálogo jugador o en la lista de pendientes del Center,
+cierra una operación fallida; conserva cualquier recuperación que ya se guardó.
+No se borran equipos ni reservas para liberar un bloqueo.
+
+Desplegar **Nest primero y React después**, y recargar ambos frontends a2.7.0.
+Los clientes antiguos deben actualizarse antes de recibir una atención. No hay
+variables nuevas ni cambios MySQL; no ejecutar seed o reiniciar partidas.
+El protocolo está en [POKE_CENTER_PROTOCOL.md](../POKE_CENTER_PROTOCOL.md) y la
+fuente del fondo en [public/admin-center/README.md](public/admin-center/README.md).
+
+```bash
+npm run test:center:browser
+```
 
 ## Poké Mart y Pokedollars
 

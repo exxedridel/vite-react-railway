@@ -52,7 +52,8 @@ export function submitEmeraldAction(
           latest.pvpLock ||
           latest.shopLock ||
           latest.resetLock ||
-          latest.itemUseLock
+          latest.itemUseLock ||
+          latest.centerLock
         )
           throw new Error(
             "La Party tiene una operación pendiente. Recupera su confirmación antes de actuar.",

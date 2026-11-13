@@ -9,6 +9,19 @@ Acuerdo del usuario confirmado el 2026-11-08:
 
 Si esta disponible, leer [la memoria compartida](../PROJECT_MEMORY.md). Este resumen se conserva tambien aqui para sesiones que abran solo este repositorio.
 
+Etapa vigente2026-11-12 frontend2.7.0: Poké Center admin juntoaTienda, fondoFireRed
+local original. ADMIN selecciona1–2 gratis/sinespera, reviveKO/HP/PP/status/stages
+neutrales sin cambiarstatspermanentes/level/moves/progreso/Bag/PD. Previewtemporal
+hash+revision, centerLock planexacto checkedwriteantesPREPAREACK y efecto+applied
+antesACKterminal; centerHealingRevision impide paquetesviejos/reload repetir.
+NuevoCenter capausente=false; otrosflujos guardanlockincluidoimport/rehidratación.
+Diálogojugadorcompacto mantienechildren; cancelación autorizativa libera pero
+no reviertecuraciónya guardada/APPLIED. ACKasyncdedup libera cola mientras espera
+red: heldACK no bloqueacancelación. TS/build, wallet24/cuentas7/Party9/audit159
+y ChromeCenter aislado+Shopcompleto aprobados; móvil375 sin overflow. Ver memoria/
+POKE_CENTER_PROTOCOL; deployNest→React/recargarambos2.7.0 sinvars/MySQL/seed/reset/
+borrados. Producción no verificada.
+
 Correcciónvigente2026-11-12 frontend2.6.1: adoptar ajustes pending propios
 sinlock/locklegacy/walletyaacreditada, sin sumardelta. Marca persistente
 balanceAdjustmentRevision terminal impide pending tardío trasreload. Mantener

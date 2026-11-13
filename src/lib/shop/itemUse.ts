@@ -75,7 +75,13 @@ export function prepareItemUse(
         : moveId !== undefined)
     )
       throw new Error("La solicitud de uso del objeto no es válida.");
-    if (party.pvpLock || party.shopLock || party.resetLock || party.itemUseLock)
+    if (
+      party.pvpLock ||
+      party.shopLock ||
+      party.resetLock ||
+      party.itemUseLock ||
+      party.centerLock
+    )
       throw new Error(
         "Termina la batalla reservada o la operación pendiente antes de usar un objeto.",
       );
@@ -94,7 +100,8 @@ export function prepareItemUse(
       prepared.pvpLock ||
       prepared.shopLock ||
       prepared.resetLock ||
-      prepared.itemUseLock
+      prepared.itemUseLock ||
+      prepared.centerLock
     )
       throw new Error("No se pudo preparar el objeto para esta partida.");
     if (combatKey(prepared) === combatKey(party))
@@ -176,7 +183,7 @@ export function applyItemUse(
       receipt.walletRevision > wallet.revision
     )
       return { party, value: "ignored" as const };
-    if (party.pvpLock || party.shopLock || party.resetLock)
+    if (party.pvpLock || party.shopLock || party.resetLock || party.centerLock)
       throw new Error(
         "La partida conserva otra reserva; no se aplicó el objeto.",
       );

@@ -1,4 +1,47 @@
 import type { ChatUser } from "@/lib/testMessages";
+import type { CapturedPokemon } from "@/types/pokemon";
+
+export type CenterPokemon = {
+  captureId: string;
+  pokemonId: number;
+  name: string;
+  image: string | null;
+  level: number;
+  currentHp: number;
+  maxHp: number;
+  statuses: string[];
+  moves: { id: number; name: string; currentPp: number; maxPp: number }[];
+  needsHealing: boolean;
+};
+export type CenterPreview = {
+  userId: number;
+  clientId: string;
+  partyRevision: number;
+  partyHash: string;
+  pokemons: CenterPokemon[];
+};
+export type CenterHeal = {
+  requestId: string;
+  adminUserId: number;
+  userId: number;
+  clientId: string;
+  captureIds: string[];
+  partyHash: string;
+  partyRevision: number;
+  planHash: string;
+  centerRevision: number;
+  status: "pending" | "applied" | "cancelled";
+};
+export type CenterPrepare = Omit<
+  CenterHeal,
+  "status" | "userId" | "planHash"
+> & {
+  playerUserId: number;
+};
+export type CenterLock = Omit<CenterHeal, "status"> & {
+  preparedPokemons: CapturedPokemon[];
+  applied?: boolean;
+};
 
 export const SHOP_ITEM_IDS = [
   "poke-ball",
@@ -57,6 +100,8 @@ export type ShopPlayer = {
   pendingUse?: boolean;
   pendingAdjustment?: boolean;
   supportsBalanceAdjustments?: boolean;
+  supportsCenterHealing?: boolean;
+  pendingCenter?: boolean;
 };
 export type ItemUse = {
   requestId: string;
@@ -94,6 +139,9 @@ export type ShopPurchase = {
   status: "pending" | "applied";
 };
 export type ShopState = {
+  centerPreview?: CenterPreview;
+  centerHeal?: CenterHeal;
+  centerHeals?: CenterHeal[];
   catalog?: ShopCatalog;
   adjustment?: BalanceAdjustment;
   adjustments?: BalanceAdjustment[];

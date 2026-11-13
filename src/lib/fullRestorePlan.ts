@@ -51,7 +51,13 @@ export async function preparePartyItem(
   itemId: ConsumableItemId,
   moveId?: number,
 ): Promise<PartyState> {
-  if (input.pvpLock || input.shopLock || input.resetLock || input.itemUseLock)
+  if (
+    input.pvpLock ||
+    input.shopLock ||
+    input.resetLock ||
+    input.itemUseLock ||
+    input.centerLock
+  )
     throw new Error(
       "La Party tiene una batalla u operación pendiente. Recupérala antes de usar un objeto.",
     );
@@ -177,7 +183,13 @@ export async function prepareTmParty(
   move: PokemonMove,
   replaceMoveId?: number,
 ): Promise<PartyState> {
-  if (input.pvpLock || input.shopLock || input.resetLock || input.itemUseLock)
+  if (
+    input.pvpLock ||
+    input.shopLock ||
+    input.resetLock ||
+    input.itemUseLock ||
+    input.centerLock
+  )
     throw new Error(
       "La Party tiene una batalla u operación pendiente. Recupérala antes de usar una TM.",
     );

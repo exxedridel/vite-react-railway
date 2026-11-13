@@ -1,10 +1,11 @@
 import { lazy, Suspense, useState, type ReactNode } from "react";
-import { MessageCircle, Store, Swords, Users } from "lucide-react";
+import { HeartPulse, MessageCircle, Store, Swords, Users } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/context/AppContext";
 import Layout from "@/layout/Layout";
 import AdminShopPage from "@/pages/AdminShopPage";
+import AdminCenterPage from "@/pages/AdminCenterPage";
 import PvpPartyGate from "@/components/pvp/PvpPartyGate";
 import ShopPartyGate from "@/components/shop/ShopPartyGate";
 
@@ -13,16 +14,15 @@ const ADMIN_PANEL_KEY = "pokemon-admin-active-panel:v1";
 
 function AdminWorkspace() {
   const { user } = useAppContext();
-  const [panel, setPanel] = useState<"shop" | "battle">(() => {
+  const [panel, setPanel] = useState<"shop" | "center" | "battle">(() => {
     try {
-      return localStorage.getItem(ADMIN_PANEL_KEY) === "battle"
-        ? "battle"
-        : "shop";
+      const saved = localStorage.getItem(ADMIN_PANEL_KEY);
+      return saved === "battle" || saved === "center" ? saved : "shop";
     } catch {
       return "shop";
     }
   });
-  function choosePanel(next: "shop" | "battle") {
+  function choosePanel(next: "shop" | "center" | "battle") {
     try {
       localStorage.setItem(ADMIN_PANEL_KEY, next);
     } catch {
@@ -44,6 +44,15 @@ function AdminWorkspace() {
           onClick={() => choosePanel("shop")}
         >
           <Store className="h-4 w-4" aria-hidden="true" /> Tienda
+        </Button>
+        <Button
+          type="button"
+          variant={panel === "center" ? "default" : "outline"}
+          className="min-h-11 gap-2"
+          aria-pressed={panel === "center"}
+          onClick={() => choosePanel("center")}
+        >
+          <HeartPulse className="h-4 w-4" aria-hidden="true" /> Poké Center
         </Button>
         <Button
           type="button"
@@ -73,6 +82,8 @@ function AdminWorkspace() {
       </nav>
       {panel === "shop" ? (
         <AdminShopPage />
+      ) : panel === "center" ? (
+        <AdminCenterPage />
       ) : (
         <Suspense
           fallback={

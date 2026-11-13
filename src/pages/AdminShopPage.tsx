@@ -387,17 +387,19 @@ export default function AdminShopPage() {
                   <p role="status" className="mb-3 text-sm">
                     {player.inBattle
                       ? "En batalla · compras bloqueadas"
-                      : player.pendingUse
-                        ? "Confirmando el uso de un objeto"
-                        : player.pendingReset
-                          ? "Esperando guardado del reinicio de partida"
-                          : player.pendingAdjustment
-                            ? "Esperando guardado del ajuste de Pokedollars"
-                            : player.pending
-                              ? "Esperando guardado de una compra"
-                              : !player.ready
-                                ? "Sincronizando su mochila"
-                                : "Disponible para comprar"}
+                      : player.pendingCenter
+                        ? "Guardando recuperación de Poké Center"
+                        : player.pendingUse
+                          ? "Confirmando el uso de un objeto"
+                          : player.pendingReset
+                            ? "Esperando guardado del reinicio de partida"
+                            : player.pendingAdjustment
+                              ? "Esperando guardado del ajuste de Pokedollars"
+                              : player.pending
+                                ? "Esperando guardado de una compra"
+                                : !player.ready
+                                  ? "Sincronizando su mochila"
+                                  : "Disponible para comprar"}
                   </p>
                   <Button
                     type="button"

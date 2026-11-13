@@ -215,7 +215,8 @@ export function activateAccountStore(userId: number): Promise<void> {
         !incoming.party.pvpLock &&
         !incoming.party.shopLock &&
         !incoming.party.resetLock &&
-        !incoming.party.itemUseLock
+        !incoming.party.itemUseLock &&
+        !incoming.party.centerLock
       )
         incoming.party = hydratePartyMovePp(incoming.party);
       selectAccountStorage(userId);
@@ -263,7 +264,8 @@ function legacyParty() {
   if (
     decoded.party.shopLock ||
     decoded.party.resetLock ||
-    decoded.party.itemUseLock
+    decoded.party.itemUseLock ||
+    decoded.party.centerLock
   )
     throw new Error(
       "La partida anterior contiene una compra pendiente. Recupérala desde su cuenta original antes de importar.",
@@ -359,6 +361,8 @@ export function importLegacyParty(userId: number): Promise<void> {
                 ) + 1,
               shopLock: undefined,
               balanceAdjustmentRevision: undefined,
+              centerHealingRevision: current.centerHealingRevision,
+              centerLock: undefined,
               bag: { ...bag, badges: [...(legacy.party.bag?.badges ?? [])] },
             },
           });

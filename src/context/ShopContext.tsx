@@ -18,7 +18,16 @@ import {
   setResetSyncBlocked,
   setShopSyncBlocked,
   setItemUseSyncBlocked,
+  setCenterSyncBlocked,
 } from "@/store/accountStorage";
+import {
+  applyCenterHealing,
+  centerCancelPayload,
+  prepareCenterHealing,
+  previewCenterParty,
+  validCenterHeal,
+  validCenterPreview,
+} from "@/lib/shop/centerHealing";
 import { applyItemUse, prepareItemUse, validItemUse } from "@/lib/shop/itemUse";
 import {
   applyShopWallet,
@@ -46,6 +55,9 @@ import type {
   Wallet,
   ShopCatalog,
   BalanceAdjustment,
+  CenterHeal,
+  CenterPreview,
+  CenterPrepare,
 } from "@/lib/shop/types";
 
 type ShopContextValue = {
@@ -71,6 +83,19 @@ type ShopContextValue = {
     requestId?: string,
   ) => Promise<BalanceAdjustment | null>;
   abortBalance: (adjustmentId: string) => Promise<BalanceAdjustment>;
+  centerHeals: CenterHeal[];
+  previewCenter: (player: ShopPlayer) => Promise<CenterPreview>;
+  healCenter: (
+    player: ShopPlayer,
+    preview: CenterPreview,
+    captureIds: string[],
+    requestId?: string,
+  ) => Promise<CenterHeal | null>;
+  cancelCenter: (
+    receipt: Pick<CenterHeal, "requestId" | "userId" | "clientId">,
+  ) => Promise<CenterHeal>;
+  recoverCenter: () => Promise<void>;
+  recoveringCenter: boolean;
   resets: GameReset[];
   restarting: boolean;
   uses: ItemUse[];
@@ -143,6 +168,11 @@ function validState(value: unknown): value is ShopState {
   if (!value || typeof value !== "object") return false;
   const state = value as ShopState;
   return (
+    (!state.centerPreview || validCenterPreview(state.centerPreview)) &&
+    (!state.centerHeal || validCenterHeal(state.centerHeal)) &&
+    (!state.centerHeals ||
+      (Array.isArray(state.centerHeals) &&
+        state.centerHeals.every(validCenterHeal))) &&
     (!state.catalog || validShopCatalog(state.catalog)) &&
     (!state.adjustment || validBalanceAdjustment(state.adjustment)) &&
     (!state.adjustments ||
@@ -172,6 +202,10 @@ function validState(value: unknown): value is ShopState {
             typeof player.pending === "boolean" &&
             (player.supportsBalanceAdjustments === undefined ||
               typeof player.supportsBalanceAdjustments === "boolean") &&
+            (player.supportsCenterHealing === undefined ||
+              typeof player.supportsCenterHealing === "boolean") &&
+            (player.pendingCenter === undefined ||
+              typeof player.pendingCenter === "boolean") &&
             (player.wallet === null || validWallet(player.wallet)),
         )))
   );
@@ -195,6 +229,8 @@ export default function ShopProvider({
   const [catalog, setCatalog] = useState<ShopCatalog | null>(null);
   const catalogRef = useRef<ShopCatalog | null>(null);
   const [adjustments, setAdjustments] = useState<BalanceAdjustment[]>([]);
+  const [centerHeals, setCenterHeals] = useState<CenterHeal[]>([]);
+  const [recoveringCenter, setRecoveringCenter] = useState(false);
   const [resets, setResets] = useState<GameReset[]>([]);
   const [restarting, setRestarting] = useState(false);
   const [uses, setUses] = useState<ItemUse[]>([]);
@@ -215,6 +251,7 @@ export default function ShopProvider({
   >(async () => {});
   const mutation = useRef(false);
   const recoverResetRef = useRef<() => Promise<void>>(async () => {});
+  const recoverCenterRef = useRef<() => Promise<void>>(async () => {});
   const restartRef = useRef<() => Promise<void>>(async () => {
     throw new Error("Inicia sesión para reiniciar la partida.");
   });
@@ -339,13 +376,15 @@ export default function ShopProvider({
     // read behind that purchase, so it can prove an absent request was aborted.
     const abortUnlockRequestId = store.getState().party.shopLock?.requestId;
     const balanceLock = store.getState().party.shopLock;
-    const response = await emit(
-      "shop:sync",
-      balanceLock ? { adjustmentRequestId: balanceLock.requestId } : {},
-    );
+    const centerLock = store.getState().party.centerLock;
+    const response = await emit("shop:sync", {
+      ...(balanceLock ? { adjustmentRequestId: balanceLock.requestId } : {}),
+      ...(centerLock ? { centerRequestId: centerLock.requestId } : {}),
+    });
     await queueState.current(response, { abortUnlockRequestId });
     await recoverResetRef.current();
     await recoverItemUseRef.current();
+    await recoverCenterRef.current();
   }, [emit]);
 
   useEffect(() => {
@@ -359,6 +398,8 @@ export default function ShopProvider({
     setCatalog(null);
     catalogRef.current = null;
     setAdjustments([]);
+    setCenterHeals([]);
+    setRecoveringCenter(false);
     setResets([]);
     setRestarting(false);
     setUses([]);
@@ -370,6 +411,7 @@ export default function ShopProvider({
       setShopSyncBlocked(false);
       setResetSyncBlocked(false);
       setItemUseSyncBlocked(false);
+      setCenterSyncBlocked(false);
       return;
     }
     const actor = user;
@@ -405,6 +447,9 @@ export default function ShopProvider({
     let latestWallet: Wallet | null = null;
     let latestPurchases: ShopPurchase[] = [];
     let latestAdjustments: BalanceAdjustment[] = [];
+    let latestCenterHeals: CenterHeal[] = [];
+    let centerRecovery: Promise<void> | null = null;
+    const centerAcknowledgements = new Set<string>();
     let latestResets: GameReset[] = [];
     let resetRecovery: Promise<void> | null = null;
     let resetStarting = false;
@@ -428,9 +473,11 @@ export default function ShopProvider({
         !party.shopLock &&
         !party.resetLock &&
         !party.itemUseLock &&
+        !party.centerLock &&
         !latestResets.some((reset) => reset.status === "pending") &&
         !latestUses.some((use) => use.status === "pending") &&
-        !latestAdjustments.some((entry) => entry.status === "pending");
+        !latestAdjustments.some((entry) => entry.status === "pending") &&
+        !latestCenterHeals.some((entry) => entry.status === "pending");
       const next = JSON.stringify([ready, localBattle]);
       if (next === presenceKey) return;
       presenceKey = next;
@@ -438,6 +485,7 @@ export default function ShopProvider({
         ready,
         localBattle,
         supportsBalanceAdjustments: true,
+        supportsCenterHealing: true,
       })
         .then((response) => receive(response))
         .catch((reason) => {
@@ -454,6 +502,39 @@ export default function ShopProvider({
       proof?: { abortUnlockRequestId?: string },
     ) {
       if (!current()) return;
+      if (next.centerHeals || next.centerHeal) {
+        const previous = new Map(
+          latestCenterHeals.map((entry) => [entry.requestId, entry]),
+        );
+        const merged = new Map<string, CenterHeal>();
+        for (const entry of next.centerHeals ?? latestCenterHeals) {
+          const saved = previous.get(entry.requestId);
+          merged.set(
+            entry.requestId,
+            saved && saved.status !== "pending" ? saved : entry,
+          );
+        }
+        if (next.centerHeal) {
+          const saved = previous.get(next.centerHeal.requestId);
+          merged.set(
+            next.centerHeal.requestId,
+            saved && saved.status !== "pending" ? saved : next.centerHeal,
+          );
+        }
+        const terminal = Math.max(
+          store.getState().party.centerHealingRevision ?? 0,
+          ...[...merged.values()]
+            .filter((entry) => entry.status !== "pending")
+            .map((entry) => entry.centerRevision),
+        );
+        latestCenterHeals = [...merged.values()].filter(
+          (entry) =>
+            actor.role === "admin" ||
+            entry.status !== "pending" ||
+            entry.centerRevision > terminal,
+        );
+        setCenterHeals(latestCenterHeals);
+      }
       if (
         actor.role === "player" &&
         next.wallet &&
@@ -514,6 +595,63 @@ export default function ShopProvider({
         setSynced(true);
         setError("");
         return;
+      }
+      {
+        const centerLock = store.getState().party.centerLock;
+        const receipt =
+          latestCenterHeals.find(
+            (entry) =>
+              entry.requestId === centerLock?.requestId &&
+              entry.userId === actor.id,
+          ) ??
+          (!centerLock
+            ? latestCenterHeals
+                .filter(
+                  (entry) =>
+                    entry.userId === actor.id &&
+                    entry.status !== "pending" &&
+                    entry.centerRevision >
+                      (store.getState().party.centerHealingRevision ?? 0),
+                )
+                .sort((a, b) => b.centerRevision - a.centerRevision)[0]
+            : undefined);
+        if (receipt) {
+          const status = await applyCenterHealing(receipt, id);
+          if (!current()) return;
+          if (
+            status === "pending" &&
+            !centerAcknowledgements.has(receipt.requestId)
+          ) {
+            centerAcknowledgements.add(receipt.requestId);
+            // The effect is already saved. Waiting for its network ACK here
+            // would prevent a terminal cancellation from reaching this same
+            // local queue. Deduplicate ACKs without holding reconciliation.
+            void emit("shop:center-applied", {
+              requestId: receipt.requestId,
+              centerRevision: receipt.centerRevision,
+              planHash: receipt.planHash,
+            })
+              .then((confirmed) => receive(confirmed))
+              .catch((reason) => {
+                if (
+                  current() &&
+                  store.getState().party.centerLock?.requestId ===
+                    receipt.requestId &&
+                  latestCenterHeals.some(
+                    (entry) =>
+                      entry.requestId === receipt.requestId &&
+                      entry.status === "pending",
+                  )
+                )
+                  setError(message(reason));
+              })
+              .finally(() => centerAcknowledgements.delete(receipt.requestId));
+          }
+        }
+        setCenterSyncBlocked(
+          !!store.getState().party.centerLock ||
+            latestCenterHeals.some((entry) => entry.status === "pending"),
+        );
       }
       if (next.wallet) {
         if (next.wallet.userId !== actor.id)
@@ -656,7 +794,8 @@ export default function ShopProvider({
           (!balanceLock &&
           !store.getState().party.pvpLock &&
           !store.getState().party.itemUseLock &&
-          !store.getState().party.resetLock
+          !store.getState().party.resetLock &&
+          !store.getState().party.centerLock
             ? ownAdjustments
                 .filter(
                   (entry) =>
@@ -765,6 +904,10 @@ export default function ShopProvider({
           setItemUseSyncBlocked(
             !!store.getState().party.itemUseLock ||
               latestUses.some((use) => use.status === "pending"),
+          );
+          setCenterSyncBlocked(
+            !!store.getState().party.centerLock ||
+              latestCenterHeals.some((entry) => entry.status === "pending"),
           );
         }
       });
@@ -955,6 +1098,61 @@ export default function ShopProvider({
       return operation;
     }
     recoverItemUseRef.current = recoverItemUse;
+    recoverCenterRef.current = () => {
+      if (actor.role !== "player" || !store.getState().party.centerLock)
+        return Promise.resolve();
+      if (centerRecovery) return centerRecovery;
+      const operation = (async () => {
+        const lock = store.getState().party.centerLock;
+        if (!lock) return;
+        if (
+          !current() ||
+          !socket.connected ||
+          lock.userId !== actor.id ||
+          lock.clientId !== id
+        )
+          throw new Error(
+            "Reconecta el navegador original para recuperar Poké Center.",
+          );
+        setRecoveringCenter(true);
+        const state = await emit("shop:sync", {
+          centerRequestId: lock.requestId,
+        });
+        await receive(state);
+        if (!current()) return;
+        const remaining = store.getState().party.centerLock;
+        if (!remaining || remaining.requestId !== lock.requestId) return;
+        const receipt =
+          state.centerHeal ??
+          state.centerHeals?.find(
+            (entry) => entry.requestId === lock.requestId,
+          );
+        if (!receipt && !remaining.applied) {
+          // A serialized read cannot prove that a delayed request will never
+          // arrive; persist a cancellation tombstone before releasing PREPARE.
+          await receive(
+            await emit("shop:center-cancel", centerCancelPayload(remaining)),
+          );
+        }
+        if (
+          store.getState().party.centerLock &&
+          !centerAcknowledgements.has(lock.requestId)
+        )
+          throw new Error(
+            "La recuperación sigue pendiente. Reintenta o cancélala para continuar.",
+          );
+      })();
+      centerRecovery = operation;
+      void operation
+        .catch((reason) => {
+          if (current()) setError(message(reason));
+        })
+        .finally(() => {
+          if (centerRecovery === operation) centerRecovery = null;
+          if (current()) setRecoveringCenter(false);
+        });
+      return operation;
+    };
     useItemRef.current = async (itemId, captureId, moveId, learning) => {
       if (itemStarting || itemRecovery)
         throw new Error("Espera a que termine el uso del objeto anterior.");
@@ -1028,6 +1226,95 @@ export default function ShopProvider({
         }
       }
     };
+    socket.on(
+      "shop:center-snapshot",
+      (
+        request: { playerUserId?: unknown; clientId?: unknown },
+        acknowledge: (value: unknown) => void,
+      ) => {
+        const operation = reconciliation
+          .catch(() => {})
+          .then(async () => {
+            if (
+              !current() ||
+              !applied ||
+              actor.role !== "player" ||
+              request?.playerUserId !== actor.id ||
+              request?.clientId !== id ||
+              isLocalPartyMutationBlocked(store.getState().party)
+            )
+              throw new Error(
+                "El jugador debe estar conectado y fuera de otra operación.",
+              );
+            const preview = await previewCenterParty(actor.id, id);
+            if (!current() || !socket.connected)
+              throw new Error("La conexión cambió al leer el equipo.");
+            acknowledge({ ok: true, preview });
+          });
+        reconciliation = operation.catch((reason) =>
+          acknowledge({
+            ok: false,
+            error: { code: "PLAYER_NOT_READY", message: message(reason) },
+          }),
+        );
+      },
+    );
+    socket.on(
+      "shop:center-prepare",
+      (request: CenterPrepare, acknowledge: (value: unknown) => void) => {
+        const operation = reconciliation
+          .catch(() => {})
+          .then(async () => {
+            if (
+              !current() ||
+              !applied ||
+              actor.role !== "player" ||
+              request?.playerUserId !== actor.id ||
+              request?.clientId !== id
+            )
+              throw new Error(
+                "La recuperación no pertenece a esta instancia del jugador.",
+              );
+            const existing = store.getState().party.centerLock;
+            if (
+              !existing &&
+              isLocalPartyMutationBlocked(store.getState().party)
+            )
+              throw new Error(
+                "Termina la operación pendiente antes de recuperar el equipo.",
+              );
+            setCenterSyncBlocked(true);
+            const lock = await prepareCenterHealing(request, id);
+            if (!current() || !socket.connected)
+              throw new Error(
+                "La conexión cambió antes de confirmar la recuperación.",
+              );
+            acknowledge({
+              ok: true,
+              operation: "center-heal",
+              planHash: lock.planHash,
+              partyHash: lock.partyHash,
+              partyRevision: lock.partyRevision,
+            });
+            void sync().catch((reason) => {
+              if (current()) setError(message(reason));
+            });
+          });
+        reconciliation = operation.catch((reason) => {
+          if (current()) {
+            setCenterSyncBlocked(
+              !!store.getState().party.centerLock ||
+                latestCenterHeals.some((entry) => entry.status === "pending"),
+            );
+            setError(message(reason));
+          }
+          acknowledge({
+            ok: false,
+            error: { code: "PLAYER_NOT_READY", message: message(reason) },
+          });
+        });
+      },
+    );
     socket.on("shop:state", (next: ShopState) => {
       void receive(next).catch(() => {});
     });
@@ -1158,6 +1445,7 @@ export default function ShopProvider({
     );
     setResetSyncBlocked(!!store.getState().party.resetLock);
     setItemUseSyncBlocked(!!store.getState().party.itemUseLock);
+    setCenterSyncBlocked(!!store.getState().party.centerLock);
     socket.connect();
     return () => {
       unsubscribe();
@@ -1173,6 +1461,7 @@ export default function ShopProvider({
           throw new Error("Inicia sesión para reiniciar la partida.");
         };
         recoverItemUseRef.current = async () => {};
+        recoverCenterRef.current = async () => {};
         useItemRef.current = async () => {
           throw new Error("Inicia sesión para usar un objeto.");
         };
@@ -1180,6 +1469,7 @@ export default function ShopProvider({
       setShopSyncBlocked(false);
       setResetSyncBlocked(false);
       setItemUseSyncBlocked(false);
+      setCenterSyncBlocked(false);
     };
   }, [user?.id, user?.role, sync, emit]);
 
@@ -1304,6 +1594,76 @@ export default function ShopProvider({
       setBusy(false);
     }
   }
+  async function previewCenter(player: ShopPlayer): Promise<CenterPreview> {
+    const response = await adminMutation("shop:center-preview", {
+      playerUserId: player.user.id,
+      clientId: player.clientId,
+    });
+    if (!response.centerPreview)
+      throw new Error("No se recibió el equipo del jugador.");
+    return response.centerPreview;
+  }
+  async function healCenter(
+    player: ShopPlayer,
+    preview: CenterPreview,
+    captureIds: string[],
+    requestId: string = crypto.randomUUID(),
+  ): Promise<CenterHeal | null> {
+    if (
+      preview.userId !== player.user.id ||
+      preview.clientId !== player.clientId
+    )
+      throw new Error("Carga el equipo del jugador seleccionado.");
+    const response = await adminMutation("shop:center-heal", {
+      requestId,
+      playerUserId: player.user.id,
+      clientId: player.clientId,
+      partyHash: preview.partyHash,
+      partyRevision: preview.partyRevision,
+      captureIds,
+    });
+    return (
+      response.centerHeal ??
+      response.centerHeals?.find((entry) => entry.requestId === requestId) ??
+      null
+    );
+  }
+  async function cancelCenter(
+    receipt: Pick<CenterHeal, "requestId" | "userId" | "clientId">,
+  ): Promise<CenterHeal> {
+    if (mutation.current)
+      throw new Error("Espera a que termine la operación anterior.");
+    mutation.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      const lock = store.getState().party.centerLock;
+      const payload =
+        ownerRef.current?.role === "player" &&
+        lock?.requestId === receipt.requestId &&
+        lock.userId === receipt.userId &&
+        lock.clientId === receipt.clientId
+          ? centerCancelPayload(lock)
+          : {
+              requestId: receipt.requestId,
+              playerUserId: receipt.userId,
+              clientId: receipt.clientId,
+            };
+      const response = await emit("shop:center-cancel", payload);
+      await queueState.current(response);
+      if (!response.centerHeal)
+        throw new Error(
+          "No se recibió la confirmación de cancelación de Poké Center.",
+        );
+      return response.centerHeal;
+    } catch (reason) {
+      setError(message(reason));
+      throw reason;
+    } finally {
+      mutation.current = false;
+      setBusy(false);
+    }
+  }
   return (
     <ShopContext.Provider
       value={{
@@ -1319,6 +1679,12 @@ export default function ShopProvider({
         setPrice,
         adjustBalance,
         abortBalance,
+        centerHeals,
+        previewCenter,
+        healCenter,
+        cancelCenter,
+        recoverCenter: sync,
+        recoveringCenter,
         resets,
         restarting,
         uses,

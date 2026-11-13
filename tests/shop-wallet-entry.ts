@@ -38,6 +38,13 @@ import type {
   Wallet,
 } from "../src/lib/shop/types";
 import { applyItemUse, prepareItemUse } from "../src/lib/shop/itemUse";
+import {
+  applyCenterHealing,
+  prepareCenterHealing,
+  previewCenterParty,
+  restoreCenterPokemons,
+} from "../src/lib/shop/centerHealing";
+import type { CenterHeal } from "../src/lib/shop/types";
 import { preparePartyItem, prepareTmParty } from "../src/lib/fullRestorePlan";
 import { trainerMoves } from "../src/lib/trainerBattle/catalog";
 import {
@@ -1299,6 +1306,227 @@ export async function runAccountStorageTests() {
   assert.deepEqual(saved(611).opponent, continued.opponent);
   passed.push(
     "cancelled legacy adjustments restore the canonical wallet once without deleting the Party or a resumed local encounter, and remain terminal across reload and late packets",
+  );
+  await clearAccountStore();
+  const centerUser = 612;
+  await activateAccountStore(centerUser);
+  await applyShopWallet(
+    wallet(centerUser, 3, 1600, { "full-restore": 2, tm: 1 }),
+  );
+  await transactPvpParty(centerUser, async (current) => {
+    const template = clone(legacyTeam[0]);
+    const captures = Array.from({ length: 3 }, (_, index) => {
+      const capture = clone(template);
+      capture.captureId = `center-pokemon-${index}`;
+      capture.pokemon.stats.find((stat) => stat.name === "hp")!.value =
+        index === 0 ? 0 : 1;
+      capture.statuses = ["poisoned"];
+      capture.statusTurns = {};
+      capture.pokemon.battleStages = {
+        ...neutralBattleStages(),
+        attack: -3,
+        defense: 2,
+      };
+      capture.moves = trainerMoves
+        .filter((move) => [33, 45].includes(move.id))
+        .map((move) => ({
+          ...move,
+          source: "starter" as const,
+          currentPp: 0,
+        }));
+      return capture;
+    });
+    return {
+      party: { ...current, pokemons: captures, opponent: null },
+      value: undefined,
+    };
+  });
+  const centerBefore = clone(store.getState().party);
+  const preview = await previewCenterParty(centerUser, "center-client");
+  assert.equal(preview.pokemons[0].currentHp, 0);
+  assert.equal(
+    preview.pokemons.every((capture) => capture.needsHealing),
+    true,
+  );
+  assert.throws(
+    () =>
+      restoreCenterPokemons(
+        centerBefore,
+        preview.pokemons.map((capture) => capture.captureId),
+      ),
+    /uno o dos/,
+  );
+  assert.throws(
+    () =>
+      restoreCenterPokemons(centerBefore, [
+        preview.pokemons[0].captureId,
+        preview.pokemons[0].captureId,
+      ]),
+    /distintos/,
+  );
+  assert.throws(
+    () => restoreCenterPokemons(centerBefore, ["missing"]),
+    /ya no pertenece/,
+  );
+  const centerRequest = {
+    requestId: "center-first",
+    adminUserId: 900,
+    playerUserId: centerUser,
+    clientId: "center-client",
+    captureIds: preview.pokemons
+      .slice(0, 2)
+      .map((capture) => capture.captureId),
+    partyHash: preview.partyHash,
+    partyRevision: preview.partyRevision,
+    centerRevision: 1,
+  };
+  await assert.rejects(
+    prepareCenterHealing(
+      { ...centerRequest, partyHash: "0".repeat(64) },
+      "center-client",
+    ),
+    /equipo cambió/,
+  );
+  const centerLock = await prepareCenterHealing(centerRequest, "center-client");
+  assert.equal(saved(centerUser).centerLock.requestId, centerRequest.requestId);
+  assert.equal(isLocalPartyMutationBlocked(store.getState().party), true);
+  const centerLocked = JSON.stringify(store.getState().party);
+  store.dispatch(toggleGymBadge("cascade"));
+  assert.equal(JSON.stringify(store.getState().party), centerLocked);
+  await assert.rejects(
+    prepareShopParty(centerUser, "center-client", "center-racing-buy", 3),
+    /pendiente/,
+  );
+  await assert.rejects(
+    prepareGameReset(centerUser, "center-client", "center-racing-reset", 3),
+    /pendiente/,
+  );
+  await assert.rejects(
+    prepareItemUse(
+      centerUser,
+      "center-client",
+      "center-racing-item",
+      centerRequest.captureIds[0],
+      3,
+      (party, captureId) => preparePartyItem(party, captureId, "full-restore"),
+    ),
+    /operación pendiente/,
+  );
+  passed.push(
+    "Poké Center accepts fainted teams, limits selection to 1–2 unique existing captures, binds the current preview and reserves against edits, purchases, items and resets",
+  );
+  const centerReceipt: CenterHeal = {
+    requestId: centerLock.requestId,
+    adminUserId: centerLock.adminUserId,
+    userId: centerLock.userId,
+    clientId: centerLock.clientId,
+    captureIds: centerLock.captureIds,
+    partyHash: centerLock.partyHash,
+    partyRevision: centerLock.partyRevision,
+    planHash: centerLock.planHash,
+    centerRevision: centerLock.centerRevision,
+    status: "pending",
+  };
+  assert.equal(
+    await applyCenterHealing(centerReceipt, "wrong-client"),
+    "ignored",
+  );
+  testStorage.failWritesFor.add(accountStorageKey(centerUser));
+  await assert.rejects(
+    applyCenterHealing(centerReceipt, "center-client"),
+    /guardar/,
+  );
+  assert.equal(
+    saved(centerUser).pokemons[0].pokemon.stats.find(
+      (stat: { name: string }) => stat.name === "hp",
+    ).value,
+    0,
+  );
+  assert.equal(saved(centerUser).centerLock.applied, undefined);
+  testStorage.failWritesFor.clear();
+  await applyCenterHealing(centerReceipt, "center-client");
+  const centerHealed = clone(store.getState().party);
+  for (let index = 0; index < 2; index++) {
+    const capture = centerHealed.pokemons[index];
+    assert.equal(getCurrentHp(capture.pokemon), getMaxHp(capture.pokemon));
+    assert.deepEqual(capture.statuses, []);
+    assert.deepEqual(capture.statusTurns, {});
+    assert.deepEqual(capture.pokemon.battleStages, neutralBattleStages());
+    assert.equal(
+      capture.moves!.every((move) => move.currentPp === move.pp),
+      true,
+    );
+    assert.equal(
+      capture.pokemon.level,
+      centerBefore.pokemons[index].pokemon.level,
+    );
+    assert.deepEqual(
+      capture.pokemon.baseStats,
+      centerBefore.pokemons[index].pokemon.baseStats,
+    );
+    assert.deepEqual(
+      capture.pokemon.stats.filter((stat) => stat.name !== "hp"),
+      centerBefore.pokemons[index].pokemon.stats.filter(
+        (stat) => stat.name !== "hp",
+      ),
+    );
+  }
+  assert.deepEqual(centerHealed.pokemons[2], centerBefore.pokemons[2]);
+  assert.deepEqual(centerHealed.bag, centerBefore.bag);
+  assert.equal(centerHealed.centerLock?.applied, true);
+  await applyCenterHealing(centerReceipt, "center-client");
+  assert.deepEqual(store.getState().party, centerHealed);
+  passed.push(
+    "Center healing saves HP, revival, all PP, statuses and temporary stages atomically before ACK while preserving permanent stats, untouched captures and every Bag value; failed writes and replays cannot apply twice",
+  );
+  await applyCenterHealing(
+    { ...centerReceipt, status: "applied" },
+    "center-client",
+  );
+  assert.equal(saved(centerUser).centerLock, undefined);
+  assert.equal(saved(centerUser).centerHealingRevision, 1);
+  await clearAccountStore();
+  await activateAccountStore(centerUser);
+  assert.equal(
+    await applyCenterHealing(centerReceipt, "center-client"),
+    "ignored",
+  );
+  assert.equal(saved(centerUser).centerLock, undefined);
+  const centerSecondPreview = await previewCenterParty(
+    centerUser,
+    "center-client",
+  );
+  const secondRequest = {
+    ...centerRequest,
+    requestId: "center-second",
+    captureIds: [centerSecondPreview.pokemons[2].captureId],
+    partyHash: centerSecondPreview.partyHash,
+    partyRevision: centerSecondPreview.partyRevision,
+    centerRevision: 2,
+  };
+  const secondLock = await prepareCenterHealing(secondRequest, "center-client");
+  const secondReceipt: CenterHeal = {
+    ...centerReceipt,
+    ...secondLock,
+    status: "cancelled",
+  };
+  await applyCenterHealing(secondReceipt, "center-client");
+  assert.equal(saved(centerUser).centerHealingRevision, 2);
+  assert.equal(
+    saved(centerUser).pokemons[2].pokemon.stats.find(
+      (stat: { name: string }) => stat.name === "hp",
+    ).value,
+    1,
+  );
+  assert.equal(
+    await applyCenterHealing(
+      { ...secondReceipt, status: "pending" },
+      "center-client",
+    ),
+    "ignored",
+  );
+  passed.push(
+    "Terminal Center receipts survive reload, fence late PENDING and release only their own reservation; cancellation preserves unhealed Pokémon instead of reconstructing or replaying effects",
   );
   await clearAccountStore();
   persistor.pause();
