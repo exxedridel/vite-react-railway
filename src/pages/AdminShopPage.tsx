@@ -36,6 +36,7 @@ type PurchaseDraft = {
   item: ShopCatalogItem;
   quantity: string;
   revision: number;
+  catalogRevision: number;
   balance: number;
   requestId: string;
   attempted: boolean;
@@ -92,7 +93,13 @@ export default function AdminShopPage() {
   const selectedPlayer = players.find(
     (player) => player.user.id === selectedId,
   );
-  const readyConnection = shop.connected && shop.synced;
+  const readyConnection = shop.connected && shop.synced && !!shop.catalog;
+  const items: ShopCatalogItem[] = shop.catalog
+    ? SHOP_ITEMS.map((item) => ({
+        ...item,
+        price: shop.catalog!.prices[item.id],
+      }))
+    : [];
   const selectedAvailable =
     !!selectedPlayer?.wallet &&
     selectedPlayer.ready &&
@@ -125,7 +132,8 @@ export default function AdminShopPage() {
     !!draft &&
     (!draftPlayer?.wallet ||
       draftPlayer.wallet.revision !== draft.revision ||
-      draftPlayer.wallet.balance !== draft.balance);
+      draftPlayer.wallet.balance !== draft.balance ||
+      shop.catalog?.revision !== draft.catalogRevision);
   const draftAvailable =
     !!draftPlayer?.wallet &&
     draftPlayer.ready &&
@@ -166,7 +174,13 @@ export default function AdminShopPage() {
       }
   }
   function openPurchase(item: ShopCatalogItem) {
-    if (!selectedPlayer?.wallet || !selectedAvailable || shop.busy) return;
+    if (
+      !selectedPlayer?.wallet ||
+      !selectedAvailable ||
+      shop.busy ||
+      !shop.catalog
+    )
+      return;
     setLocalPurchase(null);
     setLocalError("");
     setDraft({
@@ -174,23 +188,32 @@ export default function AdminShopPage() {
       item,
       quantity: "1",
       revision: selectedPlayer.wallet.revision,
+      catalogRevision: shop.catalog.revision,
       balance: selectedPlayer.wallet.balance,
       requestId: crypto.randomUUID(),
       attempted: false,
     });
   }
   function refreshQuote() {
-    if (!draft || !draftPlayer?.wallet || !draftAvailable || draft.attempted)
+    if (
+      !draft ||
+      !draftPlayer?.wallet ||
+      !draftAvailable ||
+      draft.attempted ||
+      !shop.catalog
+    )
       return;
     const nextMaximum = maximumShopQuantity(
       draftPlayer.wallet.balance,
-      draft.item.price,
+      shop.catalog.prices[draft.item.id],
     );
     setLocalError("");
     setDraft({
       ...draft,
       player: draftPlayer,
       revision: draftPlayer.wallet.revision,
+      catalogRevision: shop.catalog.revision,
+      item: { ...draft.item, price: shop.catalog.prices[draft.item.id] },
       balance: draftPlayer.wallet.balance,
       quantity: String(Math.max(1, Math.min(quantity ?? 1, nextMaximum))),
       requestId: crypto.randomUUID(),
@@ -211,10 +234,15 @@ export default function AdminShopPage() {
         quantity,
         attempt.revision,
         attempt.requestId,
+        attempt.catalogRevision,
       );
       if (confirmed) setLocalPurchase(confirmed);
     } catch (error) {
       setLocalError(errorText(error));
+      if ((error as { code?: string })?.code === "PRICE_CHANGED") {
+        setDraft({ ...attempt, attempted: false });
+        void shop.sync().catch(() => {});
+      }
     } finally {
       submitLock.current = false;
       setSubmitting(false);
@@ -286,7 +314,7 @@ export default function AdminShopPage() {
             )}
           </p>
           <ul className="admin-mart-items">
-            {SHOP_ITEMS.map((item) => (
+            {items.map((item) => (
               <li key={item.id}>
                 <button
                   type="button"
@@ -363,11 +391,13 @@ export default function AdminShopPage() {
                         ? "Confirmando el uso de un objeto"
                         : player.pendingReset
                           ? "Esperando guardado del reinicio de partida"
-                          : player.pending
-                            ? "Esperando guardado de una compra"
-                            : !player.ready
-                              ? "Sincronizando su mochila"
-                              : "Disponible para comprar"}
+                          : player.pendingAdjustment
+                            ? "Esperando guardado del ajuste de Pokedollars"
+                            : player.pending
+                              ? "Esperando guardado de una compra"
+                              : !player.ready
+                                ? "Sincronizando su mochila"
+                                : "Disponible para comprar"}
                   </p>
                   <Button
                     type="button"
@@ -566,8 +596,8 @@ export default function AdminShopPage() {
                   {changedQuote && !draft.attempted && (
                     <div role="alert" className="space-y-2 text-sm">
                       <p>
-                        El saldo o la conexión del jugador cambió. Revisa la
-                        cotización antes de confirmar.
+                        El precio, el saldo o la conexión del jugador cambió.
+                        Revisa la cotización antes de confirmar.
                       </p>
                       <Button
                         variant="outline"

@@ -4,6 +4,8 @@ import { getCurrentHp } from "@/lib/pokemonStats";
 import { pvpPartyRevision } from "@/store/accountStorage";
 import {
   SHOP_ITEM_IDS,
+  type BalanceAdjustment,
+  type ShopCatalog,
   type GameReset,
   type ShopPurchase,
   type Wallet,
@@ -42,14 +44,52 @@ export function validPurchase(value: unknown): value is ShopPurchase {
     integer(value.userId, 1) &&
     integer(value.quantity, 1) &&
     Number(value.quantity) <= 99 &&
-    integer(value.unitPrice, 1) &&
-    integer(value.total, 1) &&
+    integer(value.unitPrice) &&
+    integer(value.total) &&
     value.total === Number(value.quantity) * Number(value.unitPrice) &&
     integer(value.balanceBefore) &&
     integer(value.balanceAfter) &&
     value.balanceAfter === Number(value.balanceBefore) - Number(value.total) &&
     integer(value.walletRevision, 1) &&
     SHOP_ITEM_IDS.includes(value.itemId as (typeof SHOP_ITEM_IDS)[number]) &&
+    ["pending", "applied"].includes(String(value.status))
+  );
+}
+
+export function validShopCatalog(value: unknown): value is ShopCatalog {
+  return (
+    record(value) &&
+    integer(value.revision) &&
+    record(value.prices) &&
+    Object.keys(value.prices).length === SHOP_ITEM_IDS.length &&
+    SHOP_ITEM_IDS.every(
+      (item) =>
+        integer((value.prices as Record<string, unknown>)[item]) &&
+        Number((value.prices as Record<string, unknown>)[item]) <=
+          Math.floor(Number.MAX_SAFE_INTEGER / 99),
+    )
+  );
+}
+
+export function validBalanceAdjustment(
+  value: unknown,
+): value is BalanceAdjustment {
+  if (!record(value)) return false;
+  return (
+    ["adjustmentId", "requestId", "clientId"].every(
+      (key) =>
+        typeof value[key] === "string" &&
+        /^[\w.:-]{1,128}$/.test(String(value[key])),
+    ) &&
+    integer(value.adminUserId, 1) &&
+    integer(value.userId, 1) &&
+    Number.isSafeInteger(value.delta) &&
+    value.delta !== 0 &&
+    integer(value.balanceBefore) &&
+    integer(value.balanceAfter) &&
+    Number.isSafeInteger(Number(value.balanceBefore) + Number(value.delta)) &&
+    value.balanceAfter === Number(value.balanceBefore) + Number(value.delta) &&
+    integer(value.walletRevision, 1) &&
     ["pending", "applied"].includes(String(value.status))
   );
 }
@@ -143,11 +183,19 @@ export function applyShopWallet(
       wallet.revision > party.itemUseLock.expectedWalletRevision
     )
       return { party, value: undefined };
+    if (
+      party.shopLock?.operation === "balance-adjustment" &&
+      party.shopLock.appliedWalletRevision === undefined &&
+      wallet.revision > party.shopLock.expectedWalletRevision!
+    )
+      return { party, value: undefined };
     let next = partyWithWallet(party, wallet);
     const lock = next.shopLock;
     const confirmedApplied =
       lock &&
+      lock.operation === undefined &&
       lock.userId === wallet.userId &&
+      lock.appliedWalletRevision === undefined &&
       proof.appliedPurchases?.some(
         (purchase) =>
           purchase.status === "applied" &&
@@ -158,6 +206,7 @@ export function applyShopWallet(
       );
     const confirmedAbort =
       lock &&
+      lock.appliedWalletRevision === undefined &&
       lock.userId === wallet.userId &&
       proof.abortUnlockRequestId === lock.requestId &&
       !pendingRequestIds.includes(lock.requestId);
@@ -176,6 +225,7 @@ export function prepareShopParty(
   clientId: string,
   requestId: string,
   revision: number,
+  operation?: "balance-adjustment",
 ): Promise<number> {
   return transactPvpParty(userId, async (party) => {
     if (party.resetLock || party.itemUseLock)
@@ -191,7 +241,10 @@ export function prepareShopParty(
       party.shopLock &&
       (party.shopLock.requestId !== requestId ||
         party.shopLock.clientId !== clientId ||
-        party.shopLock.userId !== userId)
+        party.shopLock.userId !== userId ||
+        party.shopLock.operation !== operation ||
+        (operation === "balance-adjustment" &&
+          party.shopLock.expectedWalletRevision !== revision))
     )
       throw new Error("Hay otra compra pendiente de confirmación.");
     return {
@@ -200,10 +253,93 @@ export function prepareShopParty(
         : {
             ...party,
             pvpRevision: pvpPartyRevision(party) + 1,
-            shopLock: { userId, clientId, requestId },
+            shopLock: {
+              userId,
+              clientId,
+              requestId,
+              ...(operation === "balance-adjustment"
+                ? { operation, expectedWalletRevision: revision }
+                : {}),
+            },
           },
       value: revision,
     };
+  });
+}
+
+/** Store the exact authoritative balance change before acknowledging it. The
+ * marker prevents a replay or an abort barrier from releasing an applied use. */
+export function applyBalanceAdjustment(
+  wallet: Wallet,
+  receipt: BalanceAdjustment,
+  clientId: string,
+): Promise<"pending" | "applied" | "ignored"> {
+  if (
+    !validWallet(wallet) ||
+    !validBalanceAdjustment(receipt) ||
+    receipt.userId !== wallet.userId
+  )
+    return Promise.reject(
+      new Error("El ajuste de Pokedollars recibido no es válido."),
+    );
+  return transactPvpParty(wallet.userId, async (party) => {
+    const lock = party.shopLock;
+    if (
+      !lock ||
+      lock.operation !== "balance-adjustment" ||
+      lock.userId !== wallet.userId ||
+      lock.clientId !== clientId ||
+      receipt.clientId !== clientId ||
+      lock.requestId !== receipt.requestId
+    )
+      return { party, value: "ignored" as const };
+    if (
+      (party.bag?.walletRevision ?? -1) > wallet.revision ||
+      receipt.walletRevision > wallet.revision
+    )
+      return { party, value: "ignored" as const };
+    if (
+      party.pvpLock ||
+      party.resetLock ||
+      party.itemUseLock ||
+      localBattleActive(party)
+    )
+      throw new Error(
+        "La Party conserva otra operación o batalla; recupera el ajuste original.",
+      );
+    if (receipt.walletRevision !== lock.expectedWalletRevision! + 1)
+      throw new Error("La revisión del ajuste no corresponde a esta partida.");
+    let next = party;
+    if (lock.appliedWalletRevision === undefined) {
+      if (
+        wallet.revision !== receipt.walletRevision ||
+        party.bag?.walletRevision !== lock.expectedWalletRevision ||
+        party.bag?.money !== receipt.balanceBefore ||
+        wallet.balance !== receipt.balanceAfter ||
+        SHOP_ITEM_IDS.some(
+          (item) =>
+            (wallet.items[item] ?? 0) !== (party.bag?.items?.[item] ?? 0),
+        )
+      )
+        throw new Error(
+          "El saldo o la Bag no coincide con el ajuste. Recupera la operación original.",
+        );
+      next = partyWithWallet(party, wallet);
+      next = {
+        ...next,
+        pvpRevision: pvpPartyRevision(next) + 1,
+        shopLock: { ...lock, appliedWalletRevision: receipt.walletRevision },
+      };
+    } else if (lock.appliedWalletRevision !== receipt.walletRevision) {
+      throw new Error("El ajuste guardado no coincide con su confirmación.");
+    }
+    if (receipt.status === "applied")
+      next = {
+        ...next,
+        pvpRevision: pvpPartyRevision(next) + 1,
+        shopLock: undefined,
+      };
+    return { party: next, value: receipt.status };
   });
 }
 

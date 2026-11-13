@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { fullRestoreBrowserScenario } from "./full-restore-browser-scenarios.mjs";
 import { ppItemsBrowserScenario } from "./pp-items-browser-scenarios.mjs";
 import { tmBrowserScenario } from "./tm-browser-scenarios.mjs";
+import { backOfficeBrowserScenario } from "./back-office-browser-scenarios.mjs";
 
 /** Real UI scenarios, using the identity/Nest/Chrome harness in test-pvp-browser. */
 export async function runShopBrowserScenario({
@@ -166,6 +167,28 @@ export async function runShopBrowserScenario({
       label,
     );
 
+  const backOffice = () =>
+    backOfficeBrowserScenario({
+      admin,
+      playerA,
+      playerB,
+      cdp,
+      evalArgs,
+      waitArgs,
+      field,
+      clickButton,
+      seedPvpTeam,
+      shopRepository,
+      shopGateway,
+      shopService,
+      select,
+      openItem,
+      closeDialog,
+    });
+  if (process.argv.includes("--back-office-only")) {
+    await backOffice();
+    return;
+  }
   await clickButton(admin, "Tienda");
   await waitBalance(2, 500);
   await waitBalance(3, 500);
@@ -839,6 +862,7 @@ export async function runShopBrowserScenario({
     openItem,
     closeDialog,
   });
+  await backOffice();
   assert.deepEqual(cdp.exceptions, [], "Unexpected browser exception");
   console.log(
     "PASS: live Poké Mart, 600/Great Ball quantity2, read-only cash, live objects/balances, battle locks, durable purchase recovery, and player new games: 500 Pokedollars, empty purchased inventory/team, cancel/offline guards, double-click deduplication, checked-save recovery and no repeated reset on reload.",

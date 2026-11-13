@@ -71,7 +71,12 @@ export const SHOP_ITEMS = [
     image: "/admin-shop/bicycle.png",
   },
 ] as const;
-export type ShopCatalogItem = (typeof SHOP_ITEMS)[number];
+export type ShopCatalogItem = {
+  id: (typeof SHOP_ITEMS)[number]["id"];
+  name: string;
+  price: number;
+  image: string;
+};
 export const MAX_SHOP_QUANTITY = 99;
 export const formatShopMoney = (value: number) =>
   new Intl.NumberFormat("es-MX", { maximumFractionDigits: 0 }).format(value);
@@ -85,10 +90,12 @@ export function maximumShopQuantity(
     !Number.isSafeInteger(balance) ||
     balance < 0 ||
     !Number.isSafeInteger(unitPrice) ||
-    unitPrice <= 0
+    unitPrice < 0
   )
     return 0;
-  return Math.min(MAX_SHOP_QUANTITY, Math.floor(balance / unitPrice));
+  return unitPrice === 0
+    ? MAX_SHOP_QUANTITY
+    : Math.min(MAX_SHOP_QUANTITY, Math.floor(balance / unitPrice));
 }
 export function quoteShopPurchase(
   balance: number,

@@ -41,7 +41,9 @@ test("purchase quantities reject fractions, zero, non-finite values and amounts 
     assert.equal(quoteShopPurchase(100000, 150, quantity), null);
   for (const balance of [-1, 0.5, NaN, Infinity])
     assert.equal(maximumShopQuantity(balance, 150), 0);
-  assert.equal(maximumShopQuantity(500, 0), 0);
+  assert.equal(maximumShopQuantity(500, 0), 99);
+  assert.deepEqual(quoteShopPurchase(0, 0, 99), { total: 0, remaining: 0 });
+  assert.equal(quoteShopPurchase(0, 0, 100), null);
 });
 
 test("display catalog includes PP recovery items at the agreed prices", () => {

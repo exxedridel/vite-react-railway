@@ -11,6 +11,22 @@ export const SHOP_ITEM_IDS = [
   "bicycle",
 ] as const;
 export type ShopItemId = (typeof SHOP_ITEM_IDS)[number];
+export type ShopCatalog = {
+  revision: number;
+  prices: Record<ShopItemId, number>;
+};
+export type BalanceAdjustment = {
+  adjustmentId: string;
+  requestId: string;
+  adminUserId: number;
+  userId: number;
+  clientId: string;
+  delta: number;
+  balanceBefore: number;
+  balanceAfter: number;
+  walletRevision: number;
+  status: "pending" | "applied";
+};
 export const CONSUMABLE_ITEM_IDS = [
   "full-restore",
   "max-ether",
@@ -37,6 +53,7 @@ export type ShopPlayer = {
   pending: boolean;
   pendingReset?: boolean;
   pendingUse?: boolean;
+  pendingAdjustment?: boolean;
 };
 export type ItemUse = {
   requestId: string;
@@ -74,6 +91,9 @@ export type ShopPurchase = {
   status: "pending" | "applied";
 };
 export type ShopState = {
+  catalog?: ShopCatalog;
+  adjustment?: BalanceAdjustment;
+  adjustments?: BalanceAdjustment[];
   wallet?: Wallet;
   players?: ShopPlayer[];
   purchases?: ShopPurchase[];

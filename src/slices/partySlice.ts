@@ -138,7 +138,14 @@ export type PartyState = {
     highlights?: string[];
   };
   bag?: TrainerBag;
-  shopLock?: { requestId: string; userId: number; clientId: string };
+  shopLock?: {
+    requestId: string;
+    userId: number;
+    clientId: string;
+    operation?: "balance-adjustment";
+    expectedWalletRevision?: number;
+    appliedWalletRevision?: number;
+  };
   resetLock?: {
     requestId: string;
     userId: number;

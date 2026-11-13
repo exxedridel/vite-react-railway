@@ -59,6 +59,9 @@ function AdminWorkspace() {
             <Users className="h-4 w-4" aria-hidden="true" /> Usuarios
           </Link>
         </Button>
+        <Button asChild variant="outline" className="min-h-11 gap-2">
+          <Link to="/back-office">Back office</Link>
+        </Button>
         {user && (
           <Button asChild variant="outline" className="min-h-11 gap-2">
             <Link to="/mensajes-prueba">

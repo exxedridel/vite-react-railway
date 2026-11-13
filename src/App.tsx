@@ -9,11 +9,24 @@ import NotFound from "./pages/NotFound";
 import TestMessagesPage from "./pages/TestMessagesPage";
 import UsersPage from "./pages/UsersPage";
 import AdminRoutes from "./components/Navigation/AdminRoutes";
+import BackOfficePage from "./pages/BackOfficePage";
 
 function App() {
   return (
     <Routes>
       <Route index element={<Login />} />
+      <Route
+        path="/back-office"
+        element={
+          <ProtectedRoutes>
+            <AdminRoutes>
+              <IdleTimer>
+                <BackOfficePage />
+              </IdleTimer>
+            </AdminRoutes>
+          </ProtectedRoutes>
+        }
+      />
       <Route
         path="/users"
         element={

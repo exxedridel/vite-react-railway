@@ -28,6 +28,11 @@ export default function ShopPartyGate({ children }: { children: ReactNode }) {
   const pendingReset = shop.resets.find((reset) => reset.status === "pending");
   const resetting = !!resetLock || !!pendingReset;
   const otherBrowser = pendingReset && pendingReset.clientId !== shop.clientId;
+  const pendingAdjustment = shop.adjustments.find(
+    (entry) => entry.status === "pending",
+  );
+  const adjusting =
+    lock?.operation === "balance-adjustment" || !!pendingAdjustment;
   async function retry() {
     if (retrying) return;
     setRetrying(true);
@@ -44,7 +49,7 @@ export default function ShopPartyGate({ children }: { children: ReactNode }) {
       setRetrying(false);
     }
   }
-  if (usingItem || (!lock && !resetting))
+  if (usingItem || (!lock && !resetting && !adjusting))
     return (
       <>
         {children}
@@ -102,18 +107,32 @@ export default function ShopPartyGate({ children }: { children: ReactNode }) {
   return (
     <main
       className="mx-auto flex min-h-[70dvh] max-w-2xl flex-col justify-center gap-4 px-4 py-8"
-      data-testid={resetting ? "shop-reset-lock" : "shop-party-lock"}
+      data-testid={
+        resetting
+          ? "shop-reset-lock"
+          : adjusting
+            ? "balance-adjust-lock"
+            : "shop-party-lock"
+      }
     >
       <h1 className="flex items-center gap-2 text-2xl font-bold">
         <Coins className="text-brand" />{" "}
-        {resetting ? "Reiniciando partida" : "Procesando compra del Poké Mart"}
+        {resetting
+          ? "Reiniciando partida"
+          : adjusting
+            ? "Actualizando Pokedollars"
+            : "Procesando compra del Poké Mart"}
       </h1>
       <p>
         {resetting
           ? otherBrowser
             ? "Esta cuenta tiene un reinicio pendiente en otro navegador. Vuelve al navegador que lo solicitó para terminarlo."
             : "Tu partida está protegida mientras confirmamos y guardamos el reinicio con 500 Pokedollars y la mochila de objetos vacía."
-          : "Tu partida está protegida mientras guardamos el saldo y los objetos de la compra confirmada por el administrador."}
+          : adjusting
+            ? pendingAdjustment && pendingAdjustment.clientId !== shop.clientId
+              ? "Vuelve al navegador que recibió el ajuste para completar su guardado."
+              : "Guardando el ajuste de Pokedollars del administrador. Tu equipo y tus objetos se conservan."
+            : "Tu partida está protegida mientras guardamos el saldo y los objetos de la compra confirmada por el administrador."}
       </p>
       <p className="text-sm text-muted-foreground">
         Si se interrumpe la conexión, vuelve a conectar este navegador. La
@@ -135,7 +154,9 @@ export default function ShopPartyGate({ children }: { children: ReactNode }) {
             ? "Recuperando…"
             : resetting
               ? "Recuperar reinicio"
-              : "Recuperar compra"}
+              : adjusting
+                ? "Recuperar ajuste"
+                : "Recuperar compra"}
         </Button>
         <Button asChild variant="outline">
           <Link to="/mensajes-prueba">Mensajes</Link>

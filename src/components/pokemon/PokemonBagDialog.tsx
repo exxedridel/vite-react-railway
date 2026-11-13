@@ -108,7 +108,7 @@ export default function PokemonBagDialog({ open, onOpenChange }: Props) {
               </ul>
             ) : (
               <p className="text-sm text-muted-foreground">
-                Aún no tienes objetos comprados.
+                No tienes objetos comprados.
               </p>
             )}
           </section>

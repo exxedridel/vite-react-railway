@@ -188,7 +188,18 @@ export function decodeAccountParty(
         typeof lock.clientId !== "string" ||
         !lock.clientId ||
         !Number.isSafeInteger(lock.userId) ||
-        Number(lock.userId) <= 0
+        Number(lock.userId) <= 0 ||
+        (lock.operation !== undefined &&
+          lock.operation !== "balance-adjustment") ||
+        (lock.operation === "balance-adjustment" &&
+          (!Number.isSafeInteger(lock.expectedWalletRevision) ||
+            Number(lock.expectedWalletRevision) < 0 ||
+            (lock.appliedWalletRevision !== undefined &&
+              lock.appliedWalletRevision !==
+                Number(lock.expectedWalletRevision) + 1))) ||
+        (lock.operation === undefined &&
+          (lock.expectedWalletRevision !== undefined ||
+            lock.appliedWalletRevision !== undefined))
       )
         throw new Error();
     }

@@ -28,12 +28,18 @@ import {
   prepareGameReset,
   validGameReset,
   validWallet,
+  applyBalanceAdjustment,
+  validBalanceAdjustment,
 } from "../src/lib/shop/wallet";
 import type { GameReset, ItemUse, Wallet } from "../src/lib/shop/types";
 import { applyItemUse, prepareItemUse } from "../src/lib/shop/itemUse";
 import { preparePartyItem, prepareTmParty } from "../src/lib/fullRestorePlan";
 import { trainerMoves } from "../src/lib/trainerBattle/catalog";
-import { getCurrentHp, getMaxHp, neutralBattleStages } from "../src/lib/pokemonStats";
+import {
+  getCurrentHp,
+  getMaxHp,
+  neutralBattleStages,
+} from "../src/lib/pokemonStats";
 import { combatKey } from "../src/lib/emerald/types";
 declare const testStorage: {
   getItem(key: string): string | null;
@@ -737,7 +743,11 @@ export async function runAccountStorageTests() {
   );
   store.dispatch({
     type: "party/learnPokemonMoveWithTm",
-    payload: { captureId: targetId, move: tmMove, expected: combatKey(store.getState().party) },
+    payload: {
+      captureId: targetId,
+      move: tmMove,
+      expected: combatKey(store.getState().party),
+    },
   });
   assert.equal(JSON.stringify(store.getState().party), beforeFreeTm);
   const tmPlan = (party: typeof tmParty, captureId: string) =>
@@ -894,7 +904,10 @@ export async function runAccountStorageTests() {
     /fuera de combate/,
   );
   assert.equal(saved(606).itemUseLock, undefined);
-  await transactPvpParty(606, async () => ({ party: clone(replacement), value: undefined }));
+  await transactPvpParty(606, async () => ({
+    party: clone(replacement),
+    value: undefined,
+  }));
   await prepareItemUse(
     606,
     "item-client",
@@ -963,6 +976,76 @@ export async function runAccountStorageTests() {
   assert.equal(isAccountTransactionBlocked(), false);
   passed.push(
     "checked inventory writes fence concurrent normal actions until persistence resumes; no late wallet reconciliation overwrites a local turn",
+  );
+  const priorBalance = saved(606);
+  const balanceRevision = priorBalance.bag.walletRevision;
+  await prepareShopParty(
+    606,
+    "balance-client",
+    "balance-request",
+    balanceRevision,
+    "balance-adjustment",
+  );
+  const adjustedWallet = wallet(
+    606,
+    balanceRevision + 1,
+    priorBalance.bag.money + 150,
+    priorBalance.bag.items,
+  );
+  const adjustment = {
+    adjustmentId: "balance-id",
+    requestId: "balance-request",
+    adminUserId: 1,
+    userId: 606,
+    clientId: "balance-client",
+    delta: 150,
+    balanceBefore: priorBalance.bag.money,
+    balanceAfter: adjustedWallet.balance,
+    walletRevision: adjustedWallet.revision,
+    status: "pending" as const,
+  };
+  assert.equal(validBalanceAdjustment(adjustment), true);
+  assert.equal(
+    validBalanceAdjustment({ ...adjustment, balanceAfter: -1 }),
+    false,
+  );
+  await applyShopWallet(adjustedWallet);
+  assert.equal(
+    saved(606).bag.money,
+    priorBalance.bag.money,
+    "wallet alone cannot skip its adjustment receipt",
+  );
+  testStorage.failWritesFor.add(accountStorageKey(606));
+  await assert.rejects(
+    applyBalanceAdjustment(adjustedWallet, adjustment, "balance-client"),
+  );
+  testStorage.failWritesFor.delete(accountStorageKey(606));
+  await applyBalanceAdjustment(adjustedWallet, adjustment, "balance-client");
+  assert.deepEqual(saved(606).pokemons, priorBalance.pokemons);
+  assert.deepEqual(saved(606).bag.items, priorBalance.bag.items);
+  assert.equal(saved(606).bag.money, adjustedWallet.balance);
+  await applyShopWallet(adjustedWallet, [], {
+    abortUnlockRequestId: "balance-request",
+  });
+  assert.ok(
+    saved(606).shopLock,
+    "an abort proof cannot release an already applied balance effect",
+  );
+  await applyBalanceAdjustment(
+    adjustedWallet,
+    { ...adjustment, status: "applied" },
+    "balance-client",
+  );
+  assert.equal(saved(606).shopLock, undefined);
+  await clearAccountStore();
+  await activateAccountStore(606);
+  assert.equal(
+    await applyBalanceAdjustment(adjustedWallet, adjustment, "balance-client"),
+    "ignored",
+  );
+  assert.equal(saved(606).bag.money, adjustedWallet.balance);
+  passed.push(
+    "admin balance adjustments preserve Party/items/PP, reject wallet-only application, survive checked-save failure/reload and never repeat or release an applied marker by an abort proof",
   );
   await clearAccountStore();
   persistor.pause();

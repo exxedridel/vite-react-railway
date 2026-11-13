@@ -12,8 +12,8 @@ export default function AdminRoutes({ children }: { children: ReactNode }) {
         Acceso reservado al administrador
       </h1>
       <p className="text-sm text-muted-foreground">
-        Esta cuenta puede jugar y comunicarse con otros jugadores. La gestión de
-        usuarios requiere permisos de administrador.
+        Esta cuenta puede jugar y comunicarse con otros jugadores. Esta sección
+        requiere permisos de administrador.
       </p>
       <Button asChild>
         <Link to="/dashboard">Volver al juego</Link>

@@ -3,7 +3,7 @@
 Frontend del juego con React, TypeScript y Vite. `mysql-restapi` autentica y
 administra usuarios; `nest-mongo-pokedex` comunica jugadores y conserva las
 batallas PvP, las carteras y los recibos del Poké Mart. El motor de combate se
-ejecuta en el panel administrador. Versión de la aplicación: **2.5.0**.
+ejecuta en el panel administrador. Versión de la aplicación: **2.6.0**.
 
 ## Desarrollo y comprobaciones
 
@@ -66,6 +66,32 @@ Importar una partida antigua conserva la cartera actual; no recupera su saldo
 antiguo. Tampoco se importa mientras hay una batalla o compra pendiente.
 
 ## Poké Mart y Pokedollars
+
+### Back office: `/back-office`
+
+El administrador abre **Back office** desde su panel para cambiar el precio de
+cualquiera de los ocho objetos. Son precios globales persistidos en Nest/Mongo,
+actualizados por WebSocket y conservados al reiniciar. Se permiten enteros desde
+**0 Pokedollars**; los objetos gratis siguen limitados a99 unidades por compra.
+La Tienda y sus cotizaciones leen esos precios. Si cambia el catálogo con una
+compra abierta, hay que actualizar la cotización antes de aceptar; las compras
+ya confirmadas conservan su precio original.
+
+La misma página lista automáticamente los jugadores conectados, su saldo y
+disponibilidad. Ingresa una cantidad y elige **Agregar** o **Quitar**; el diálogo
+muestra el saldo resultante antes de confirmar. No se permiten saldos negativos,
+fracciones, jugadores desconectados o en batalla, ni otra operación pendiente.
+El jugador recibe el saldo automáticamente; Pokémon, objetos y PP se conservan.
+El ajuste usa bloqueo previo y guardado comprobado antes del ACK. Un fallo de
+red o almacenamiento se recupera con el mismo recibo, sin sumar o restar otra vez.
+
+Para esta versión se despliegan **Nest primero y React después**, sin cambios
+en MySQL ni variables nuevas. Nest añade `shop_catalog` y el historial opcional
+de ajustes en `shop_wallets`; no ejecutar seed ni borrar partidas o reservas.
+
+```bash
+npm run test:back-office:browser
+```
 
 **Tienda** abre directamente el Poké Mart y muestra las cuentas de jugador
 conectadas por WebSocket, su saldo y su disponibilidad. No hay que crear fichas
@@ -162,9 +188,9 @@ lanzamiento normal, sin repetir el descuento en una continuación, recarga o
 golpe de un ataque múltiple. Los ataques agotados no pueden seleccionarse;
 si todos están agotados aparece **Struggle**, sin añadirlo al moveset.
 
-- **Max Ether — 350 Pokedollars:** restaura todos los PP de un movimiento que
+- **Max Ether — precio inicial350 Pokedollars:** restaura todos los PP de un movimiento que
   se selecciona explícitamente.
-- **Max Elixir — 700 Pokedollars:** restaura los PP de todos los movimientos
+- **Max Elixir — precio inicial700 Pokedollars:** restaura los PP de todos los movimientos
   del Pokémon seleccionado.
 
 Ambos están en Poké Mart y en las acciones de la Party y del combate individual.
@@ -186,7 +212,7 @@ sólo requiere desplegar React; conserva inventario, PP y protocolo Nest.
 
 ### TM: aprender movimientos fuera de combate
 
-Las TM conservan su precio de **500 Pokedollars** y se compran en Poké Mart con
+Las TM tienen un precio inicial de **500 Pokedollars**, editable en Back office, y se compran en Poké Mart con
 el administrador. En el panel **Movimientos** del Pokémon, **Aprender con TM**
 consume una unidad de la Bag al confirmar un movimiento compatible. Si ya
 hay cuatro movimientos, **Sustituir con TM** reemplaza el elegido por una unidad.

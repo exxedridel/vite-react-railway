@@ -29,6 +29,9 @@ import {
   validGameReset,
   validPurchase,
   validWallet,
+  validShopCatalog,
+  validBalanceAdjustment,
+  applyBalanceAdjustment,
 } from "@/lib/shop/wallet";
 import type {
   ShopAck,
@@ -41,6 +44,8 @@ import type {
   ConsumableItemId,
   UsableItemId,
   Wallet,
+  ShopCatalog,
+  BalanceAdjustment,
 } from "@/lib/shop/types";
 
 type ShopContextValue = {
@@ -51,6 +56,20 @@ type ShopContextValue = {
   players: ShopPlayer[];
   wallet: Wallet | null;
   purchases: ShopPurchase[];
+  catalog: ShopCatalog | null;
+  adjustments: BalanceAdjustment[];
+  setPrice: (
+    itemId: ShopItemId,
+    price: number,
+    expectedCatalogRevision: number,
+    requestId?: string,
+  ) => Promise<ShopCatalog>;
+  adjustBalance: (
+    player: ShopPlayer,
+    delta: number,
+    expectedWalletRevision?: number,
+    requestId?: string,
+  ) => Promise<BalanceAdjustment | null>;
   resets: GameReset[];
   restarting: boolean;
   uses: ItemUse[];
@@ -76,6 +95,7 @@ type ShopContextValue = {
     quantity: number,
     expectedRevision?: number,
     requestId?: string,
+    expectedCatalogRevision?: number,
   ) => Promise<ShopPurchase | null>;
 };
 const ShopContext = createContext<ShopContextValue | null>(null);
@@ -122,6 +142,11 @@ function validState(value: unknown): value is ShopState {
   if (!value || typeof value !== "object") return false;
   const state = value as ShopState;
   return (
+    (!state.catalog || validShopCatalog(state.catalog)) &&
+    (!state.adjustment || validBalanceAdjustment(state.adjustment)) &&
+    (!state.adjustments ||
+      (Array.isArray(state.adjustments) &&
+        state.adjustments.every(validBalanceAdjustment))) &&
     (!state.wallet || validWallet(state.wallet)) &&
     (!state.purchases ||
       (Array.isArray(state.purchases) &&
@@ -164,6 +189,9 @@ export default function ShopProvider({
   const [players, setPlayers] = useState<ShopPlayer[]>([]);
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [purchases, setPurchases] = useState<ShopPurchase[]>([]);
+  const [catalog, setCatalog] = useState<ShopCatalog | null>(null);
+  const catalogRef = useRef<ShopCatalog | null>(null);
+  const [adjustments, setAdjustments] = useState<BalanceAdjustment[]>([]);
   const [resets, setResets] = useState<GameReset[]>([]);
   const [restarting, setRestarting] = useState(false);
   const [uses, setUses] = useState<ItemUse[]>([]);
@@ -307,7 +335,13 @@ export default function ShopProvider({
     // This request is emitted after the prepare ACK. The server serializes its
     // read behind that purchase, so it can prove an absent request was aborted.
     const abortUnlockRequestId = store.getState().party.shopLock?.requestId;
-    const response = await emit("shop:sync", {});
+    const balanceLock = store.getState().party.shopLock;
+    const response = await emit(
+      "shop:sync",
+      balanceLock?.operation === "balance-adjustment"
+        ? { adjustmentRequestId: balanceLock.requestId }
+        : {},
+    );
     await queueState.current(response, { abortUnlockRequestId });
     await recoverResetRef.current();
     await recoverItemUseRef.current();
@@ -321,6 +355,9 @@ export default function ShopProvider({
     setPlayers([]);
     setWallet(null);
     setPurchases([]);
+    setCatalog(null);
+    catalogRef.current = null;
+    setAdjustments([]);
     setResets([]);
     setRestarting(false);
     setUses([]);
@@ -366,6 +403,7 @@ export default function ShopProvider({
     let applied = false;
     let latestWallet: Wallet | null = null;
     let latestPurchases: ShopPurchase[] = [];
+    let latestAdjustments: BalanceAdjustment[] = [];
     let latestResets: GameReset[] = [];
     let resetRecovery: Promise<void> | null = null;
     let resetStarting = false;
@@ -410,6 +448,35 @@ export default function ShopProvider({
       proof?: { abortUnlockRequestId?: string },
     ) {
       if (!current()) return;
+      if (
+        next.catalog &&
+        next.catalog.revision >= (catalogRef.current?.revision ?? -1)
+      ) {
+        catalogRef.current = next.catalog;
+        setCatalog(next.catalog);
+      }
+      if (next.adjustments || next.adjustment) {
+        const previous = new Map(
+          latestAdjustments.map((entry) => [entry.adjustmentId, entry]),
+        );
+        const merged = new Map<string, BalanceAdjustment>();
+        for (const entry of next.adjustments ?? latestAdjustments) {
+          const saved = previous.get(entry.adjustmentId);
+          merged.set(
+            entry.adjustmentId,
+            saved?.status === "applied" ? saved : entry,
+          );
+        }
+        if (next.adjustment) {
+          const saved = previous.get(next.adjustment.adjustmentId);
+          merged.set(
+            next.adjustment.adjustmentId,
+            saved?.status === "applied" ? saved : next.adjustment,
+          );
+        }
+        latestAdjustments = [...merged.values()];
+        setAdjustments(latestAdjustments);
+      }
       if (actor.role === "admin") {
         if (next.players) setPlayers(next.players);
         if (next.purchases) setPurchases(next.purchases);
@@ -533,9 +600,40 @@ export default function ShopProvider({
         (purchase) =>
           purchase.userId === actor.id && purchase.status === "pending",
       );
+      const balanceLock = store.getState().party.shopLock;
+      if (balanceLock?.operation === "balance-adjustment") {
+        const receipt = latestAdjustments.find(
+          (entry) =>
+            entry.requestId === balanceLock.requestId &&
+            entry.userId === actor.id &&
+            entry.clientId === id,
+        );
+        if (receipt) {
+          const status = await applyBalanceAdjustment(
+            latestWallet,
+            receipt,
+            id,
+          );
+          if (!current()) return;
+          if (status === "pending") {
+            await reconcile(
+              await emit("shop:balance-applied", {
+                adjustmentId: receipt.adjustmentId,
+                revision: receipt.walletRevision,
+              }),
+            );
+            return;
+          }
+        }
+      }
       await applyShopWallet(
         latestWallet,
-        pending.map((purchase) => purchase.requestId),
+        [
+          ...pending.map((purchase) => purchase.requestId),
+          ...latestAdjustments
+            .filter((entry) => entry.status === "pending")
+            .map((entry) => entry.requestId),
+        ],
         {
           appliedPurchases: next.purchases?.filter(
             (purchase) => purchase.status === "applied",
@@ -548,7 +646,10 @@ export default function ShopProvider({
       setWallet(latestWallet);
       setSynced(true);
       setError("");
-      setShopSyncBlocked(!!store.getState().party.shopLock);
+      setShopSyncBlocked(
+        !!store.getState().party.shopLock ||
+          latestAdjustments.some((entry) => entry.status === "pending"),
+      );
       setResetSyncBlocked(
         !!store.getState().party.resetLock ||
           latestResets.some((reset) => reset.status === "pending"),
@@ -872,6 +973,7 @@ export default function ShopProvider({
           playerUserId?: unknown;
           clientId?: unknown;
           expectedWalletRevision?: unknown;
+          operation?: "balance-adjustment";
         },
         acknowledge: (response: unknown) => void,
       ) => {
@@ -884,7 +986,9 @@ export default function ShopProvider({
           typeof request.requestId !== "string" ||
           !/^[\w.:-]{1,128}$/.test(request.requestId) ||
           !Number.isSafeInteger(request.expectedWalletRevision) ||
-          Number(request.expectedWalletRevision) < 0
+          Number(request.expectedWalletRevision) < 0 ||
+          (request.operation !== undefined &&
+            request.operation !== "balance-adjustment")
         ) {
           acknowledge({
             ok: false,
@@ -906,6 +1010,7 @@ export default function ShopProvider({
               id,
               request.requestId as string,
               request.expectedWalletRevision as number,
+              request.operation,
             );
             if (!current() || !socket.connected)
               throw new Error("La conexión cambió durante la compra.");
@@ -1008,6 +1113,7 @@ export default function ShopProvider({
     quantity: number,
     expectedRevision = player.wallet?.revision,
     requestId: string = crypto.randomUUID(),
+    expectedCatalogRevision = catalogRef.current?.revision,
   ): Promise<ShopPurchase | null> => {
     if (ownerRef.current?.role !== "admin")
       throw new Error("Sólo el administrador puede confirmar compras.");
@@ -1017,6 +1123,8 @@ export default function ShopProvider({
     setBusy(true);
     setError("");
     try {
+      if (expectedCatalogRevision === undefined)
+        throw new Error("Recupera los precios antes de confirmar la compra.");
       const response = await emit("shop:purchase", {
         requestId,
         playerUserId: player.user.id,
@@ -1024,6 +1132,7 @@ export default function ShopProvider({
         itemId,
         quantity,
         expectedWalletRevision: expectedRevision,
+        expectedCatalogRevision,
       });
       await queueState.current(response);
       return (
@@ -1039,6 +1148,64 @@ export default function ShopProvider({
       setBusy(false);
     }
   };
+  async function adminMutation(
+    event: string,
+    payload: unknown,
+  ): Promise<Extract<ShopAck, { ok: true }>> {
+    if (ownerRef.current?.role !== "admin")
+      throw new Error("Esta operación requiere una cuenta administradora.");
+    if (mutation.current)
+      throw new Error("Espera a que termine la operación anterior.");
+    mutation.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      const response = await emit(event, payload);
+      await queueState.current(response);
+      return response;
+    } catch (reason) {
+      setError(message(reason));
+      throw reason;
+    } finally {
+      mutation.current = false;
+      setBusy(false);
+    }
+  }
+  async function setPrice(
+    itemId: ShopItemId,
+    price: number,
+    expectedCatalogRevision: number,
+    requestId: string = crypto.randomUUID(),
+  ): Promise<ShopCatalog> {
+    const response = await adminMutation("shop:price-set", {
+      requestId,
+      itemId,
+      price,
+      expectedCatalogRevision,
+    });
+    if (!response.catalog)
+      throw new Error("No se recibió el catálogo actualizado.");
+    return response.catalog;
+  }
+  async function adjustBalance(
+    player: ShopPlayer,
+    delta: number,
+    expectedWalletRevision = player.wallet?.revision,
+    requestId: string = crypto.randomUUID(),
+  ): Promise<BalanceAdjustment | null> {
+    const response = await adminMutation("shop:balance-adjust", {
+      requestId,
+      playerUserId: player.user.id,
+      clientId: player.clientId,
+      delta,
+      expectedWalletRevision,
+    });
+    return (
+      response.adjustment ??
+      response.adjustments?.find((entry) => entry.requestId === requestId) ??
+      null
+    );
+  }
   return (
     <ShopContext.Provider
       value={{
@@ -1049,6 +1216,10 @@ export default function ShopProvider({
         players,
         wallet,
         purchases,
+        catalog,
+        adjustments,
+        setPrice,
+        adjustBalance,
         resets,
         restarting,
         uses,

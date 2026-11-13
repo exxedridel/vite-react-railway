@@ -9,7 +9,19 @@ Acuerdo del usuario confirmado el 2026-11-08:
 
 Si esta disponible, leer [la memoria compartida](../PROJECT_MEMORY.md). Este resumen se conserva tambien aqui para sesiones que abran solo este repositorio.
 
-Etapa vigente2026-11-12 frontend2.5.0: TM consumible500, sólo fuera combate.
+Etapa vigente2026-11-12 frontend2.6.0: /back-office admin modifica precios0+
+y ajustaPD+/- conectados sólo fuerabatalla/sinpendientes. React lee ShopState.catalog
+conrevisión; no usar defaults SHOP_ITEMS para cobrar. Precio cambiado bloquea
+cotización hasta actualizar (newrequestId). Gratis max99 sin dividirpor0.
+Ajuste PREPARE guarda shopLock.operation balance-adjustment+expectedRevision;
+checkedwrite wallet+marker antes balance-applied. CoincidenteAPPLIED libera;
+abortno libera marker aplicado. Sync adjustmentRequestId exacto recupera ledger.
+Party/items/PP se conservan, modalItems/música intactos. Tests/BOChrome aislado
+pasan; regresión completa Shop/reset/FullRestore/audio/PP/TM/Trainer+BO aprobada.
+Leer memoria. Deploy Nest luegoReact,
+sin MySQL/env/seed ni borrar datos; conservar ediciónusuario PokemonBagDialog.
+
+Etapa anterior2026-11-12 frontend2.5.0: TM consumible500, sólo fuera combate.
 Usuario conserva2movimientos inicialesgratis y sustituye con4 por1TM. UI usa
 useTm(captureId,move,replaceMoveId?), stock/conexión/sync/locks controlan botón;
 no carta física. Plan durable antes débito, movimiento+wallet+marca antesACK,

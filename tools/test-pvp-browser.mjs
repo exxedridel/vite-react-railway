@@ -837,7 +837,10 @@ try {
   const admin = await openAccount(ADMIN_EMAIL, frontendUrl);
   const playerA = await openAccount(PLAYER_EMAIL, frontendUrl);
   const playerB = await openAccount(OTHER_EMAIL, frontendUrl);
-  if (process.argv.includes("--shop-only")) {
+  if (
+    process.argv.includes("--shop-only") ||
+    process.argv.includes("--back-office-only")
+  ) {
     await runShopBrowserScenario({
       admin,
       playerA,
