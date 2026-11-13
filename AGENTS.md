@@ -9,7 +9,16 @@ Acuerdo del usuario confirmado el 2026-11-08:
 
 Si esta disponible, leer [la memoria compartida](../PROJECT_MEMORY.md). Este resumen se conserva tambien aqui para sesiones que abran solo este repositorio.
 
-Etapa vigente2026-11-12 frontend2.6.0: /back-office admin modifica precios0+
+Correcciónvigente2026-11-12 frontend2.6.1: adoptar ajustes pending propios
+sinlock/locklegacy/walletyaacreditada, sin sumardelta. Marca persistente
+balanceAdjustmentRevision terminal impide pending tardío trasreload. Mantener
+Party/PP/items yencuentro localenrecovery; CREATE fuerabatalla. AbortButton Gate+
+BO compensa pendientes vía shop:balance-abort; APPLIED conserva resultado y
+cancelled usa cancelledWalletRevision/Balance sin tocar otroslocks. Supportsflag
+presence y ACKoperation previenen clientesviejos; BO indicaactualizar. No borrar
+partida para repararloop. Ver memoria/pruebas. DeployNest→React yrecargarambos.
+
+Etapa anterior2026-11-12 frontend2.6.0: /back-office admin modifica precios0+
 y ajustaPD+/- conectados sólo fuerabatalla/sinpendientes. React lee ShopState.catalog
 conrevisión; no usar defaults SHOP_ITEMS para cobrar. Precio cambiado bloquea
 cotización hasta actualizar (newrequestId). Gratis max99 sin dividirpor0.

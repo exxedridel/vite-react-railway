@@ -179,6 +179,12 @@ export function decodeAccountParty(
       )
         throw new Error();
     }
+    if (
+      party.balanceAdjustmentRevision !== undefined &&
+      (!Number.isSafeInteger(party.balanceAdjustmentRevision) ||
+        Number(party.balanceAdjustmentRevision) < 0)
+    )
+      throw new Error();
     if (party.shopLock !== undefined) {
       const lock = party.shopLock;
       if (

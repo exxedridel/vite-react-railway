@@ -19,6 +19,7 @@ import type {
   ShopCatalog,
   BalanceAdjustment,
 } from "@/lib/shop/types";
+import BalanceAbortButton from "@/components/shop/BalanceAbortButton";
 
 const errorText = (error: unknown) =>
   error instanceof Error ? error.message : "No se pudo completar la operación.";
@@ -199,6 +200,7 @@ export default function BackOfficePage() {
   const ready = shop.connected && shop.synced;
   const available = (player: ShopPlayer) =>
     ready &&
+    player.supportsBalanceAdjustments === true &&
     player.ready &&
     !!player.wallet &&
     !player.inBattle &&
@@ -341,6 +343,31 @@ export default function BackOfficePage() {
         )}
       </section>
       <section className="space-y-3" aria-labelledby="back-office-players">
+        {shop.adjustments.some((entry) => entry.status === "pending") && (
+          <section
+            className="space-y-3 rounded-xl border border-destructive/30 p-4"
+            aria-label="Ajustes pendientes"
+          >
+            <h2 className="font-semibold">Ajustes pendientes de guardar</h2>
+            {shop.adjustments
+              .filter((entry) => entry.status === "pending")
+              .map((entry) => (
+                <div
+                  key={entry.adjustmentId}
+                  data-adjustment-id={entry.adjustmentId}
+                  className="flex flex-wrap items-center justify-between gap-3"
+                >
+                  <p className="text-sm">
+                    {players.find((player) => player.user.id === entry.userId)
+                      ?.user.email ?? `Jugador #${entry.userId}`}{" "}
+                    · {entry.delta > 0 ? "+" : ""}
+                    {formatShopMoney(entry.delta)} PD · Esperando guardado
+                  </p>
+                  <BalanceAbortButton receipt={entry} />
+                </div>
+              ))}
+          </section>
+        )}
         <h2
           id="back-office-players"
           className="flex items-center gap-2 text-xl font-semibold"
@@ -377,13 +404,15 @@ export default function BackOfficePage() {
                   {player.wallet ? formatShopMoney(balance) : "…"} PD
                 </p>
                 <p className="text-sm text-muted-foreground" role="status">
-                  {player.inBattle
-                    ? "En batalla · ajustes bloqueados"
-                    : player.pending
-                      ? "Esperando guardado de una operación"
-                      : !player.ready
-                        ? "Sincronizando"
-                        : "Disponible"}
+                  {player.supportsBalanceAdjustments !== true
+                    ? "Actualiza y recarga el frontend del jugador para ajustar Pokedollars."
+                    : player.inBattle
+                      ? "En batalla · ajustes bloqueados"
+                      : player.pending
+                        ? "Esperando guardado de una operación"
+                        : !player.ready
+                          ? "Sincronizando"
+                          : "Disponible"}
                 </p>
                 <label className="block space-y-1 text-sm">
                   <span>Cantidad de Pokedollars</span>
@@ -457,10 +486,15 @@ export default function BackOfficePage() {
                 <p>
                   {transaction.status === "applied"
                     ? "El jugador guardó el ajuste."
-                    : "Esperando guardado en el dispositivo del jugador."}
+                    : transaction.status === "cancelled"
+                      ? "Ajuste cancelado. Se restableció el saldo anterior."
+                      : "Esperando guardado en el dispositivo del jugador."}
                 </p>
                 <p>
-                  Saldo resultante: {formatShopMoney(transaction.balanceAfter)}{" "}
+                  Saldo resultante:{" "}
+                  {formatShopMoney(
+                    transaction.cancelledBalance ?? transaction.balanceAfter,
+                  )}{" "}
                   PD
                 </p>
               </div>
@@ -499,6 +533,9 @@ export default function BackOfficePage() {
             </p>
           )}
           <DialogFooter>
+            {transaction?.status === "pending" && (
+              <BalanceAbortButton receipt={transaction} />
+            )}
             <Button variant="outline" onClick={close} disabled={submitting}>
               {transaction ? "Listo" : "Cancelar"}
             </Button>

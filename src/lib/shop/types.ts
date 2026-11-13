@@ -25,7 +25,9 @@ export type BalanceAdjustment = {
   balanceBefore: number;
   balanceAfter: number;
   walletRevision: number;
-  status: "pending" | "applied";
+  status: "pending" | "applied" | "cancelled";
+  cancelledWalletRevision?: number;
+  cancelledBalance?: number;
 };
 export const CONSUMABLE_ITEM_IDS = [
   "full-restore",
@@ -54,6 +56,7 @@ export type ShopPlayer = {
   pendingReset?: boolean;
   pendingUse?: boolean;
   pendingAdjustment?: boolean;
+  supportsBalanceAdjustments?: boolean;
 };
 export type ItemUse = {
   requestId: string;

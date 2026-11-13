@@ -31,7 +31,12 @@ import {
   applyBalanceAdjustment,
   validBalanceAdjustment,
 } from "../src/lib/shop/wallet";
-import type { GameReset, ItemUse, Wallet } from "../src/lib/shop/types";
+import type {
+  BalanceAdjustment,
+  GameReset,
+  ItemUse,
+  Wallet,
+} from "../src/lib/shop/types";
 import { applyItemUse, prepareItemUse } from "../src/lib/shop/itemUse";
 import { preparePartyItem, prepareTmParty } from "../src/lib/fullRestorePlan";
 import { trainerMoves } from "../src/lib/trainerBattle/catalog";
@@ -1046,6 +1051,254 @@ export async function runAccountStorageTests() {
   assert.equal(saved(606).bag.money, adjustedWallet.balance);
   passed.push(
     "admin balance adjustments preserve Party/items/PP, reject wallet-only application, survive checked-save failure/reload and never repeat or release an applied marker by an abort proof",
+  );
+
+  // A pre-2.6 client stored PREPARE as a purchase lock, adopted the authoritative
+  // wallet, and released that lock without ever sending balance-applied. These
+  // fixtures represent its actual durable state, not a newly prepared operation.
+  const legacyTeam = clone(store.getState().party.pokemons);
+  const legacySettings = clone(store.getState().party.gameSettings);
+  async function legacyBalanceFixture(
+    userId: number,
+    state: "before" | "after" | "legacy-lock" = "after",
+  ) {
+    await clearAccountStore();
+    await activateAccountStore(userId);
+    setPvpSyncBlocked(false);
+    setShopSyncBlocked(false);
+    const beforeWallet = wallet(userId, 0, 500, { tm: 2, "full-restore": 1 });
+    await transactPvpParty(userId, async (current) => ({
+      party: partyWithWallet(
+        {
+          ...current,
+          pokemons: clone(legacyTeam),
+          gameSettings: clone(legacySettings),
+          opponent: null,
+        },
+        beforeWallet,
+      ),
+      value: undefined,
+    }));
+    const receipt: BalanceAdjustment = {
+      adjustmentId: `legacy-adjustment-${userId}`,
+      requestId: `legacy-request-${userId}`,
+      adminUserId: 1,
+      userId,
+      clientId: "original-legacy-client",
+      delta: 10000,
+      balanceBefore: 500,
+      balanceAfter: 10500,
+      walletRevision: 1,
+      status: "pending",
+    };
+    const afterWallet = wallet(userId, 1, 10500, beforeWallet.items);
+    if (state !== "before") {
+      // No operation discriminator: this is the format older frontends wrote.
+      await prepareShopParty(userId, receipt.clientId, receipt.requestId, 0);
+      await applyShopWallet(
+        afterWallet,
+        state === "legacy-lock" ? [receipt.requestId] : [],
+        {
+          abortUnlockRequestId: receipt.requestId,
+        },
+      );
+      assert.equal(saved(userId).bag.money, 10500);
+      assert.equal(Boolean(saved(userId).shopLock), state === "legacy-lock");
+    }
+    return { receipt, beforeWallet, afterWallet };
+  }
+
+  for (const [userId, mode] of [
+    [607, "before"],
+    [608, "after"],
+    [609, "legacy-lock"],
+  ] as const) {
+    const { receipt, afterWallet } = await legacyBalanceFixture(userId, mode);
+    const original = saved(userId);
+    if (mode === "after") {
+      testStorage.failWritesFor.add(accountStorageKey(userId));
+      await assert.rejects(
+        applyBalanceAdjustment(afterWallet, receipt, receipt.clientId),
+      );
+      testStorage.failWritesFor.delete(accountStorageKey(userId));
+      assert.deepEqual(
+        saved(userId),
+        original,
+        "failed adoption cannot pretend it persisted a recovery lock or marker",
+      );
+    }
+    assert.equal(
+      await applyBalanceAdjustment(afterWallet, receipt, receipt.clientId),
+      "pending",
+    );
+    const recovered = saved(userId);
+    assert.equal(
+      recovered.bag.money,
+      10500,
+      `legacy ${mode} replaces canonical cash; it does not add 10000 again`,
+    );
+    assert.equal(recovered.bag.walletRevision, 1);
+    assert.equal(recovered.shopLock.operation, "balance-adjustment");
+    assert.equal(recovered.shopLock.appliedWalletRevision, 1);
+    assert.deepEqual(recovered.pokemons, original.pokemons);
+    assert.deepEqual(recovered.bag.items, original.bag.items);
+    await clearAccountStore();
+    await activateAccountStore(userId);
+    assert.equal(
+      await applyBalanceAdjustment(afterWallet, receipt, receipt.clientId),
+      "pending",
+    );
+    assert.deepEqual(saved(userId).pokemons, recovered.pokemons);
+    assert.equal(saved(userId).bag.money, 10500);
+    await applyBalanceAdjustment(
+      afterWallet,
+      { ...receipt, status: "applied" },
+      receipt.clientId,
+    );
+    assert.equal(saved(userId).shopLock, undefined);
+    await clearAccountStore();
+    await activateAccountStore(userId);
+    assert.equal(
+      await applyBalanceAdjustment(afterWallet, receipt, receipt.clientId),
+      "ignored",
+      "a stale pending receipt cannot reopen a terminally acknowledged adjustment after reload",
+    );
+    assert.equal(saved(userId).shopLock, undefined);
+    assert.equal(saved(userId).bag.money, 10500);
+  }
+  passed.push(
+    "legacy balance recovery adopts missing or purchase-format locks with before/already-credited wallets, persists one canonical 10000 grant and never reopens an acknowledged receipt after reload",
+  );
+
+  const blockedLegacy = await legacyBalanceFixture(610, "after");
+  const foreignClientBefore = saved(610);
+  assert.equal(
+    await applyBalanceAdjustment(
+      blockedLegacy.afterWallet,
+      blockedLegacy.receipt,
+      "different-browser",
+    ),
+    "ignored",
+  );
+  assert.deepEqual(
+    saved(610),
+    foreignClientBefore,
+    "another browser cannot adopt or release the original receipt",
+  );
+  await prepareShopParty(
+    610,
+    blockedLegacy.receipt.clientId,
+    "unrelated-purchase",
+    1,
+  );
+  const foreignLockBefore = saved(610);
+  try {
+    assert.equal(
+      await applyBalanceAdjustment(
+        blockedLegacy.afterWallet,
+        blockedLegacy.receipt,
+        blockedLegacy.receipt.clientId,
+      ),
+      "ignored",
+    );
+  } catch (error) {
+    assert.match(
+      (error as Error).message,
+      /operaci|reserva|compra|bloque|pendiente/i,
+    );
+  }
+  assert.deepEqual(
+    saved(610),
+    foreignLockBefore,
+    "legacy recovery cannot replace or release a different operation's lock",
+  );
+  passed.push(
+    "legacy recovery refuses a different client and never clears an unrelated local operation",
+  );
+
+  const cancelledLegacy = await legacyBalanceFixture(611, "after");
+  await transactPvpParty(611, async (current) => {
+    const opponentPokemon = clone(current.pokemons[0].pokemon);
+    opponentPokemon.stats.find((stat) => stat.name === "hp")!.value = 1;
+    return {
+      party: {
+        ...current,
+        opponent: {
+          kind: "trainer" as const,
+          encounterId: "legacy-continued-battle",
+          pokemon: opponentPokemon,
+          moves: clone(current.pokemons[0].moves),
+          statuses: [],
+          stages: neutralBattleStages(),
+        },
+      },
+      value: undefined,
+    };
+  });
+  const continued = saved(611);
+  assert.equal(localBattleActive(store.getState().party), true);
+  assert.equal(
+    await applyBalanceAdjustment(
+      cancelledLegacy.afterWallet,
+      cancelledLegacy.receipt,
+      cancelledLegacy.receipt.clientId,
+    ),
+    "pending",
+    "currency recovery preserves a local encounter the older frontend started during the gap",
+  );
+  assert.deepEqual(saved(611).opponent, continued.opponent);
+  const cancellation: BalanceAdjustment = {
+    ...cancelledLegacy.receipt,
+    status: "cancelled",
+    cancelledWalletRevision: 2,
+    cancelledBalance: 500,
+  };
+  const cancelledWallet = wallet(
+    611,
+    2,
+    500,
+    cancelledLegacy.beforeWallet.items,
+  );
+  assert.equal(validBalanceAdjustment(cancellation), true);
+  assert.equal(
+    await applyBalanceAdjustment(
+      cancelledWallet,
+      cancellation,
+      cancellation.clientId,
+    ),
+    "cancelled",
+  );
+  const cancelledSave = saved(611);
+  assert.equal(cancelledSave.bag.money, 500);
+  assert.equal(cancelledSave.bag.walletRevision, 2);
+  assert.equal(cancelledSave.shopLock, undefined);
+  assert.deepEqual(cancelledSave.pokemons, continued.pokemons);
+  assert.deepEqual(cancelledSave.opponent, continued.opponent);
+  assert.deepEqual(cancelledSave.bag.items, continued.bag.items);
+  await clearAccountStore();
+  await activateAccountStore(611);
+  await applyBalanceAdjustment(
+    cancelledWallet,
+    cancellation,
+    cancellation.clientId,
+  );
+  assert.equal(
+    await applyBalanceAdjustment(
+      cancelledLegacy.afterWallet,
+      cancelledLegacy.receipt,
+      cancellation.clientId,
+    ),
+    "ignored",
+  );
+  assert.equal(saved(611).shopLock, undefined);
+  assert.equal(
+    saved(611).bag.money,
+    500,
+    "duplicate cancellation and late pending packets never apply a second compensation or restore the grant",
+  );
+  assert.deepEqual(saved(611).opponent, continued.opponent);
+  passed.push(
+    "cancelled legacy adjustments restore the canonical wallet once without deleting the Party or a resumed local encounter, and remain terminal across reload and late packets",
   );
   await clearAccountStore();
   persistor.pause();

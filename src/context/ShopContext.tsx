@@ -70,6 +70,7 @@ type ShopContextValue = {
     expectedWalletRevision?: number,
     requestId?: string,
   ) => Promise<BalanceAdjustment | null>;
+  abortBalance: (adjustmentId: string) => Promise<BalanceAdjustment>;
   resets: GameReset[];
   restarting: boolean;
   uses: ItemUse[];
@@ -169,6 +170,8 @@ function validState(value: unknown): value is ShopState {
             typeof player.ready === "boolean" &&
             typeof player.inBattle === "boolean" &&
             typeof player.pending === "boolean" &&
+            (player.supportsBalanceAdjustments === undefined ||
+              typeof player.supportsBalanceAdjustments === "boolean") &&
             (player.wallet === null || validWallet(player.wallet)),
         )))
   );
@@ -338,9 +341,7 @@ export default function ShopProvider({
     const balanceLock = store.getState().party.shopLock;
     const response = await emit(
       "shop:sync",
-      balanceLock?.operation === "balance-adjustment"
-        ? { adjustmentRequestId: balanceLock.requestId }
-        : {},
+      balanceLock ? { adjustmentRequestId: balanceLock.requestId } : {},
     );
     await queueState.current(response, { abortUnlockRequestId });
     await recoverResetRef.current();
@@ -428,11 +429,16 @@ export default function ShopProvider({
         !party.resetLock &&
         !party.itemUseLock &&
         !latestResets.some((reset) => reset.status === "pending") &&
-        !latestUses.some((use) => use.status === "pending");
+        !latestUses.some((use) => use.status === "pending") &&
+        !latestAdjustments.some((entry) => entry.status === "pending");
       const next = JSON.stringify([ready, localBattle]);
       if (next === presenceKey) return;
       presenceKey = next;
-      void emit("shop:presence", { ready, localBattle })
+      void emit("shop:presence", {
+        ready,
+        localBattle,
+        supportsBalanceAdjustments: true,
+      })
         .then((response) => receive(response))
         .catch((reason) => {
           presenceKey = "";
@@ -449,6 +455,16 @@ export default function ShopProvider({
     ) {
       if (!current()) return;
       if (
+        actor.role === "player" &&
+        next.wallet &&
+        next.wallet.revision <
+          Math.max(
+            latestWallet?.revision ?? -1,
+            store.getState().party.bag?.walletRevision ?? -1,
+          )
+      )
+        return;
+      if (
         next.catalog &&
         next.catalog.revision >= (catalogRef.current?.revision ?? -1)
       ) {
@@ -464,17 +480,32 @@ export default function ShopProvider({
           const saved = previous.get(entry.adjustmentId);
           merged.set(
             entry.adjustmentId,
-            saved?.status === "applied" ? saved : entry,
+            saved && saved.status !== "pending" ? saved : entry,
           );
         }
         if (next.adjustment) {
           const saved = previous.get(next.adjustment.adjustmentId);
           merged.set(
             next.adjustment.adjustmentId,
-            saved?.status === "applied" ? saved : next.adjustment,
+            saved && saved.status !== "pending" ? saved : next.adjustment,
           );
         }
-        latestAdjustments = [...merged.values()];
+        const terminalRevision = Math.max(
+          store.getState().party.balanceAdjustmentRevision ?? 0,
+          ...[...merged.values()]
+            .filter((entry) => entry.status !== "pending")
+            .map((entry) =>
+              entry.status === "cancelled"
+                ? entry.cancelledWalletRevision!
+                : entry.walletRevision,
+            ),
+        );
+        latestAdjustments = [...merged.values()].filter(
+          (entry) =>
+            actor.role === "admin" ||
+            entry.status !== "pending" ||
+            entry.walletRevision > terminalRevision,
+        );
         setAdjustments(latestAdjustments);
       }
       if (actor.role === "admin") {
@@ -601,13 +632,45 @@ export default function ShopProvider({
           purchase.userId === actor.id && purchase.status === "pending",
       );
       const balanceLock = store.getState().party.shopLock;
-      if (balanceLock?.operation === "balance-adjustment") {
-        const receipt = latestAdjustments.find(
-          (entry) =>
-            entry.requestId === balanceLock.requestId &&
-            entry.userId === actor.id &&
-            entry.clientId === id,
-        );
+      const balanceRevision =
+        store.getState().party.balanceAdjustmentRevision ?? 0;
+      const ownAdjustments = latestAdjustments.filter(
+        (entry) =>
+          entry.userId === actor.id &&
+          (entry.clientId === id ||
+            (entry.status !== "pending" &&
+              !!balanceLock &&
+              entry.requestId === balanceLock.requestId &&
+              entry.clientId === balanceLock.clientId)),
+      );
+      {
+        const receipt =
+          ownAdjustments.find(
+            (entry) => entry.requestId === balanceLock?.requestId,
+          ) ??
+          ownAdjustments.find(
+            (entry) =>
+              entry.status === "pending" &&
+              entry.walletRevision > balanceRevision,
+          ) ??
+          (!balanceLock &&
+          !store.getState().party.pvpLock &&
+          !store.getState().party.itemUseLock &&
+          !store.getState().party.resetLock
+            ? ownAdjustments
+                .filter(
+                  (entry) =>
+                    entry.status !== "pending" &&
+                    (entry.status === "cancelled"
+                      ? entry.cancelledWalletRevision!
+                      : entry.walletRevision) > balanceRevision,
+                )
+                .sort(
+                  (a, b) =>
+                    (b.cancelledWalletRevision ?? b.walletRevision) -
+                    (a.cancelledWalletRevision ?? a.walletRevision),
+                )[0]
+            : undefined);
         if (receipt) {
           const status = await applyBalanceAdjustment(
             latestWallet,
@@ -691,7 +754,10 @@ export default function ShopProvider({
           applied = false;
           setSynced(false);
           setError(message(reason));
-          setShopSyncBlocked(!!store.getState().party.shopLock);
+          setShopSyncBlocked(
+            !!store.getState().party.shopLock ||
+              latestAdjustments.some((entry) => entry.status === "pending"),
+          );
           setResetSyncBlocked(
             !!store.getState().party.resetLock ||
               latestResets.some((reset) => reset.status === "pending"),
@@ -1014,7 +1080,11 @@ export default function ShopProvider({
             );
             if (!current() || !socket.connected)
               throw new Error("La conexión cambió durante la compra.");
-            acknowledge({ ok: true, revision });
+            acknowledge({
+              ok: true,
+              revision,
+              ...(request.operation ? { operation: request.operation } : {}),
+            });
             // Do not await: sync reconciliation runs after this prepare and
             // its server read waits for purchase completion or cancellation.
             void sync().catch((reason) => {
@@ -1023,7 +1093,10 @@ export default function ShopProvider({
           });
         reconciliation = prepare.catch((reason) => {
           if (current()) {
-            setShopSyncBlocked(!!store.getState().party.shopLock);
+            setShopSyncBlocked(
+              !!store.getState().party.shopLock ||
+                latestAdjustments.some((entry) => entry.status === "pending"),
+            );
             setError(message(reason));
           }
           acknowledge({
@@ -1079,7 +1152,10 @@ export default function ShopProvider({
         }).catch(() => {});
     };
     window.addEventListener("storage", onStorage);
-    setShopSyncBlocked(!!store.getState().party.shopLock);
+    setShopSyncBlocked(
+      !!store.getState().party.shopLock ||
+        latestAdjustments.some((entry) => entry.status === "pending"),
+    );
     setResetSyncBlocked(!!store.getState().party.resetLock);
     setItemUseSyncBlocked(!!store.getState().party.itemUseLock);
     socket.connect();
@@ -1206,6 +1282,28 @@ export default function ShopProvider({
       null
     );
   }
+  async function abortBalance(
+    adjustmentId: string,
+  ): Promise<BalanceAdjustment> {
+    if (mutation.current)
+      throw new Error("Espera a que termine la operación anterior.");
+    mutation.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      const response = await emit("shop:balance-abort", { adjustmentId });
+      await queueState.current(response);
+      if (!response.adjustment)
+        throw new Error("No se recibió el resultado de la cancelación.");
+      return response.adjustment;
+    } catch (reason) {
+      setError(message(reason));
+      throw reason;
+    } finally {
+      mutation.current = false;
+      setBusy(false);
+    }
+  }
   return (
     <ShopContext.Provider
       value={{
@@ -1220,6 +1318,7 @@ export default function ShopProvider({
         adjustments,
         setPrice,
         adjustBalance,
+        abortBalance,
         resets,
         restarting,
         uses,

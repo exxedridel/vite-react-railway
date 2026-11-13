@@ -5,6 +5,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Button } from "@/components/ui/button";
 import { useShopContext } from "@/context/ShopContext";
 import { useAppSelector } from "@/store/hooks";
+import BalanceAbortButton from "./BalanceAbortButton";
 
 /** Keep local item use modal so Layout, the arena and its music stay mounted. */
 export default function ShopPartyGate({ children }: { children: ReactNode }) {
@@ -158,6 +159,9 @@ export default function ShopPartyGate({ children }: { children: ReactNode }) {
                 ? "Recuperar ajuste"
                 : "Recuperar compra"}
         </Button>
+        {adjusting && pendingAdjustment && (
+          <BalanceAbortButton receipt={pendingAdjustment} />
+        )}
         <Button asChild variant="outline">
           <Link to="/mensajes-prueba">Mensajes</Link>
         </Button>

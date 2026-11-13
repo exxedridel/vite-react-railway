@@ -358,6 +358,7 @@ export function importLegacyParty(userId: number): Promise<void> {
                   pvpPartyRevision(legacy.party),
                 ) + 1,
               shopLock: undefined,
+              balanceAdjustmentRevision: undefined,
               bag: { ...bag, badges: [...(legacy.party.bag?.badges ?? [])] },
             },
           });

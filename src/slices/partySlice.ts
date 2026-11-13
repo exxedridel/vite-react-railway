@@ -138,6 +138,8 @@ export type PartyState = {
     highlights?: string[];
   };
   bag?: TrainerBag;
+  /** Highest terminal balance receipt revision; fences old pending envelopes. */
+  balanceAdjustmentRevision?: number;
   shopLock?: {
     requestId: string;
     userId: number;
@@ -1013,6 +1015,7 @@ const partySlice = createSlice({
     },
     resetGame(state) {
       return {
+        balanceAdjustmentRevision: state.balanceAdjustmentRevision,
         pvpRevision: state.pvpRevision,
         pvpReceipts: state.pvpReceipts,
         bag: emptyTrainerBag(),

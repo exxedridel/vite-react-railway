@@ -3,7 +3,7 @@
 Frontend del juego con React, TypeScript y Vite. `mysql-restapi` autentica y
 administra usuarios; `nest-mongo-pokedex` comunica jugadores y conserva las
 batallas PvP, las carteras y los recibos del Poké Mart. El motor de combate se
-ejecuta en el panel administrador. Versión de la aplicación: **2.6.0**.
+ejecuta en el panel administrador. Versión de la aplicación: **2.6.1**.
 
 ## Desarrollo y comprobaciones
 
@@ -84,6 +84,24 @@ fracciones, jugadores desconectados o en batalla, ni otra operación pendiente.
 El jugador recibe el saldo automáticamente; Pokémon, objetos y PP se conservan.
 El ajuste usa bloqueo previo y guardado comprobado antes del ACK. Un fallo de
 red o almacenamiento se recupera con el mismo recibo, sin sumar o restar otra vez.
+
+Desde2.6.1, **Recuperar ajuste** también reconoce un saldo ya acreditado por un
+frontend anterior, aunque se haya perdido su bloqueo local. Adopta el saldo
+canónico sin volver a sumar y conserva el equipo, los objetos y los PP. Los
+recibos terminados se recuerdan al recargar para que un mensaje atrasado no vuelva
+a bloquear la partida.
+
+Si un ajuste sigue pendiente, el jugador tiene **Abortar ajuste** en la pantalla
+de bloqueo. El administrador lo tiene en **Back office → Ajustes pendientes de
+guardar**, incluso si el jugador se desconectó. Confirmar cancela el ajuste y
+restablece el saldo anterior mediante una compensación registrada, sin borrar
+la partida. Si ya estaba confirmado, mantiene ese resultado y no lo revierte.
+Una confirmación o cancelación repetida no mueve dinero otra vez.
+
+El servidor exige que el frontend del jugador soporte este protocolo antes de
+crear otro ajuste. Actualiza **Nest primero, React después**, y recarga el
+frontend del administrador y del jugador para usar la versión2.6.1. Los ajustes
+pendientes existentes se pueden recuperar o cancelar desde esa versión.
 
 Para esta versión se despliegan **Nest primero y React después**, sin cambios
 en MySQL ni variables nuevas. Nest añade `shop_catalog` y el historial opcional

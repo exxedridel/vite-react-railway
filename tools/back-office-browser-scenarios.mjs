@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { legacyAdjustmentBrowserScenario } from "./legacy-adjustment-browser-scenarios.mjs";
 
 export async function backOfficeBrowserScenario({
   admin,
@@ -21,7 +22,18 @@ export async function backOfficeBrowserScenario({
     const origin = await evalArgs(page, () => location.origin);
     await cdp.request("Page.stopLoading", {}, page);
     await cdp.request("Page.navigate", { url: origin + path }, page);
-    await waitArgs(page, async expected => location.pathname === expected && !!document.querySelector(expected === "/dashboard" ? 'a[href="/mensajes-prueba"]' : 'main') && (await import("/src/store/accountStorage.ts")).getActiveAccountId() !== null, `route and saved account ready: ${path}`, path);
+    await waitArgs(
+      page,
+      async (expected) =>
+        location.pathname === expected &&
+        !!document.querySelector(
+          expected === "/dashboard" ? 'a[href="/mensajes-prueba"]' : "main",
+        ) &&
+        (await import("/src/store/accountStorage.ts")).getActiveAccountId() !==
+          null,
+      `route and saved account ready: ${path}`,
+      path,
+    );
   };
   const state = (page) =>
     evalArgs(page, async () =>
@@ -153,6 +165,15 @@ export async function backOfficeBrowserScenario({
     initial + 150,
   );
   assert.equal((await shopRepository.get(2)).adjustments.length, 2);
+  await waitArgs(
+    admin,
+    (selector) => {
+      const input = document.querySelector(selector);
+      return input && !input.disabled;
+    },
+    "player reconnects after the persisted adjustment reload",
+    amountSelector,
+  );
   await field(admin, amountSelector, String(initial + 151));
   assert.equal(
     await evalArgs(
@@ -321,4 +342,16 @@ export async function backOfficeBrowserScenario({
   console.log(
     "PASS: Back office admin access, zero/dynamic prices, stale quote fencing, free purchase99, +/-balance, no negatives/battle, double click, interrupted checked save/reload and Party preservation.",
   );
+  await legacyAdjustmentBrowserScenario({
+    admin,
+    playerA,
+    cdp,
+    evalArgs,
+    waitArgs,
+    field,
+    clickButton,
+    shopRepository,
+    shopGateway,
+    shopService,
+  });
 }
