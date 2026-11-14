@@ -1,6 +1,10 @@
 import { getWildMove } from "@/lib/emerald/moveInfo";
 import { useState, type Dispatch, type SetStateAction } from "react";
-import type { BattleOpponent } from "@/lib/battleOpponent";
+import {
+  isOpponentAutomatic,
+  usesNativeLocalEngine,
+  type BattleOpponent,
+} from "@/lib/battleOpponent";
 import { getCurrentHp, getMaxHp } from "@/lib/pokemonStats";
 import { clampStage, normalizeStages } from "@/lib/battleModifiers";
 import { hasLivingHp } from "@/lib/pokemonCondition";
@@ -24,6 +28,8 @@ export default function PokemonRivalActions({
   section: "hp" | "moves" | "stats";
 }) {
   const runtime = useAppSelector((s) => s.party.emerald);
+  const automatic = isOpponentAutomatic(opponent);
+  const native = usesNativeLocalEngine(opponent);
   const [moveId, setMoveId] = useState<number | null>(null);
   const capture = useAppSelector((state) =>
     state.party.pokemons.find((p) => p.captureId === captureId),
@@ -45,7 +51,7 @@ export default function PokemonRivalActions({
           <h2 className="font-semibold capitalize">
             HP · {opponent.pokemon.name}
           </h2>
-          {opponent.kind === "wild" ? (
+          {native ? (
             <PokemonHpControls
               currentHp={getCurrentHp(opponent.pokemon)}
               maxHp={getMaxHp(opponent.pokemon)}
@@ -81,15 +87,22 @@ export default function PokemonRivalActions({
               {getMaxHp(opponent.pokemon) ?? "—"}.
             </p>
           )}
-          {opponent.kind === "wild" && (
-            <PokemonHpBar pokemon={opponent.pokemon} />
-          )}
+          {native && <PokemonHpBar pokemon={opponent.pokemon} />}
         </>
       )}
       {section === "moves" && (
         <>
           <h2 className="font-semibold">Movimientos del rival</h2>
-          {opponent.kind === "wild" ? (
+          {automatic ? (
+            <p
+              role="status"
+              className="text-sm text-muted-foreground"
+              data-testid="opponent-auto-controls"
+            >
+              El rival elige sus movimientos automáticamente. Confirma tu acción
+              para resolver el turno.
+            </p>
+          ) : native ? (
             <>
               <p className="text-xs text-muted-foreground capitalize">
                 Frente a {capture?.pokemon.name ?? "tu Pokémon"}. Ambas acciones
@@ -142,7 +155,7 @@ export default function PokemonRivalActions({
               El otro entrenador ejecuta sus movimientos en su celular.
             </p>
           )}
-          {moveId !== null && opponent.kind === "wild" && (
+          {moveId !== null && native && !automatic && (
             <PokemonMoveExecutionDialog
               key={`${captureId}:${opponent.encounterId}:${moveId}`}
               actorSide="opponent"

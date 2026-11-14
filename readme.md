@@ -3,7 +3,8 @@
 Frontend del juego con React, TypeScript y Vite. `mysql-restapi` autentica y
 administra usuarios; `nest-mongo-pokedex` comunica jugadores y conserva las
 batallas PvP, las carteras y los recibos del Poké Mart. El motor de combate se
-ejecuta en el panel administrador. Versión de la aplicación: **2.9.0**.
+ejecuta en el panel administrador y, para encuentros individuales, en el frontend
+del jugador. Versión de la aplicación: **2.10.0**.
 
 ## Desarrollo y comprobaciones
 
@@ -64,6 +65,30 @@ o falla el guardado, se muestra el error y se conserva la partida original.
 Los datos del escenario administrador siguen siendo locales al dispositivo.
 Importar una partida antigua conserva la cartera actual; no recupera su saldo
 antiguo. Tampoco se importa mientras hay una batalla o compra pendiente.
+
+## Rivales automáticos
+
+En **Back office → Control de los rivales**, activa **Rivales automáticos** y
+pulsa **Guardar modo**. Está desactivado por defecto. Los encuentros nuevos
+salvajes o de entrenador del frontend del jugador reutilizan la IA de Trainer
+Battle: el jugador elige su propia acción y el rival responde automáticamente.
+Al preparar un encuentro puedes elegir **Salvaje** o **Entrenador (un Pokémon)**.
+
+El encuentro conserva su modo aunque cambie el interruptor o se recargue. Los
+guardados anteriores siguen manuales. PP, Struggle, continuaciones, reemplazos
+por KO y objetos respetan las reglas existentes; recuperar un objeto o recargar
+no repite la respuesta. Las capturas fallidas mantienen su respuesta automática
+también en modo manual. PvP y Trainer Battle del administrador no cambian.
+
+Nest guarda sólo el ajuste global; la IA y el motor siguen en React. Desplegar
+Nest primero y React después, recargar ambos a2.10.0, sin nuevas variables,
+MySQL, seed ni reinicio de partidas. Ver
+[OPPONENT_AUTOMATION_PROTOCOL.md](../OPPONENT_AUTOMATION_PROTOCOL.md).
+
+```bash
+npm run test:opponent-auto
+npm run test:opponent-auto:browser
+```
 
 ## Pokebolas y captura
 

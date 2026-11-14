@@ -9,6 +9,22 @@ Acuerdo del usuario confirmado el 2026-11-08:
 
 Si esta disponible, leer [la memoria compartida](../PROJECT_MEMORY.md). Este resumen se conserva tambien aqui para sesiones que abran solo este repositorio.
 
+Etapa vigente2026-11-14 React2.10.0: toggle BackOffice Rivalesautomáticos global
+false por defecto. Confirmados salvajes+trainers locales, IA TrainerBattle,
+sólo encuentrosnuevos. opponent.automation{enabled,catalogRevision} congelada,
+legacy sinmetadata manual; creación sincatalogo manual explícito. Trainerauto
+usa nativo sin escapehookswild, manuallegacyintacto. SharedNPChelper unarespuesta
+poracción/move/switch/pass/item, no effectautoplay/reload; PP/KO/forzadosnativos.
+Acciónrivalmanual/comandoslegacy rechazan. Planobjeto guardaefecto+respuestaIA
+antesdebit checkedwrite, recovery único. CapturamissAUTOsiempresinimportartoggle.
+Creaciónchecked prepareLocalEncounter+onCreateawait evita rawdispatchperdido
+por guardiatransitoriawallet (mantenerguardia); falloStorageconservaanterior.
+Wallet30/cuentas7/Party9/TS/build/audit165 pasan; ver memoria para QAChrome.
+ChromeShopCOMPLETO+autoPASS sinJSerrors (modo/new/reload/PP/KO/itemsrecovery/
+guardiawalletretenida); highlights dependenbatch.id, cloneswalletnocancelantimer.
+Ver memoria/OPPONENT_AUTOMATION_PROTOCOL para QA. Nest→React/recargar2.10.0,
+sinvars/MySQL/seed/reset/borrados. Party/motor/IA siguenlocales.
+
 Etapa vigente2026-11-13 React2.9.0: BackOffice dificultadglobal0..20, +modifier
 despuésminbase1, >20bloqueadopredebito. CatálogoWS+revision, quoteincluyemin/
 encounterId/captureDifficulty/captureRevision; lock+receiptcaptureRevisionopt.

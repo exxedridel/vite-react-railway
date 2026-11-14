@@ -1,4 +1,8 @@
 import { getWildMove } from "@/lib/emerald/moveInfo";
+import {
+  isOpponentAutomatic,
+  usesNativeLocalEngine,
+} from "@/lib/battleOpponent";
 import { getCuratedMove } from "@/lib/curatedMoveCatalog";
 import PokemonMoveExecutionDialog, {
   BattleResultView,
@@ -455,7 +459,7 @@ export default function PokemonMovesPanel({
             <h3 className="font-semibold">{move.displayName}</h3>
             <MoveDetails
               move={move}
-              automatic={opponent?.kind === "wild"}
+              automatic={usesNativeLocalEngine(opponent)}
               remaining={getCurrentMovePp(move)}
             />
             <Button
@@ -474,7 +478,7 @@ export default function PokemonMovesPanel({
                   )) ||
                 !opponent ||
                 getCurrentHp(capture.pokemon) <= 0 ||
-                (opponent.kind === "wild" &&
+                (usesNativeLocalEngine(opponent) &&
                   getCurrentHp(opponent.pokemon) <= 0)
               }
               onClick={() => setExecutingMoveId(move.id)}
@@ -551,9 +555,11 @@ export default function PokemonMovesPanel({
       </p>
       <p className="mt-1 text-xs text-muted-foreground">
         {opponent
-          ? opponent.kind === "wild"
-            ? "Elige tu movimiento y después la acción rival. El turno se resuelve automáticamente; consulta «Turno» para PP y movimientos forzados."
-            : "Cada confirmación ejecuta un movimiento. Finaliza el turno manualmente cuando corresponda."
+          ? isOpponentAutomatic(opponent)
+            ? "Elige tu movimiento; la IA elegirá el del rival y resolverá el turno. Consulta «Turno» para PP y movimientos forzados."
+            : usesNativeLocalEngine(opponent)
+              ? "Elige tu movimiento y después la acción rival. El turno se resuelve automáticamente; consulta «Turno» para PP y movimientos forzados."
+              : "Cada confirmación ejecuta un movimiento. Finaliza el turno manualmente cuando corresponda."
           : "Selecciona un oponente para usar tus movimientos."}
       </p>
       {showLastResult && lastResult?.captureId === captureId && (

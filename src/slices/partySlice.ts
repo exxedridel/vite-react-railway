@@ -70,7 +70,7 @@ import {
   MOVE_VERSION_GROUP,
 } from "@/lib/starterPokemon";
 import type { PokemonMove, PokemonLearnset } from "@/types/moves";
-import type { BattleOpponent } from "@/lib/battleOpponent";
+import { isOpponentAutomatic, type BattleOpponent } from "@/lib/battleOpponent";
 import {
   clampStage,
   isBattleStageName,
@@ -1495,6 +1495,18 @@ export default function partyReducer(
   action: UnknownAction,
 ): PartyState {
   if (action.type === PVP_PARTY_COMMIT) return action.payload as PartyState;
+  // Automatic local encounters must resolve both sides through the native
+  // checked transaction, including the first turn before a runtime exists.
+  if (
+    state &&
+    isOpponentAutomatic(state.opponent) &&
+    [
+      "party/executePokemonMove",
+      "party/finishBattleTurn",
+      "party/confirmBattleSwitch",
+    ].includes(action.type)
+  )
+    return state;
   if (
     (state?.pvpLock ||
       state?.resetLock ||

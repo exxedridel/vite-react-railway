@@ -5,6 +5,10 @@ import { toast } from "sonner";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { submitEmeraldAction } from "@/lib/emerald/commands";
 import { getWildMove } from "@/lib/emerald/moveInfo";
+import {
+  isOpponentAutomatic,
+  usesNativeLocalEngine,
+} from "@/lib/battleOpponent";
 import { getCurrentMovePp, getMaxMovePp, getStruggleMove } from "@/lib/movePp";
 import { Button } from "@/components/ui/button";
 import {
@@ -50,6 +54,7 @@ function WildMoveExecutionDialog({
     (m) => m.id === moveId,
   );
   const unavailable =
+    (actorSide === "opponent" && isOpponentAutomatic(party.opponent)) ||
     runtime?.pending[actorSide] ||
     runtime?.ended ||
     (!synthetic &&
@@ -85,8 +90,10 @@ function WildMoveExecutionDialog({
             {move?.displayName ?? option?.name ?? "Movimiento"}
           </DialogTitle>
           <DialogDescription>
-            La acción se resuelve cuando ambos lados hayan elegido. La prioridad
-            y la velocidad determinan quién actúa primero.
+            {isOpponentAutomatic(party.opponent)
+              ? "Al confirmar tu acción, la IA elegirá la del rival y resolverá el turno. "
+              : "La acción se resuelve cuando ambos lados hayan elegido. "}
+            La prioridad y la velocidad determinan quién actúa primero.
           </DialogDescription>
         </DialogHeader>
         {move && (
@@ -136,7 +143,7 @@ export default function PokemonMoveExecutionDialog(props: {
   actorSide?: "player" | "opponent";
   onClose: () => void;
 }) {
-  const wild = useAppSelector((s) => s.party.opponent?.kind === "wild");
+  const wild = useAppSelector((s) => usesNativeLocalEngine(s.party.opponent));
   return wild ? (
     <WildMoveExecutionDialog {...props} />
   ) : (

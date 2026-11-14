@@ -54,6 +54,7 @@ import {
 type Props = {
   opponent: BattleOpponent | null;
   onChange: Dispatch<SetStateAction<BattleOpponent | null>>;
+  onCreate: (opponent: BattleOpponent) => Promise<void>;
 };
 function OpponentSummary({
   pokemon,
@@ -105,9 +106,16 @@ function OpponentSummary({
     </div>
   );
 }
-export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
+export default function PokemonOpponentPanel({
+  opponent,
+  onChange,
+  onCreate,
+}: Props) {
   const dispatch = useAppDispatch();
   const shop = useShopContext();
+  const rulesRef = useRef(shop.catalog);
+  rulesRef.current = shop.catalog;
+  const [rivalKind, setRivalKind] = useState<"wild" | "trainer">("wild");
   const settings = useAppSelector((state) => state.party.gameSettings);
   const balance = gameBalance(settings);
   const allowedRegionsLabel = useAppSelector((state) =>
@@ -340,7 +348,15 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
         toast.error("La configuración cambió. Busca de nuevo al rival.");
         return;
       }
-      onChange(encounter);
+      const rules = rulesRef.current;
+      await onCreate({
+        ...encounter,
+        kind: rivalKind,
+        automation: {
+          enabled: rules?.automaticOpponents ?? false,
+          catalogRevision: rules?.revision ?? 0,
+        },
+      });
       handleOpenChange(false);
       toast.success("Encuentro preparado.");
     } catch (error: unknown) {
@@ -391,6 +407,13 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
             showSprite={false}
             fainted={opponentFainted}
           />
+          <p
+            className="text-xs text-muted-foreground"
+            data-testid="opponent-automation-mode"
+          >
+            {opponent.automation?.enabled ? "Rival automático" : "Rival manual"}{" "}
+            · {opponent.kind === "wild" ? "Salvaje" : "Entrenador"}
+          </p>
           <div
             role="group"
             aria-label="Nivel del oponente"
@@ -578,6 +601,27 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
               {balance.hpMultiplier.toFixed(1)}.
             </DialogDescription>
           </DialogHeader>
+          <label className="space-y-1 text-sm">
+            <span>Tipo de rival</span>
+            <select
+              aria-label="Tipo de rival"
+              value={rivalKind}
+              disabled={searching || building}
+              className="min-h-10 w-full rounded-md border bg-background px-3 text-foreground"
+              onChange={(event) =>
+                setRivalKind(event.target.value as "wild" | "trainer")
+              }
+            >
+              <option value="wild">Salvaje</option>
+              <option value="trainer">Entrenador (un Pokémon)</option>
+            </select>
+          </label>
+          <p className="text-xs text-muted-foreground">
+            {shop.catalog
+              ? `Este encuentro usará ${shop.catalog.automaticOpponents ? "movimientos rivales automáticos" : "control rival manual"}.`
+              : "Sin configuración recibida del administrador: este encuentro será manual."}{" "}
+            El modo se conserva hasta terminarlo.
+          </p>
           <fieldset disabled={searching || building} className="space-y-2">
             <legend className="text-sm font-medium">Tipo de encuentro</legend>
             <div className="flex flex-wrap gap-4 text-sm">

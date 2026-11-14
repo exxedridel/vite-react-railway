@@ -266,10 +266,10 @@ test("switch is an action, clears volatiles and preserves poison", () => {
   const old = r.pokemons.find((p) => p.captureId === "own")!;
   assert.deepEqual(old.statuses, ["poisoned"]);
 });
-test("trainer combat is never routed to automatic engine", () => {
+test("legacy trainer combat without frozen automation keeps its manual engine", () => {
   const s = fixture();
   s.opponent!.kind = "trainer";
-  assert.throws(() => choose(s, "player", 33), /solo.*salvajes/);
+  assert.throws(() => choose(s, "player", 33), /control manual/);
 });
 test("all 354 moves execute a complete legal turn without manual verification or exceptions", () => {
   for (const m of emeraldMoves) {

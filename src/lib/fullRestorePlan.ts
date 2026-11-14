@@ -12,15 +12,32 @@ import type { ConsumableItemId } from "@/lib/shop/types";
 import { getCurrentMovePp, getMaxMovePp, restoreMovePp } from "@/lib/movePp";
 import type { PokemonMove } from "@/types/moves";
 import { localBattleActive } from "@/lib/shop/wallet";
+import {
+  isOpponentAutomatic,
+  usesNativeLocalEngine,
+} from "@/lib/battleOpponent";
 
 type Engine = typeof import("@/lib/emerald/engine");
 let engine: Promise<Engine> | undefined;
-/** Preload before acquiring the storage lock when the encounter is wild. */
-export function loadFullRestoreEngine(): Promise<Engine> {
-  return (engine ??= import("@/lib/emerald/engine").catch((error) => {
-    engine = undefined;
+type Automation = typeof import("@/lib/opponentAutomation");
+let automation: Promise<Automation> | undefined;
+function loadOpponentAutomation(): Promise<Automation> {
+  return (automation ??= import("@/lib/opponentAutomation").catch((error) => {
+    automation = undefined;
     throw error;
   }));
+}
+/** Preload native action and NPC policy before acquiring the storage lock. */
+export function loadFullRestoreEngine(): Promise<Engine> {
+  return (engine ??= Promise.all([
+    import("@/lib/emerald/engine"),
+    loadOpponentAutomation(),
+  ])
+    .then(([native]) => native)
+    .catch((error) => {
+      engine = undefined;
+      throw error;
+    }));
 }
 
 export function needsFullRestore(
@@ -112,7 +129,7 @@ export async function preparePartyItem(
           ),
         };
   if (!inBattle) return applyItem();
-  if (state.opponent?.kind === "wild") {
+  if (usesNativeLocalEngine(state.opponent)) {
     const native = await loadFullRestoreEngine();
     const active =
       state.pokemons.find(
@@ -129,19 +146,28 @@ export async function preparePartyItem(
       number,
     ];
     const id = nanoid();
-    const update = native.runEmeraldAction(
-      state,
-      active.captureId,
-      "player",
-      {
-        kind: "item",
-        item: itemId,
-        captureId,
-        ...(moveId !== undefined ? { moveId } : {}),
-      },
-      seed,
-      id,
-    );
+    const choice = {
+      kind: "item",
+      item: itemId,
+      captureId,
+      ...(moveId !== undefined ? { moveId } : {}),
+    } as const;
+    const update = isOpponentAutomatic(state.opponent)
+      ? (await loadOpponentAutomation()).runPlayerActionWithAutomaticOpponent(
+          state,
+          active.captureId,
+          choice,
+          seed,
+          id,
+        )
+      : native.runEmeraldAction(
+          state,
+          active.captureId,
+          "player",
+          choice,
+          seed,
+          id,
+        );
     return partyReducer(
       state,
       commitEmeraldAction({ expected: combatKey(state), update, id }),

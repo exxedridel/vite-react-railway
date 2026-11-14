@@ -58,6 +58,7 @@ export type ShopCatalog = {
   revision: number;
   prices: Record<ShopItemId, number>;
   captureDifficulty?: number;
+  automaticOpponents?: boolean;
 };
 export type BalanceAdjustment = {
   adjustmentId: string;

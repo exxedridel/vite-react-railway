@@ -9,6 +9,7 @@ import { adjustBattleTurn } from "@/slices/partySlice";
 import { getBattleField } from "@/lib/battleField";
 import { battleContextKey } from "@/lib/battleEngine";
 import { getCurrentHp } from "@/lib/pokemonStats";
+import { usesNativeLocalEngine } from "@/lib/battleOpponent";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -128,7 +129,7 @@ function WildBattleFieldControl({ captureId }: { captureId: string }) {
 export default function PokemonBattleFieldControl(props: {
   captureId: string;
 }) {
-  const wild = useAppSelector((s) => s.party.opponent?.kind === "wild");
+  const wild = useAppSelector((s) => usesNativeLocalEngine(s.party.opponent));
   return wild ? (
     <WildBattleFieldControl {...props} />
   ) : (

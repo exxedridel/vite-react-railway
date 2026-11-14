@@ -288,6 +288,126 @@ function CaptureDifficultyPanel({ catalog }: { catalog: ShopCatalog }) {
   );
 }
 
+function OpponentAutomationPanel({ catalog }: { catalog: ShopCatalog }) {
+  const shop = useShopContext();
+  const enabled = catalog.automaticOpponents ?? false;
+  const [value, setValue] = useState(enabled);
+  const [dirty, setDirty] = useState(false);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+  const pending = useRef<{
+    requestId: string;
+    enabled: boolean;
+    revision: number;
+  } | null>(null);
+  const submitting = useRef(false);
+  useEffect(() => {
+    if (!dirty) setValue(enabled);
+  }, [enabled, dirty]);
+  async function save() {
+    if (submitting.current || !shop.connected || shop.busy) return;
+    submitting.current = true;
+    setError("");
+    setSaved(false);
+    const request =
+      pending.current?.enabled === value
+        ? pending.current
+        : {
+            requestId: crypto.randomUUID(),
+            enabled: value,
+            revision: catalog.revision,
+          };
+    pending.current = request;
+    try {
+      await shop.setOpponentAutomation(
+        request.enabled,
+        request.revision,
+        request.requestId,
+      );
+      pending.current = null;
+      setDirty(false);
+      setSaved(true);
+    } catch (reason) {
+      setError(errorText(reason));
+      await shop.sync().catch(() => {});
+      if ((reason as { code?: string })?.code) pending.current = null;
+    } finally {
+      submitting.current = false;
+    }
+  }
+  return (
+    <section
+      className="space-y-3 rounded-xl border bg-card p-4 text-card-foreground"
+      aria-labelledby="opponent-automation-heading"
+    >
+      <h2 id="opponent-automation-heading" className="text-xl font-semibold">
+        Control de los rivales
+      </h2>
+      <p className="text-sm text-muted-foreground">
+        En los encuentros nuevos del jugador, la IA de Trainer Battle elegirá
+        los movimientos del rival salvaje o de entrenador. El jugador sólo elige
+        sus propias acciones.
+      </p>
+      <p
+        className="text-sm font-medium"
+        data-testid="opponent-automation-current"
+      >
+        Vigente: {enabled ? "Rivales automáticos" : "Rivales manuales"}
+      </p>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <label className="flex cursor-pointer items-center gap-3 text-sm font-medium">
+          <input
+            type="checkbox"
+            role="switch"
+            aria-label="Rivales automáticos"
+            checked={value}
+            disabled={shop.busy}
+            className="h-5 w-5 accent-[hsl(var(--primary))]"
+            onChange={(event) => {
+              setValue(event.target.checked);
+              setDirty(true);
+              setSaved(false);
+              pending.current = null;
+            }}
+          />
+          Rivales automáticos
+        </label>
+        <Button
+          variant="outline"
+          data-testid="opponent-automation-save"
+          disabled={
+            !shop.connected ||
+            !shop.synced ||
+            shop.busy ||
+            (!dirty && value === enabled)
+          }
+          onClick={() => void save()}
+        >
+          Guardar modo
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Los encuentros en curso conservan su modo al cambiar este ajuste o
+        recargar. Las capturas fallidas mantienen su respuesta rival automática.
+      </p>
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
+      {saved && (
+        <p
+          role="status"
+          data-testid="opponent-automation-saved"
+          className="text-sm text-muted-foreground"
+        >
+          Modo guardado para los encuentros nuevos.
+        </p>
+      )}
+    </section>
+  );
+}
+
 type Draft = {
   player: ShopPlayer;
   delta: number;
@@ -415,7 +535,7 @@ export default function BackOfficePage() {
             Back office
           </h1>
           <p className="text-sm text-muted-foreground">
-            Dificultad de captura, precios del Poké Mart y Pokedollars de los
+            Reglas de los encuentros, precios del Poké Mart y Pokedollars de los
             jugadores.
           </p>
         </div>
@@ -456,6 +576,7 @@ export default function BackOfficePage() {
         </p>
       )}
       {shop.catalog && <CaptureDifficultyPanel catalog={shop.catalog} />}
+      {shop.catalog && <OpponentAutomationPanel catalog={shop.catalog} />}
       <section className="space-y-3" aria-labelledby="back-office-prices">
         <h2 id="back-office-prices" className="text-xl font-semibold">
           Precios de los objetos

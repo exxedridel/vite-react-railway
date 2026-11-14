@@ -8,6 +8,7 @@ import reducer, {
   resetGame,
   captureWildOpponent,
   toggleGymBadge,
+  setBattleOpponent,
 } from "../src/slices/partySlice";
 import {
   accountStorageKey,
@@ -1988,6 +1989,166 @@ export async function runAccountStorageTests() {
   assert.equal(paidAttempt.captureDifficulty, undefined);
   passed.push(
     "New throws bind catalog revision in their durable lock and receipt; paid difficulty/minimum survive rule changes and reload, while legacy attempts and one-shot consumption remain intact",
+  );
+  const automaticUser = 615;
+  await activateAccountStore(automaticUser);
+  await applyShopWallet(wallet(automaticUser, 0, 500, { "full-restore": 1 }));
+  await transactPvpParty(automaticUser, async (current) => {
+    const actor = clone(ballBefore.pokemons[0]);
+    actor.moves = [
+      { ...clone(trainerMoves.find((move) => move.id === 33)!), currentPp: 5 },
+    ];
+    actor.pokemon.stats.find((stat) => stat.name === "hp")!.value -= 20;
+    return {
+      party: {
+        ...current,
+        pokemons: [actor],
+        opponent: {
+          ...clone(ballBefore.opponent!),
+          kind: "trainer",
+          statuses: [],
+          automation: { enabled: true, catalogRevision: 10 },
+        },
+        battleField: clone(ballBefore.battleField),
+        emerald: undefined,
+      },
+      value: undefined,
+    };
+  });
+  const automaticBefore = clone(store.getState().party);
+  await prepareItemUse(
+    automaticUser,
+    "automatic-client",
+    "automatic-item",
+    "ball-actor",
+    0,
+    (party, captureId) => preparePartyItem(party, captureId, "full-restore"),
+  );
+  const automaticLock = clone(store.getState().party.itemUseLock!);
+  const automaticPlanKey = combatKey(automaticLock.prepared);
+  assert.equal(saved(automaticUser).battleField.turn, 1);
+  assert.equal(saved(automaticUser).opponent.moves[0].currentPp, 40);
+  assert.equal(automaticLock.prepared.battleField!.turn, 2);
+  assert.equal(automaticLock.prepared.opponent!.moves![0].currentPp, 39);
+  assert.deepEqual(automaticLock.prepared.opponent!.automation, {
+    enabled: true,
+    catalogRevision: 10,
+  });
+  const automaticReceipt: ItemUse = {
+    requestId: "automatic-item",
+    userId: automaticUser,
+    clientId: "automatic-client",
+    itemId: "full-restore",
+    captureId: "ball-actor",
+    context: "local-battle",
+    planHash: automaticLock.planHash,
+    expectedWalletRevision: 0,
+    walletRevision: 1,
+    status: "pending",
+  };
+  const automaticWallet = wallet(automaticUser, 1, 500, { "full-restore": 0 });
+  await clearAccountStore();
+  await activateAccountStore(automaticUser);
+  assert.equal(
+    combatKey(store.getState().party.itemUseLock!.prepared),
+    automaticPlanKey,
+  );
+  testStorage.failWritesFor.add(accountStorageKey(automaticUser));
+  await assert.rejects(
+    applyItemUse(automaticWallet, automaticReceipt, "automatic-client"),
+    /guardar/,
+  );
+  testStorage.failWritesFor.clear();
+  await applyItemUse(automaticWallet, automaticReceipt, "automatic-client");
+  assert.equal(combatKey(store.getState().party), automaticPlanKey);
+  assert.equal(saved(automaticUser).bag.items["full-restore"], 0);
+  const automaticAppliedKey = combatKey(store.getState().party);
+  await applyItemUse(automaticWallet, automaticReceipt, "automatic-client");
+  await clearAccountStore();
+  await activateAccountStore(automaticUser);
+  await applyItemUse(
+    automaticWallet,
+    { ...automaticReceipt, status: "applied" },
+    "automatic-client",
+  );
+  await applyItemUse(automaticWallet, automaticReceipt, "automatic-client");
+  assert.equal(combatKey(store.getState().party), automaticAppliedKey);
+  assert.equal(saved(automaticUser).itemUseLock, undefined);
+  assert.equal(
+    getCurrentHp(saved(automaticUser).pokemons[0].pokemon),
+    getMaxHp(automaticBefore.pokemons[0].pokemon),
+  );
+  const { submitEmeraldAction } = await import("../src/lib/emerald/commands");
+  await store.dispatch(
+    submitEmeraldAction("ball-actor", "player", { kind: "move", moveId: 33 }),
+  );
+  assert.equal(saved(automaticUser).battleField.turn, 3);
+  assert.equal(saved(automaticUser).opponent.moves[0].currentPp, 38);
+  assert.equal(saved(automaticUser).pokemons[0].moves[0].currentPp, 4);
+  passed.push(
+    "Automatic trainer item plans freeze both sides before debit, recover storage/ACK loss and reload without replay, then the next checked player command resolves one opponent action",
+  );
+  const { prepareLocalEncounter } = await import("../src/lib/localEncounter");
+  const nextEncounter = {
+    ...clone(store.getState().party.opponent!),
+    encounterId: "checked-ui-encounter",
+    automation: { enabled: false, catalogRevision: 11 },
+  };
+  let releaseReconciliation!: () => void;
+  let reconciliationEntered!: () => void;
+  const reconciling = new Promise<void>((resolve) => {
+    reconciliationEntered = resolve;
+  });
+  const reconciliationWait = new Promise<void>((resolve) => {
+    releaseReconciliation = resolve;
+  });
+  const reconciliation = transactPvpParty(automaticUser, async (latest) => {
+    reconciliationEntered();
+    await reconciliationWait;
+    return { party: latest, value: undefined };
+  });
+  await reconciling;
+  assert.equal(isAccountTransactionBlocked(), true);
+  store.dispatch(setBattleOpponent(nextEncounter));
+  assert.notEqual(
+    store.getState().party.opponent!.encounterId,
+    nextEncounter.encounterId,
+    "the temporary transaction guard must still reject unsafe raw UI dispatches",
+  );
+  const preparingEncounter = store.dispatch(
+    prepareLocalEncounter(nextEncounter),
+  );
+  releaseReconciliation();
+  await reconciliation;
+  await preparingEncounter;
+  assert.equal(
+    saved(automaticUser).opponent.encounterId,
+    nextEncounter.encounterId,
+  );
+  assert.deepEqual(
+    saved(automaticUser).opponent.automation,
+    nextEncounter.automation,
+  );
+  assert.equal(saved(automaticUser).emerald, undefined);
+  const savedEncounter = clone(saved(automaticUser));
+  testStorage.failWritesFor.add(accountStorageKey(automaticUser));
+  await assert.rejects(
+    store.dispatch(
+      prepareLocalEncounter({
+        ...nextEncounter,
+        encounterId: "failed-ui-encounter",
+      }),
+    ),
+    /guardar/,
+  );
+  testStorage.failWritesFor.clear();
+  assert.deepEqual(saved(automaticUser), savedEncounter);
+  assert.equal(
+    store.getState().party.opponent!.encounterId,
+    nextEncounter.encounterId,
+  );
+  passed.push(
+    "Checked encounter creation waits behind wallet reconciliation without weakening its guard, persists the frozen mode before success and preserves the previous encounter on write failure",
   );
   await clearAccountStore();
   persistor.pause();

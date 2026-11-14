@@ -60,6 +60,8 @@ export function validShopCatalog(value: unknown): value is ShopCatalog {
   return (
     record(value) &&
     integer(value.revision) &&
+    (value.automaticOpponents === undefined ||
+      typeof value.automaticOpponents === "boolean") &&
     (value.captureDifficulty === undefined ||
       (integer(value.captureDifficulty) &&
         Number(value.captureDifficulty) <= 20)) &&

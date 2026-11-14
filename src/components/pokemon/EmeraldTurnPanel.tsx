@@ -4,11 +4,13 @@ import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { submitEmeraldAction } from "@/lib/emerald/commands";
 import type { BattleSide, EmeraldChoice } from "@/lib/emerald/types";
 import { getCurrentHp } from "@/lib/pokemonStats";
+import { isOpponentAutomatic } from "@/lib/battleOpponent";
 import { Button } from "@/components/ui/button";
 export default function EmeraldTurnPanel({ captureId }: { captureId: string }) {
   const dispatch = useAppDispatch();
   const party = useAppSelector((s) => s.party);
   const runtime = party.emerald;
+  const automatic = isOpponentAutomatic(party.opponent);
   const [busy, setBusy] = useState(false);
   async function act(side: BattleSide, choice: EmeraldChoice | "cancel") {
     setBusy(true);
@@ -26,8 +28,9 @@ export default function EmeraldTurnPanel({ captureId }: { captureId: string }) {
   return (
     <div className="space-y-3">
       <p className="text-sm">
-        El turno avanza cuando ambos lados eligen. Puedes cerrar este panel para
-        seleccionar los movimientos en cada vista.
+        {automatic
+          ? "Elige la acción de tu Pokémon. El rival responde automáticamente; los reemplazos y continuaciones obligatorios se resuelven desde este panel."
+          : "El turno avanza cuando ambos lados eligen. Puedes cerrar este panel para seleccionar los movimientos en cada vista."}
       </p>
       {runtime?.ended ? (
         <p className="font-semibold">Combate terminado.</p>
@@ -83,7 +86,12 @@ export default function EmeraldTurnPanel({ captureId }: { captureId: string }) {
                   </p>
                 </div>
               )}
-              {pending ? (
+              {side === "opponent" && automatic ? (
+                <p className="text-xs text-muted-foreground">
+                  Rival automático · la IA elegirá su acción al confirmar la
+                  tuya.
+                </p>
+              ) : pending ? (
                 <Button
                   size="sm"
                   variant="outline"
@@ -157,9 +165,10 @@ export default function EmeraldTurnPanel({ captureId }: { captureId: string }) {
         })
       )}
       <p className="text-xs text-muted-foreground">
-        Una acción de tablero no ejecuta ataques: úsala para objetos o intentos
-        de captura físicos. Esta automatización solo se aplica al encuentro
-        salvaje. Los combates de entrenadores siguen siendo manuales.
+        Pasar consume la acción de tu Pokémon.{" "}
+        {automatic
+          ? "El rival responderá con una acción legal. Los objetos se usan desde Items y las pokebolas desde el panel del oponente."
+          : "Los objetos se usan desde Items y los intentos de captura físicos desde el panel del oponente."}
       </p>
       {!!runtime?.events.length && (
         <details className="rounded-xl border p-3">

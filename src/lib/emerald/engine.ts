@@ -19,7 +19,10 @@ import type {
   BattleStages,
 } from "@/types/pokemon";
 import type { BattleResult } from "@/types/battle";
-import type { BattleOpponent } from "@/lib/battleOpponent";
+import {
+  usesNativeLocalEngine,
+  type BattleOpponent,
+} from "@/lib/battleOpponent";
 import {
   getCurrentHp,
   getMaxHp,
@@ -1039,12 +1042,12 @@ export function runEmeraldAction(
   id: string,
 ): EmeraldUpdate {
   const state = clone(input);
-  if (state.opponent?.kind !== "wild")
+  if (!state.opponent || !usesNativeLocalEngine(state.opponent))
     throw new Error(
-      "La automatización solo está disponible para encuentros salvajes.",
+      "Este encuentro conserva el control manual del entrenador.",
     );
   if (choice.kind === "item" && side !== "player")
-    throw new Error("El rival salvaje no puede usar objetos de tu mochila.");
+    throw new Error("El rival no puede usar objetos de tu mochila.");
   const existing =
     state.emerald?.version === 1 &&
     state.emerald.encounterKey === encounterKey(state)
@@ -1110,6 +1113,7 @@ export function runEmeraldAction(
     const getMove = b.dex.getActiveMove;
     b.dex.getActiveMove = function (input) {
       const move = getMove.call(this, input);
+      if (state.opponent?.kind !== "wild") return move;
       if (move.num === 100) {
         move.onTry = function (user) {
           return !(

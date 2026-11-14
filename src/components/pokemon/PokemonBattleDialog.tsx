@@ -1,5 +1,6 @@
 import BattleTurnHighlightsDialog from "./BattleTurnHighlightsDialog";
 import { submitEmeraldAction } from "@/lib/emerald/commands";
+import { prepareLocalEncounter } from "@/lib/localEncounter";
 import PokemonEvolutionControl from "./PokemonEvolutionControl";
 import { pendingBattleSwitch } from "@/lib/battleSwitch";
 import { toast } from "sonner";
@@ -28,7 +29,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import PokemonOpponentPanel from "@/components/pokemon/PokemonOpponentPanel";
-import type { BattleOpponent } from "@/lib/battleOpponent";
+import {
+  isOpponentAutomatic,
+  usesNativeLocalEngine,
+  type BattleOpponent,
+} from "@/lib/battleOpponent";
 import PokemonBattleArena from "./PokemonBattleArena";
 import PokemonTypeBadges from "./PokemonTypeBadges";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
@@ -88,7 +93,7 @@ function PokemonBattleDialog({ captureId, onClose }: Props) {
             </span>
             . Se quitarán los estados secundarios del que sale y se conservarán
             sus estados principales. El cambio consume la acción de tu Pokémon:
-            {party.opponent?.kind === "wild"
+            {usesNativeLocalEngine(party.opponent)
               ? "El cambio se resolverá junto con la acción rival y consumirá tu acción del turno."
               : "El que entra no podrá atacar este turno. Finaliza el turno manualmente cuando corresponda; confirmar aquí no reduce el clima ni los contadores."}
           </DialogDescription>
@@ -99,7 +104,7 @@ function PokemonBattleDialog({ captureId, onClose }: Props) {
             <Button
               type="button"
               onClick={() => {
-                if (party.opponent?.kind === "wild") {
+                if (usesNativeLocalEngine(party.opponent)) {
                   void dispatch(
                     submitEmeraldAction(previous.captureId, "player", {
                       kind: "switch",
@@ -149,6 +154,8 @@ function BattleDialogContent({ captureId, onClose }: Props) {
     if (paidCaptureId) setManageOpen(false);
   }, [paidCaptureId]);
   const batch = useAppSelector((state) => state.party.lastEmeraldBatch);
+  const batchRef = useRef(batch);
+  batchRef.current = batch;
   const seenBatch = useRef(batch?.id);
   const [turnSummary, setTurnSummary] = useState<typeof batch>(undefined);
   const battleScrollRef = useRef<HTMLDivElement>(null);
@@ -159,17 +166,20 @@ function BattleDialogContent({ captureId, onClose }: Props) {
     });
     battleScrollRef.current?.focus({ preventScroll: true });
   };
+  // Wallet reconciliation can clone the same saved batch during the delay.
+  // Its immutable action ID keeps that clone from cancelling the summary.
   useEffect(() => {
-    if (!batch || seenBatch.current === batch.id) return;
-    seenBatch.current = batch.id;
-    if (!batch.completed) return;
+    const current = batchRef.current;
+    if (!current || seenBatch.current === current.id) return;
+    seenBatch.current = current.id;
+    if (!current.completed) return;
     // Wait until the move/turn confirmation closes before opening the summary.
     const timer = window.setTimeout(() => {
       returnToArena();
-      setTurnSummary(batch);
+      setTurnSummary(current);
     }, 180);
     return () => window.clearTimeout(timer);
-  }, [batch]);
+  }, [batch?.id]);
 
   const [hpSide, setHpSide] = useState<"player" | "opponent" | null>(null);
   const field = getBattleField(
@@ -471,10 +481,12 @@ function BattleDialogContent({ captureId, onClose }: Props) {
                 </>
               )
             )}
-            {opponent?.kind === "wild" && (
+            {usesNativeLocalEngine(opponent) && (
               <p className="px-2 text-xs text-muted-foreground">
-                Selecciona ambas acciones para resolver el turno. El botón
-                «Turno» muestra PP, acciones pendientes y reemplazos
+                {isOpponentAutomatic(opponent)
+                  ? "Elige tu acción; el rival responderá automáticamente. "
+                  : "Selecciona ambas acciones para resolver el turno. "}
+                El botón «Turno» muestra PP, acciones pendientes y reemplazos
                 obligatorios.
               </p>
             )}
@@ -492,6 +504,9 @@ function BattleDialogContent({ captureId, onClose }: Props) {
                 <PokemonOpponentPanel
                   opponent={opponent}
                   onChange={setOpponent}
+                  onCreate={async (next) => {
+                    await dispatch(prepareLocalEncounter(next));
+                  }}
                 />
               </DialogContent>
             </Dialog>

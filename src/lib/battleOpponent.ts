@@ -24,7 +24,22 @@ export type BattleOpponent = {
   kind?: "trainer" | "wild";
   encounterId?: string;
   moves?: LearnedMove[];
+  /** Frozen when this encounter is created; missing legacy metadata is manual. */
+  automation?: { enabled: boolean; catalogRevision: number };
 };
+export function isOpponentAutomatic(
+  opponent: BattleOpponent | null | undefined,
+): boolean {
+  return opponent?.automation?.enabled === true;
+}
+/** Legacy trainer encounters retain their original manual combat rules. */
+export function usesNativeLocalEngine(
+  opponent: BattleOpponent | null | undefined,
+): boolean {
+  return (
+    !!opponent && (opponent.kind === "wild" || isOpponentAutomatic(opponent))
+  );
+}
 export function createNeutralStages(): StatStages {
   return neutralBattleStages();
 }

@@ -86,6 +86,11 @@ type ShopContextValue = {
     expectedCatalogRevision: number,
     requestId?: string,
   ) => Promise<ShopCatalog>;
+  setOpponentAutomation: (
+    enabled: boolean,
+    expectedCatalogRevision: number,
+    requestId?: string,
+  ) => Promise<ShopCatalog>;
   adjustBalance: (
     player: ShopPlayer,
     delta: number,
@@ -1655,6 +1660,20 @@ export default function ShopProvider({
       throw new Error("No se recibió la dificultad de captura actualizada.");
     return response.catalog;
   }
+  async function setOpponentAutomation(
+    enabled: boolean,
+    expectedCatalogRevision: number,
+    requestId: string = crypto.randomUUID(),
+  ): Promise<ShopCatalog> {
+    const response = await adminMutation("shop:opponent-automation-set", {
+      requestId,
+      enabled,
+      expectedCatalogRevision,
+    });
+    if (!response.catalog)
+      throw new Error("No se recibió el control de rivales actualizado.");
+    return response.catalog;
+  }
   async function adjustBalance(
     player: ShopPlayer,
     delta: number,
@@ -1780,6 +1799,7 @@ export default function ShopProvider({
         adjustments,
         setPrice,
         setCaptureDifficulty,
+        setOpponentAutomation,
         adjustBalance,
         abortBalance,
         centerHeals,

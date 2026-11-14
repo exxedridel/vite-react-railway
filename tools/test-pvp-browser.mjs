@@ -12,6 +12,7 @@ import { createServer } from "vite";
 import { runShopBrowserScenario } from "./shop-browser-scenarios.mjs";
 import { runCenterBrowserScenario } from "./center-browser-scenarios.mjs";
 import { runBallCaptureBrowserScenario } from "./ball-capture-browser-scenarios.mjs";
+import { runOpponentAutoBrowserScenario } from "./opponent-auto-browser-scenarios.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const nestRoot = resolve(root, "../nest-mongo-pokedex");
@@ -249,11 +250,22 @@ async function field(sessionId, selector, value) {
 async function clickButton(sessionId, text, scope = "body") {
   await cdp.evaluate(
     sessionId,
-    `(() => {
-    const button = [...document.querySelector(${JSON.stringify(scope)}).querySelectorAll('button')]
-      .find(element => element.textContent.trim() === ${JSON.stringify(text)});
-    if (!button || button.disabled) throw new Error('Missing or disabled button: ' + ${JSON.stringify(text)});
-    button.click();
+    `(async () => {
+    const visible = element => !element.closest('[hidden], [inert], [aria-hidden="true"], [role="dialog"][data-state="closed"], [role="alertdialog"][data-state="closed"]') &&
+      element.getClientRects().length > 0 && getComputedStyle(element).visibility !== 'hidden';
+    const deadline = Date.now() + 5000;
+    let buttons = [];
+    do {
+      const dialogs = [...document.querySelectorAll('[role="dialog"], [role="alertdialog"]')].filter(visible);
+      const activeDialog = dialogs.at(-1);
+      buttons = [...new Set([...document.querySelectorAll(${JSON.stringify(scope)})]
+        .flatMap(root => [...root.querySelectorAll('button')]))]
+        .filter(element => element.textContent.trim() === ${JSON.stringify(text)} &&
+          !element.disabled && visible(element) && (!activeDialog || activeDialog.contains(element)));
+      if (buttons.length === 1) { buttons[0].click(); return; }
+      await new Promise(resolve => setTimeout(resolve, 50));
+    } while (Date.now() < deadline);
+    throw new Error('Expected one active visible button: ' + ${JSON.stringify(text)} + ' (found ' + buttons.length + ')');
   })()`,
   );
 }
@@ -839,7 +851,13 @@ try {
   const admin = await openAccount(ADMIN_EMAIL, frontendUrl);
   const playerA = await openAccount(PLAYER_EMAIL, frontendUrl);
   const playerB = await openAccount(OTHER_EMAIL, frontendUrl);
-  if (process.argv.includes("--capture-only")) {
+  if (process.argv.includes("--opponent-auto-only")) {
+    await runOpponentAutoBrowserScenario({
+      admin, playerA, playerB, cdp, evalArgs, waitArgs, field, clickButton,
+      seedPvpTeam, shopRepository, shopService: app.get(ShopService),
+      shopGateway: app.get(ShopGateway),
+    });
+  } else if (process.argv.includes("--capture-only")) {
     await runBallCaptureBrowserScenario({
       admin,
       playerA,

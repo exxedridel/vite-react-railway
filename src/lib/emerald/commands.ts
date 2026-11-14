@@ -7,6 +7,10 @@ import partyReducer, {
 import { transactPvpParty } from "@/store/store";
 import { getActiveAccountId, pvpPartyRevision } from "@/store/accountStorage";
 import {
+  isOpponentAutomatic,
+  usesNativeLocalEngine,
+} from "@/lib/battleOpponent";
+import {
   combatKey,
   type BattleSide,
   type EmeraldChoice,
@@ -32,12 +36,17 @@ export function submitEmeraldAction(
           "Usa Full Restore desde tu Bag para confirmar sus existencias.",
         );
       const state = getState().party;
-      if (state.opponent?.kind !== "wild")
+      if (!usesNativeLocalEngine(state.opponent))
         throw new Error(
-          "La automatización solo está disponible para encuentros salvajes.",
+          "Este encuentro conserva el control manual del entrenador.",
         );
+      if (side === "opponent" && isOpponentAutomatic(state.opponent))
+        throw new Error("El rival elige su acción automáticamente.");
       const expected = combatKey(state);
       const engine = await import("./engine");
+      const automatic = isOpponentAutomatic(state.opponent)
+        ? await import("@/lib/opponentAutomation")
+        : undefined;
       if (combatKey(getState().party) !== expected)
         throw new Error(
           "El combate cambió durante la carga. Intenta otra vez.",
@@ -79,14 +88,22 @@ export function submitEmeraldAction(
           const seed = Array.from(
             crypto.getRandomValues(new Uint16Array(4)),
           ) as [number, number, number, number];
-          update = engine.runEmeraldAction(
-            snapshot,
-            captureId,
-            side,
-            choice,
-            seed,
-            id,
-          );
+          update = automatic
+            ? automatic.runPlayerActionWithAutomaticOpponent(
+                snapshot,
+                captureId,
+                choice,
+                seed,
+                id,
+              )
+            : engine.runEmeraldAction(
+                snapshot,
+                captureId,
+                side,
+                choice,
+                seed,
+                id,
+              );
         }
         const next = partyReducer(
           latest,
