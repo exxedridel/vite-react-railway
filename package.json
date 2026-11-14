@@ -1,6 +1,6 @@
 {
   "name": "pokemon-master-trainer",
-  "version": "2.10.0",
+  "version": "2.11.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -32,7 +32,9 @@
     "test:capture": "node --import tsx --test tests/captureRates.test.ts tests/capture-turn.test.ts && node tools/test-account-storage.mjs --shop",
     "test:capture:browser": "node tools/test-pvp-browser.mjs --capture-only",
     "test:opponent-auto": "node --import tsx --test tests/opponent-automation.test.ts",
-    "test:opponent-auto:browser": "node tools/test-pvp-browser.mjs --opponent-auto-only"
+    "test:opponent-auto:browser": "node tools/test-pvp-browser.mjs --opponent-auto-only",
+    "test:gifts": "node tools/test-account-storage.mjs --shop",
+    "test:gifts:browser": "node tools/test-pvp-browser.mjs --gift-only"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.2.0",

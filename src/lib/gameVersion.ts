@@ -1,5 +1,5 @@
 /** Versión visible de la aplicación; el formato de guardado se versiona aparte. */
-export const APP_VERSION = "2.10.0";
+export const APP_VERSION = "2.11.0";
 // The party schema remains compatible; the optional combat runtime has its own version.
 export const GAME_DATA_VERSION = "1.6.0";
 export const MOVE_VERSION_GROUP = "emerald";

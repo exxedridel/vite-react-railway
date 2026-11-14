@@ -9,6 +9,7 @@ import {
   type GameReset,
   type ShopPurchase,
   type Wallet,
+  type GiftPrepare,
 } from "./types";
 
 const record = (value: unknown): value is Record<string, unknown> =>
@@ -45,14 +46,23 @@ export function validPurchase(value: unknown): value is ShopPurchase {
     integer(value.quantity, 1) &&
     Number(value.quantity) <= 99 &&
     integer(value.unitPrice) &&
+    (value.kind === undefined ||
+      (value.kind === "gift" &&
+        value.unitPrice === 0 &&
+        value.total === 0 &&
+        value.balanceBefore === value.balanceAfter)) &&
     integer(value.total) &&
     value.total === Number(value.quantity) * Number(value.unitPrice) &&
     integer(value.balanceBefore) &&
     integer(value.balanceAfter) &&
     value.balanceAfter === Number(value.balanceBefore) - Number(value.total) &&
-    integer(value.walletRevision, 1) &&
+    integer(
+      value.walletRevision,
+      value.kind === "gift" && value.status === "cancelled" ? 0 : 1,
+    ) &&
     SHOP_ITEM_IDS.includes(value.itemId as (typeof SHOP_ITEM_IDS)[number]) &&
-    ["pending", "applied"].includes(String(value.status))
+    (["pending", "applied"].includes(String(value.status)) ||
+      (value.kind === "gift" && value.status === "cancelled"))
   );
 }
 
@@ -74,6 +84,27 @@ export function validShopCatalog(value: unknown): value is ShopCatalog {
           Math.floor(Number.MAX_SAFE_INTEGER / 99),
     )
   );
+}
+
+/** Request IDs are scoped to an administrator. A terminal receipt from one
+ * admin must never hide another admin's valid request with the same ID. */
+export function mergeShopPurchases(
+  previous: ShopPurchase[],
+  incoming: ShopPurchase[],
+  exact?: ShopPurchase,
+): ShopPurchase[] {
+  const key = (entry: ShopPurchase) =>
+    JSON.stringify([entry.adminUserId, entry.userId, entry.requestId]);
+  const saved = new Map(previous.map((entry) => [key(entry), entry]));
+  const merged = new Map<string, ShopPurchase>();
+  for (const entry of [...incoming, ...(exact ? [exact] : [])]) {
+    const terminal = saved.get(key(entry));
+    merged.set(
+      key(entry),
+      terminal && terminal.status !== "pending" ? terminal : entry,
+    );
+  }
+  return [...merged.values()];
 }
 
 export function validBalanceAdjustment(
@@ -196,7 +227,8 @@ export function applyShopWallet(
     )
       return { party, value: undefined };
     if (
-      party.shopLock?.operation === "balance-adjustment" &&
+      (party.shopLock?.operation === "balance-adjustment" ||
+        party.shopLock?.operation === "gift") &&
       party.shopLock.appliedWalletRevision === undefined &&
       wallet.revision > party.shopLock.expectedWalletRevision!
     )
@@ -210,6 +242,7 @@ export function applyShopWallet(
       lock.appliedWalletRevision === undefined &&
       proof.appliedPurchases?.some(
         (purchase) =>
+          purchase.kind === undefined &&
           purchase.status === "applied" &&
           purchase.requestId === lock.requestId &&
           purchase.userId === wallet.userId &&
@@ -218,6 +251,7 @@ export function applyShopWallet(
       );
     const confirmedAbort =
       lock &&
+      lock.operation !== "gift" &&
       lock.appliedWalletRevision === undefined &&
       lock.userId === wallet.userId &&
       proof.abortUnlockRequestId === lock.requestId &&
@@ -237,8 +271,18 @@ export function prepareShopParty(
   clientId: string,
   requestId: string,
   revision: number,
-  operation?: "balance-adjustment",
+  operation?: "balance-adjustment" | "gift",
+  gift?: GiftPrepare,
 ): Promise<number> {
+  if (
+    operation === "gift" &&
+    (!gift ||
+      !integer(gift.adminUserId, 1) ||
+      !SHOP_ITEM_IDS.includes(gift.itemId) ||
+      !integer(gift.quantity, 1) ||
+      gift.quantity > 99)
+  )
+    return Promise.reject(new Error("La preparación del regalo no es válida."));
   return transactPvpParty(userId, async (party) => {
     if (
       party.resetLock ||
@@ -260,7 +304,11 @@ export function prepareShopParty(
         party.shopLock.clientId !== clientId ||
         party.shopLock.userId !== userId ||
         party.shopLock.operation !== operation ||
-        (operation === "balance-adjustment" &&
+        (operation === "gift" &&
+          (party.shopLock.adminUserId !== gift!.adminUserId ||
+            party.shopLock.itemId !== gift!.itemId ||
+            party.shopLock.quantity !== gift!.quantity)) ||
+        (operation !== undefined &&
           party.shopLock.expectedWalletRevision !== revision))
     )
       throw new Error("Hay otra compra pendiente de confirmación.");
@@ -274,13 +322,98 @@ export function prepareShopParty(
               userId,
               clientId,
               requestId,
-              ...(operation === "balance-adjustment"
+              ...(operation !== undefined
                 ? { operation, expectedWalletRevision: revision }
                 : {}),
+              ...(operation === "gift" ? gift : {}),
             },
           },
       value: revision,
     };
+  });
+}
+
+/** A gift uses the purchase ledger but requires its own PREPARE operation.
+ * Persist the canonical wallet and applied marker before acknowledging it;
+ * neither a free store purchase nor an absent receipt can release this lock. */
+export function applyGiftPurchase(
+  wallet: Wallet,
+  receipt: ShopPurchase,
+  clientId: string,
+): Promise<"pending" | "applied" | "cancelled" | "ignored"> {
+  if (
+    !validWallet(wallet) ||
+    !validPurchase(receipt) ||
+    receipt.kind !== "gift" ||
+    receipt.userId !== wallet.userId
+  )
+    return Promise.reject(new Error("El regalo recibido no es válido."));
+  if (receipt.clientId !== clientId) return Promise.resolve("ignored");
+  return transactPvpParty(wallet.userId, async (party) => {
+    const lock = party.shopLock;
+    if (!lock || lock.operation !== "gift") {
+      if (
+        receipt.status === "pending" &&
+        (party.bag?.walletUserId !== wallet.userId ||
+          (party.bag.walletRevision ?? -1) < receipt.walletRevision)
+      )
+        throw new Error(
+          "Recupera el regalo desde su reserva y navegador originales.",
+        );
+      return { party, value: "ignored" as const };
+    }
+    if (
+      lock.requestId !== receipt.requestId ||
+      lock.clientId !== clientId ||
+      lock.userId !== wallet.userId ||
+      lock.adminUserId !== receipt.adminUserId ||
+      lock.itemId !== receipt.itemId ||
+      lock.quantity !== receipt.quantity ||
+      lock.expectedWalletRevision! +
+        (receipt.status === "cancelled" ? 0 : 1) !==
+        receipt.walletRevision
+    )
+      throw new Error("El regalo no corresponde a la operación reservada.");
+    if (receipt.status === "cancelled") {
+      if (lock.appliedWalletRevision !== undefined)
+        throw new Error(
+          "El regalo ya se guardó; una cancelación tardía no puede revertirlo.",
+        );
+      return {
+        party: {
+          ...party,
+          pvpRevision: pvpPartyRevision(party) + 1,
+          shopLock: undefined,
+        },
+        value: "cancelled" as const,
+      };
+    }
+    if (
+      wallet.revision < receipt.walletRevision ||
+      (wallet.revision === receipt.walletRevision &&
+        wallet.balance !== receipt.balanceAfter)
+    )
+      throw new Error("Recupera el inventario confirmado del regalo.");
+    let next = party;
+    if (lock.appliedWalletRevision === undefined) {
+      next = partyWithWallet(party, wallet);
+      next = {
+        ...next,
+        pvpRevision: pvpPartyRevision(next) + 1,
+        shopLock: { ...lock, appliedWalletRevision: receipt.walletRevision },
+      };
+    } else if (lock.appliedWalletRevision !== receipt.walletRevision)
+      throw new Error("La confirmación guardada pertenece a otro regalo.");
+    if (receipt.status === "applied")
+      return {
+        party: {
+          ...next,
+          pvpRevision: pvpPartyRevision(next) + 1,
+          shopLock: undefined,
+        },
+        value: "applied" as const,
+      };
+    return { party: next, value: "pending" as const };
   });
 }
 

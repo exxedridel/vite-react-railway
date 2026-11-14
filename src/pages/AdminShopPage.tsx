@@ -461,43 +461,49 @@ export default function AdminShopPage() {
         un objeto. La compra se confirma cuando su mochila guarda el nuevo saldo
         y los objetos.
       </p>
-      {!!shop.purchases.length && (
+      {!!shop.purchases.filter((purchase) => purchase.kind !== "gift")
+        .length && (
         <section className="mt-6" aria-labelledby="shop-purchases-heading">
           <h2 id="shop-purchases-heading" className="mb-3 text-lg font-bold">
             Últimas compras
           </h2>
           <ul className="space-y-2 text-sm">
-            {shop.purchases.slice(0, 8).map((purchase) => (
-              <li
-                key={purchase.purchaseId}
-                className="flex flex-wrap justify-between gap-2 rounded-xl border bg-card p-3"
-              >
-                <span>
-                  {players.find((player) => player.user.id === purchase.userId)
-                    ? playerName(
-                        players.find(
-                          (player) => player.user.id === purchase.userId,
-                        )!,
-                      )
-                    : `Jugador #${purchase.userId}`}{" "}
-                  · {purchase.quantity} ×{" "}
-                  {SHOP_ITEMS.find((item) => item.id === purchase.itemId)
-                    ?.name ?? purchase.itemId}{" "}
-                  · {formatShopMoney(purchase.total)} Pokedollars
-                </span>
-                <strong
-                  className={
-                    purchase.status === "applied"
-                      ? "text-brand"
-                      : "text-muted-foreground"
-                  }
+            {shop.purchases
+              .filter((purchase) => purchase.kind !== "gift")
+              .slice(0, 8)
+              .map((purchase) => (
+                <li
+                  key={purchase.purchaseId}
+                  className="flex flex-wrap justify-between gap-2 rounded-xl border bg-card p-3"
                 >
-                  {purchase.status === "applied"
-                    ? "Guardado"
-                    : "Esperando guardado"}
-                </strong>
-              </li>
-            ))}
+                  <span>
+                    {players.find(
+                      (player) => player.user.id === purchase.userId,
+                    )
+                      ? playerName(
+                          players.find(
+                            (player) => player.user.id === purchase.userId,
+                          )!,
+                        )
+                      : `Jugador #${purchase.userId}`}{" "}
+                    · {purchase.quantity} ×{" "}
+                    {SHOP_ITEMS.find((item) => item.id === purchase.itemId)
+                      ?.name ?? purchase.itemId}{" "}
+                    · {formatShopMoney(purchase.total)} Pokedollars
+                  </span>
+                  <strong
+                    className={
+                      purchase.status === "applied"
+                        ? "text-brand"
+                        : "text-muted-foreground"
+                    }
+                  >
+                    {purchase.status === "applied"
+                      ? "Guardado"
+                      : "Esperando guardado"}
+                  </strong>
+                </li>
+              ))}
           </ul>
         </section>
       )}

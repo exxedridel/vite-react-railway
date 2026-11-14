@@ -6,6 +6,7 @@ import { backOfficeBrowserScenario } from "./back-office-browser-scenarios.mjs";
 import { runCenterBrowserScenario } from "./center-browser-scenarios.mjs";
 import { runBallCaptureBrowserScenario } from "./ball-capture-browser-scenarios.mjs";
 import { runOpponentAutoBrowserScenario } from "./opponent-auto-browser-scenarios.mjs";
+import { runItemGiftBrowserScenario } from "./item-gift-browser-scenarios.mjs";
 
 /** Real UI scenarios, using the identity/Nest/Chrome harness in test-pvp-browser. */
 export async function runShopBrowserScenario({
@@ -895,6 +896,10 @@ export async function runShopBrowserScenario({
   });
   await runOpponentAutoBrowserScenario({
     admin, playerA, playerB, cdp, evalArgs, waitArgs, field, clickButton,
+    seedPvpTeam, shopRepository, shopService, shopGateway,
+  });
+  await runItemGiftBrowserScenario({
+    admin, playerA, cdp, evalArgs, waitArgs, field, clickButton,
     seedPvpTeam, shopRepository, shopService, shopGateway,
   });
   assert.deepEqual(cdp.exceptions, [], "Unexpected browser exception");

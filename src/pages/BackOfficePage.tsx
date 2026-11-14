@@ -20,6 +20,7 @@ import type {
   BalanceAdjustment,
 } from "@/lib/shop/types";
 import BalanceAbortButton from "@/components/shop/BalanceAbortButton";
+import BackOfficeGifts from "@/components/shop/BackOfficeGifts";
 
 const errorText = (error: unknown) =>
   error instanceof Error ? error.message : "No se pudo completar la operación.";
@@ -535,8 +536,8 @@ export default function BackOfficePage() {
             Back office
           </h1>
           <p className="text-sm text-muted-foreground">
-            Reglas de los encuentros, precios del Poké Mart y Pokedollars de los
-            jugadores.
+            Reglas de los encuentros, regalos, precios del Poké Mart y
+            Pokedollars de los jugadores.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -582,9 +583,9 @@ export default function BackOfficePage() {
           Precios de los objetos
         </h2>
         <p className="text-sm text-muted-foreground">
-          Se aplican a toda la tienda y se conservan al reconectar. Precio 0
-          permite entregar objetos gratis. Las compras confirmadas conservan su
-          precio.
+          Se aplican a toda la tienda y se conservan al reconectar. Las compras
+          confirmadas conservan su precio. Para entregar objetos gratis, usa
+          Regalar objetos.
         </p>
         {shop.catalog ? (
           <ul className="space-y-3">
@@ -596,6 +597,7 @@ export default function BackOfficePage() {
           <p role="status">Recuperando el catálogo…</p>
         )}
       </section>
+      <BackOfficeGifts />
       <section className="space-y-3" aria-labelledby="back-office-players">
         {shop.adjustments.some((entry) => entry.status === "pending") && (
           <section

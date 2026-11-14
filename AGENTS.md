@@ -9,6 +9,16 @@ Acuerdo del usuario confirmado el 2026-11-08:
 
 Si esta disponible, leer [la memoria compartida](../PROJECT_MEMORY.md). Este resumen se conserva tambien aqui para sesiones que abran solo este repositorio.
 
+Etapa vigente2026-11-14 React2.11.0: BackOffice Regalarobjetos eligejugador/item/
+cantidad1–99, confirma y sumaBag sinPD/precios. giftItems+supportsItemGifts;
+shopLock.operationgift metadataadmin/item/qty/rev antesACKPREPARE. applyGiftPurchase
+checkedwallet+marker antesapplied, ausencia/compra0 no libera. gift-cancel durable
+cierrahuérfanoprecommit; postcommit norefund. Pendingotroclient ownaccount Gate
+pideoriginal. Mantener Party/PP/hashlegacy/combatKey. Ver memoria/protocolo para
+QAfinal. Merge admin/user/requestcompuesto+client/kindexactos impidecolisiónIDs
+entre2admins. Wallet36/cuentas7/Party9/TS/build/audit166 yChromeGiftaislado+
+ShopCOMPLETO PASS sinJSerrors. Nest→React/recargar2.11.0 sinvars/MySQL/seed/reset/borrados.
+
 Etapa vigente2026-11-14 React2.10.0: toggle BackOffice Rivalesautomáticos global
 false por defecto. Confirmados salvajes+trainers locales, IA TrainerBattle,
 sólo encuentrosnuevos. opponent.automation{enabled,catalogRevision} congelada,

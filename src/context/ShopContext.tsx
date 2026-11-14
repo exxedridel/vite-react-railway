@@ -11,7 +11,7 @@ import { io, type Socket } from "socket.io-client";
 import type { ChatUser } from "@/lib/testMessages";
 import type { PokemonMove } from "@/types/moves";
 import { getCurrentHp } from "@/lib/pokemonStats";
-import { BALL_ITEM_IDS } from "@/lib/shop/types";
+import { BALL_ITEM_IDS, SHOP_ITEM_IDS } from "@/lib/shop/types";
 import { testMessagesUrl } from "@/lib/testMessages";
 import { store } from "@/store/store";
 import {
@@ -43,6 +43,8 @@ import {
   validShopCatalog,
   validBalanceAdjustment,
   applyBalanceAdjustment,
+  applyGiftPurchase,
+  mergeShopPurchases,
 } from "@/lib/shop/wallet";
 import type {
   ShopAck,
@@ -63,6 +65,7 @@ import type {
   BallItemId,
   CaptureQuote,
   CaptureSettings,
+  GiftPrepare,
 } from "@/lib/shop/types";
 
 type ShopContextValue = {
@@ -139,6 +142,12 @@ type ShopContextValue = {
     requestId?: string,
     expectedCatalogRevision?: number,
   ) => Promise<ShopPurchase | null>;
+  giftItems: (
+    player: ShopPlayer,
+    itemId: ShopItemId,
+    quantity: number,
+    requestId?: string,
+  ) => Promise<ShopPurchase>;
 };
 const ShopContext = createContext<ShopContextValue | null>(null);
 export function useShopContext() {
@@ -220,6 +229,8 @@ function validState(value: unknown): value is ShopState {
               typeof player.supportsBalanceAdjustments === "boolean") &&
             (player.supportsCenterHealing === undefined ||
               typeof player.supportsCenterHealing === "boolean") &&
+            (player.supportsItemGifts === undefined ||
+              typeof player.supportsItemGifts === "boolean") &&
             (player.pendingCenter === undefined ||
               typeof player.pendingCenter === "boolean") &&
             (player.wallet === null || validWallet(player.wallet)),
@@ -268,6 +279,7 @@ export default function ShopProvider({
   const mutation = useRef(false);
   const recoverResetRef = useRef<() => Promise<void>>(async () => {});
   const recoverCenterRef = useRef<() => Promise<void>>(async () => {});
+  const recoverGiftRef = useRef<() => Promise<void>>(async () => {});
   const restartRef = useRef<() => Promise<void>>(async () => {
     throw new Error("Inicia sesión para reiniciar la partida.");
   });
@@ -409,14 +421,21 @@ export default function ShopProvider({
     }
     // This request is emitted after the prepare ACK. The server serializes its
     // read behind that purchase, so it can prove an absent request was aborted.
-    const abortUnlockRequestId = store.getState().party.shopLock?.requestId;
     const balanceLock = store.getState().party.shopLock;
+    const abortUnlockRequestId =
+      balanceLock?.operation === "gift" ? undefined : balanceLock?.requestId;
     const centerLock = store.getState().party.centerLock;
     const response = await emit("shop:sync", {
-      ...(balanceLock ? { adjustmentRequestId: balanceLock.requestId } : {}),
+      ...(balanceLock?.operation === "balance-adjustment"
+        ? { adjustmentRequestId: balanceLock.requestId }
+        : {}),
+      ...(balanceLock && balanceLock.operation !== "balance-adjustment"
+        ? { purchaseRequestId: balanceLock.requestId }
+        : {}),
       ...(centerLock ? { centerRequestId: centerLock.requestId } : {}),
     });
     await queueState.current(response, { abortUnlockRequestId });
+    await recoverGiftRef.current();
     await recoverResetRef.current();
     await recoverItemUseRef.current();
     await recoverCenterRef.current();
@@ -513,6 +532,9 @@ export default function ShopProvider({
         !latestResets.some((reset) => reset.status === "pending") &&
         !latestUses.some((use) => use.status === "pending") &&
         !latestAdjustments.some((entry) => entry.status === "pending") &&
+        !latestPurchases.some(
+          (entry) => entry.kind === "gift" && entry.status === "pending",
+        ) &&
         !latestCenterHeals.some((entry) => entry.status === "pending");
       const next = JSON.stringify([ready, localBattle]);
       if (next === presenceKey) return;
@@ -522,6 +544,7 @@ export default function ShopProvider({
         localBattle,
         supportsBalanceAdjustments: true,
         supportsCenterHealing: true,
+        supportsItemGifts: true,
       })
         .then((response) => receive(response))
         .catch((reason) => {
@@ -703,9 +726,13 @@ export default function ShopProvider({
           return;
         latestWallet = next.wallet;
       }
-      if (next.purchases) {
-        latestPurchases = next.purchases;
-        setPurchases(next.purchases);
+      if (next.purchases || next.purchase) {
+        latestPurchases = mergeShopPurchases(
+          latestPurchases,
+          next.purchases ?? latestPurchases,
+          next.purchase,
+        );
+        setPurchases(latestPurchases);
       }
       if (next.resets || next.reset) {
         const previous = new Map(
@@ -865,6 +892,22 @@ export default function ShopProvider({
           }
         }
       }
+      {
+        const giftLock = store.getState().party.shopLock;
+        const gift = latestPurchases.find(
+          (entry) =>
+            entry.kind === "gift" &&
+            entry.userId === actor.id &&
+            (giftLock?.operation === "gift"
+              ? entry.requestId === giftLock.requestId &&
+                entry.adminUserId === giftLock.adminUserId &&
+                entry.userId === giftLock.userId &&
+                entry.clientId === giftLock.clientId
+              : entry.status === "pending" && entry.clientId === id),
+        );
+        if (gift) await applyGiftPurchase(latestWallet, gift, id);
+        if (!current()) return;
+      }
       await applyShopWallet(
         latestWallet,
         [
@@ -887,6 +930,9 @@ export default function ShopProvider({
       setError("");
       setShopSyncBlocked(
         !!store.getState().party.shopLock ||
+          latestPurchases.some(
+            (entry) => entry.kind === "gift" && entry.status === "pending",
+          ) ||
           latestAdjustments.some((entry) => entry.status === "pending"),
       );
       setResetSyncBlocked(
@@ -932,6 +978,9 @@ export default function ShopProvider({
           setError(message(reason));
           setShopSyncBlocked(
             !!store.getState().party.shopLock ||
+              latestPurchases.some(
+                (entry) => entry.kind === "gift" && entry.status === "pending",
+              ) ||
               latestAdjustments.some((entry) => entry.status === "pending"),
           );
           setResetSyncBlocked(
@@ -951,6 +1000,47 @@ export default function ShopProvider({
       return operation;
     }
     queueState.current = receive;
+    let recoveringGift: Promise<void> | null = null;
+    recoverGiftRef.current = () => {
+      if (recoveringGift) return recoveringGift;
+      const lock = store.getState().party.shopLock;
+      if (
+        actor.role !== "player" ||
+        !current() ||
+        !socket.connected ||
+        lock?.operation !== "gift" ||
+        lock.userId !== actor.id ||
+        lock.clientId !== id ||
+        latestPurchases.some(
+          (entry) =>
+            entry.kind === "gift" &&
+            entry.adminUserId === lock.adminUserId &&
+            entry.userId === lock.userId &&
+            entry.clientId === lock.clientId &&
+            entry.requestId === lock.requestId,
+        )
+      )
+        return Promise.resolve();
+      const operation = (async () => {
+        const response = await emit("shop:gift-cancel", {
+          requestId: lock.requestId,
+          adminUserId: lock.adminUserId,
+          playerUserId: lock.userId,
+          clientId: lock.clientId,
+          itemId: lock.itemId,
+          quantity: lock.quantity,
+          expectedWalletRevision: lock.expectedWalletRevision,
+        });
+        await receive(response);
+      })();
+      recoveringGift = operation;
+      void operation
+        .finally(() => {
+          if (recoveringGift === operation) recoveringGift = null;
+        })
+        .catch(() => {});
+      return operation;
+    };
     async function sendResetIntent() {
       const lock = store.getState().party.resetLock;
       if (!lock) return;
@@ -1419,7 +1509,10 @@ export default function ShopProvider({
           playerUserId?: unknown;
           clientId?: unknown;
           expectedWalletRevision?: unknown;
-          operation?: "balance-adjustment";
+          operation?: "balance-adjustment" | "gift";
+          adminUserId?: unknown;
+          itemId?: unknown;
+          quantity?: unknown;
         },
         acknowledge: (response: unknown) => void,
       ) => {
@@ -1434,7 +1527,16 @@ export default function ShopProvider({
           !Number.isSafeInteger(request.expectedWalletRevision) ||
           Number(request.expectedWalletRevision) < 0 ||
           (request.operation !== undefined &&
-            request.operation !== "balance-adjustment")
+            request.operation !== "balance-adjustment" &&
+            request.operation !== "gift") ||
+          (request.operation === "gift" &&
+            (!Number.isSafeInteger(request.adminUserId) ||
+              Number(request.adminUserId) < 1 ||
+              typeof request.itemId !== "string" ||
+              !SHOP_ITEM_IDS.includes(request.itemId as ShopItemId) ||
+              !Number.isSafeInteger(request.quantity) ||
+              Number(request.quantity) < 1 ||
+              Number(request.quantity) > 99))
         ) {
           acknowledge({
             ok: false,
@@ -1457,6 +1559,13 @@ export default function ShopProvider({
               request.requestId as string,
               request.expectedWalletRevision as number,
               request.operation,
+              request.operation === "gift"
+                ? ({
+                    adminUserId: request.adminUserId,
+                    itemId: request.itemId,
+                    quantity: request.quantity,
+                  } as GiftPrepare)
+                : undefined,
             );
             if (!current() || !socket.connected)
               throw new Error("La conexión cambió durante la compra.");
@@ -1475,6 +1584,10 @@ export default function ShopProvider({
           if (current()) {
             setShopSyncBlocked(
               !!store.getState().party.shopLock ||
+                latestPurchases.some(
+                  (entry) =>
+                    entry.kind === "gift" && entry.status === "pending",
+                ) ||
                 latestAdjustments.some((entry) => entry.status === "pending"),
             );
             setError(message(reason));
@@ -1534,6 +1647,9 @@ export default function ShopProvider({
     window.addEventListener("storage", onStorage);
     setShopSyncBlocked(
       !!store.getState().party.shopLock ||
+        latestPurchases.some(
+          (entry) => entry.kind === "gift" && entry.status === "pending",
+        ) ||
         latestAdjustments.some((entry) => entry.status === "pending"),
     );
     setResetSyncBlocked(!!store.getState().party.resetLock);
@@ -1555,6 +1671,7 @@ export default function ShopProvider({
         };
         recoverItemUseRef.current = async () => {};
         recoverCenterRef.current = async () => {};
+        recoverGiftRef.current = async () => {};
         useItemRef.current = async () => {
           throw new Error("Inicia sesión para usar un objeto.");
         };
@@ -1629,6 +1746,38 @@ export default function ShopProvider({
       mutation.current = false;
       setBusy(false);
     }
+  }
+  async function giftItems(
+    player: ShopPlayer,
+    itemId: ShopItemId,
+    quantity: number,
+    requestId: string = crypto.randomUUID(),
+  ): Promise<ShopPurchase> {
+    if (player.supportsItemGifts !== true)
+      throw new Error(
+        "El jugador debe actualizar la app para recibir regalos.",
+      );
+    if (
+      !Number.isSafeInteger(quantity) ||
+      quantity < 1 ||
+      quantity > 99 ||
+      !SHOP_ITEM_IDS.includes(itemId)
+    )
+      throw new Error("Elige entre 1 y 99 objetos para el regalo.");
+    const response = await adminMutation("shop:gift", {
+      requestId,
+      playerUserId: player.user.id,
+      clientId: player.clientId,
+      itemId,
+      quantity,
+      expectedWalletRevision: player.wallet?.revision,
+    });
+    const receipt =
+      response.purchase ??
+      response.purchases?.find((entry) => entry.requestId === requestId);
+    if (!receipt || receipt.kind !== "gift" || receipt.requestId !== requestId)
+      throw new Error("No se recibió la confirmación del regalo.");
+    return receipt;
   }
   async function setPrice(
     itemId: ShopItemId,
@@ -1821,6 +1970,7 @@ export default function ShopProvider({
         useTm,
         useItem,
         purchase,
+        giftItems,
       }}
     >
       {children}

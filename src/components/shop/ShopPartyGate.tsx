@@ -36,6 +36,10 @@ export default function ShopPartyGate({ children }: { children: ReactNode }) {
   );
   const adjusting =
     lock?.operation === "balance-adjustment" || !!pendingAdjustment;
+  const pendingGift = shop.purchases.find(
+    (entry) => entry.kind === "gift" && entry.status === "pending",
+  );
+  const receivingGift = lock?.operation === "gift" || !!pendingGift;
   async function retry() {
     if (retrying) return;
     setRetrying(true);
@@ -53,7 +57,11 @@ export default function ShopPartyGate({ children }: { children: ReactNode }) {
       setRetrying(false);
     }
   }
-  if (usingItem || healing || (!lock && !resetting && !adjusting))
+  if (
+    usingItem ||
+    healing ||
+    (!lock && !resetting && !adjusting && !receivingGift)
+  )
     return (
       <>
         {children}
@@ -168,7 +176,9 @@ export default function ShopPartyGate({ children }: { children: ReactNode }) {
           ? "shop-reset-lock"
           : adjusting
             ? "balance-adjust-lock"
-            : "shop-party-lock"
+            : receivingGift
+              ? "shop-gift-lock"
+              : "shop-party-lock"
       }
     >
       <h1 className="flex items-center gap-2 text-2xl font-bold">
@@ -177,7 +187,9 @@ export default function ShopPartyGate({ children }: { children: ReactNode }) {
           ? "Reiniciando partida"
           : adjusting
             ? "Actualizando Pokedollars"
-            : "Procesando compra del Poké Mart"}
+            : receivingGift
+              ? "Recibiendo regalo"
+              : "Procesando compra del Poké Mart"}
       </h1>
       <p>
         {resetting
@@ -188,7 +200,11 @@ export default function ShopPartyGate({ children }: { children: ReactNode }) {
             ? pendingAdjustment && pendingAdjustment.clientId !== shop.clientId
               ? "Vuelve al navegador que recibió el ajuste para completar su guardado."
               : "Guardando el ajuste de Pokedollars del administrador. Tu equipo y tus objetos se conservan."
-            : "Tu partida está protegida mientras guardamos el saldo y los objetos de la compra confirmada por el administrador."}
+            : receivingGift
+              ? pendingGift && pendingGift.clientId !== shop.clientId
+                ? "Vuelve al navegador que recibió el regalo para completar su guardado."
+                : "Guardando los objetos regalados por el administrador. Tus Pokedollars y tu equipo se conservan."
+              : "Tu partida está protegida mientras guardamos el saldo y los objetos de la compra confirmada por el administrador."}
       </p>
       <p className="text-sm text-muted-foreground">
         Si se interrumpe la conexión, vuelve a conectar este navegador. La
@@ -212,7 +228,9 @@ export default function ShopPartyGate({ children }: { children: ReactNode }) {
               ? "Recuperar reinicio"
               : adjusting
                 ? "Recuperar ajuste"
-                : "Recuperar compra"}
+                : receivingGift
+                  ? "Recuperar regalo"
+                  : "Recuperar compra"}
         </Button>
         {adjusting && pendingAdjustment && (
           <BalanceAbortButton receipt={pendingAdjustment} />

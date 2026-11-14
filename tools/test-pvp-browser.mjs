@@ -13,6 +13,7 @@ import { runShopBrowserScenario } from "./shop-browser-scenarios.mjs";
 import { runCenterBrowserScenario } from "./center-browser-scenarios.mjs";
 import { runBallCaptureBrowserScenario } from "./ball-capture-browser-scenarios.mjs";
 import { runOpponentAutoBrowserScenario } from "./opponent-auto-browser-scenarios.mjs";
+import { runItemGiftBrowserScenario } from "./item-gift-browser-scenarios.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const nestRoot = resolve(root, "../nest-mongo-pokedex");
@@ -851,7 +852,13 @@ try {
   const admin = await openAccount(ADMIN_EMAIL, frontendUrl);
   const playerA = await openAccount(PLAYER_EMAIL, frontendUrl);
   const playerB = await openAccount(OTHER_EMAIL, frontendUrl);
-  if (process.argv.includes("--opponent-auto-only")) {
+  if (process.argv.includes("--gift-only")) {
+    await runItemGiftBrowserScenario({
+      admin, playerA, cdp, evalArgs, waitArgs, field, clickButton,
+      seedPvpTeam, shopRepository, shopService: app.get(ShopService),
+      shopGateway: app.get(ShopGateway),
+    });
+  } else if (process.argv.includes("--opponent-auto-only")) {
     await runOpponentAutoBrowserScenario({
       admin, playerA, playerB, cdp, evalArgs, waitArgs, field, clickButton,
       seedPvpTeam, shopRepository, shopService: app.get(ShopService),

@@ -33,12 +33,16 @@ import {
   applyBalanceAdjustment,
   validBalanceAdjustment,
   validShopCatalog,
+  validPurchase,
+  applyGiftPurchase,
+  mergeShopPurchases,
 } from "../src/lib/shop/wallet";
 import type {
   BalanceAdjustment,
   GameReset,
   ItemUse,
   Wallet,
+  ShopPurchase,
 } from "../src/lib/shop/types";
 import {
   applyItemUse,
@@ -2149,6 +2153,396 @@ export async function runAccountStorageTests() {
   );
   passed.push(
     "Checked encounter creation waits behind wallet reconciliation without weakening its guard, persists the frozen mode before success and preserves the previous encounter on write failure",
+  );
+  const giftUser = 616;
+  await activateAccountStore(giftUser);
+  await applyShopWallet(wallet(giftUser, 0, 500, { "poke-ball": 2, tm: 1 }));
+  await transactPvpParty(giftUser, async (current) => ({
+    party: {
+      ...current,
+      pokemons: clone(legacyTeam),
+      gameSettings: clone(legacySettings),
+    },
+    value: undefined,
+  }));
+  const giftBefore = clone(saved(giftUser));
+  const giftMetadata = {
+    adminUserId: 1,
+    itemId: "max-elixir" as const,
+    quantity: 3,
+  };
+  const giftReceipt: ShopPurchase = {
+    kind: "gift",
+    purchaseId: "gift-purchase",
+    requestId: "gift-one",
+    clientId: "gift-client",
+    adminUserId: 1,
+    userId: giftUser,
+    itemId: "max-elixir",
+    quantity: 3,
+    unitPrice: 0,
+    total: 0,
+    balanceBefore: 500,
+    balanceAfter: 500,
+    walletRevision: 1,
+    status: "pending",
+  };
+  assert(validPurchase(giftReceipt));
+  const legacyFree: ShopPurchase = { ...giftReceipt };
+  delete legacyFree.kind;
+  const legacyFreeBytes = JSON.stringify(legacyFree);
+  assert(validPurchase(legacyFree));
+  assert.equal(JSON.stringify(legacyFree), legacyFreeBytes);
+  assert(
+    validPurchase({ ...giftReceipt, walletRevision: 0, status: "cancelled" }),
+  );
+  for (const invalid of [
+    { ...giftReceipt, kind: "purchase" },
+    { ...giftReceipt, quantity: 100 },
+    { ...giftReceipt, unitPrice: 2, total: 6, balanceAfter: 494 },
+    { ...legacyFree, status: "cancelled" },
+    { ...giftReceipt, walletRevision: 0 },
+  ])
+    assert.equal(validPurchase(invalid), false);
+  await assert.rejects(
+    prepareShopParty(giftUser, "gift-client", "gift-one", 0, "gift"),
+    /preparación/,
+  );
+  testStorage.failWritesFor.add(accountStorageKey(giftUser));
+  await assert.rejects(
+    prepareShopParty(
+      giftUser,
+      "gift-client",
+      "gift-one",
+      0,
+      "gift",
+      giftMetadata,
+    ),
+    /guardar/,
+  );
+  testStorage.failWritesFor.clear();
+  assert.deepEqual(saved(giftUser), giftBefore);
+  await prepareShopParty(
+    giftUser,
+    "gift-client",
+    "gift-one",
+    0,
+    "gift",
+    giftMetadata,
+  );
+  assert.deepEqual(saved(giftUser).shopLock, {
+    requestId: "gift-one",
+    clientId: "gift-client",
+    userId: giftUser,
+    operation: "gift",
+    expectedWalletRevision: 0,
+    ...giftMetadata,
+  });
+  await assert.rejects(
+    prepareShopParty(giftUser, "gift-client", "gift-one", 0),
+    /otra compra/,
+  );
+  const giftLocked = clone(saved(giftUser));
+  store.dispatch(toggleGymBadge("cascade"));
+  assert.deepEqual(saved(giftUser), giftLocked);
+  passed.push(
+    "Gift validation preserves legacy free purchase bytes, requires a typed admin/item/quantity PREPARE and saves the exact lock before ACK; failed writes or another operation cannot reserve it",
+  );
+  const giftedWallet = wallet(giftUser, 1, 500, {
+    "poke-ball": 2,
+    tm: 1,
+    "max-elixir": 3,
+  });
+  await applyShopWallet(giftedWallet, [], {
+    abortUnlockRequestId: "gift-one",
+    appliedPurchases: [{ ...legacyFree, status: "applied" }],
+  });
+  assert.deepEqual(
+    saved(giftUser),
+    giftLocked,
+    "wallet-only, free-purchase proof and absence cannot deliver or release a gift",
+  );
+  await assert.rejects(
+    applyGiftPurchase(giftedWallet, legacyFree, "gift-client"),
+    /no es válido/,
+  );
+  for (const mismatch of [
+    { ...giftReceipt, requestId: "other-gift" },
+    { ...giftReceipt, itemId: "tm" as const },
+    { ...giftReceipt, quantity: 2 },
+    { ...giftReceipt, adminUserId: 2 },
+  ])
+    await assert.rejects(
+      applyGiftPurchase(giftedWallet, mismatch, "gift-client"),
+      /no corresponde/,
+    );
+  assert.equal(
+    await applyGiftPurchase(giftedWallet, giftReceipt, "different-client"),
+    "ignored",
+  );
+  testStorage.failWritesFor.add(accountStorageKey(giftUser));
+  await assert.rejects(
+    applyGiftPurchase(giftedWallet, giftReceipt, "gift-client"),
+    /guardar/,
+  );
+  testStorage.failWritesFor.clear();
+  assert.deepEqual(saved(giftUser), giftLocked);
+  await applyGiftPurchase(giftedWallet, giftReceipt, "gift-client");
+  assert.equal(saved(giftUser).shopLock.appliedWalletRevision, 1);
+  assert.equal(saved(giftUser).bag.money, 500);
+  assert.deepEqual(saved(giftUser).bag.items, giftedWallet.items);
+  assert.deepEqual(saved(giftUser).pokemons, giftBefore.pokemons);
+  const giftSaved = clone(saved(giftUser));
+  await applyGiftPurchase(giftedWallet, giftReceipt, "gift-client");
+  await applyShopWallet(giftedWallet, [], { abortUnlockRequestId: "gift-one" });
+  await assert.rejects(
+    applyGiftPurchase(
+      giftedWallet,
+      { ...giftReceipt, status: "cancelled", walletRevision: 0 },
+      "gift-client",
+    ),
+    /ya se guardó/,
+  );
+  assert.deepEqual(saved(giftUser), giftSaved);
+  await clearAccountStore();
+  await activateAccountStore(giftUser);
+  await applyGiftPurchase(
+    giftedWallet,
+    { ...giftReceipt, status: "applied" },
+    "gift-client",
+  );
+  assert.equal(saved(giftUser).shopLock, undefined);
+  const giftReleased = clone(saved(giftUser));
+  await applyGiftPurchase(giftedWallet, giftReceipt, "gift-client");
+  await applyGiftPurchase(
+    giftedWallet,
+    { ...giftReceipt, status: "applied" },
+    "gift-client",
+  );
+  assert.deepEqual(saved(giftUser), giftReleased);
+  passed.push(
+    "Gift delivery saves canonical Bag and an applied marker together, keeps Pokedollars/Party/PP, rejects wrong identity and recovers write failure/reload/late ACK without granting twice or clearing on absence",
+  );
+  await prepareShopParty(giftUser, "gift-client", "free-after-gift", 1);
+  assert.deepEqual(saved(giftUser).shopLock, {
+    requestId: "free-after-gift",
+    clientId: "gift-client",
+    userId: giftUser,
+  });
+  const freeReceipt: ShopPurchase = {
+    ...legacyFree,
+    requestId: "free-after-gift",
+    itemId: "tm",
+    quantity: 1,
+    walletRevision: 2,
+    status: "applied",
+  };
+  const freeWallet = wallet(giftUser, 2, 500, { ...giftedWallet.items, tm: 2 });
+  await applyShopWallet(freeWallet, [], {
+    appliedPurchases: [{ ...freeReceipt, kind: "gift" }],
+  });
+  assert(
+    saved(giftUser).shopLock,
+    "a gift receipt cannot release a real free purchase",
+  );
+  await applyShopWallet(freeWallet, [], { appliedPurchases: [freeReceipt] });
+  assert.equal(saved(giftUser).shopLock, undefined);
+  assert.equal(saved(giftUser).bag.items.tm, 2);
+  assert.equal(saved(giftUser).bag.items["max-elixir"], 3);
+  assert.equal(saved(giftUser).bag.money, 500);
+  passed.push(
+    "Real zero-price store purchases retain their original lock and receipt shape and remain separate from gifts while canonical quantities accumulate without affecting cash",
+  );
+  const orphanMetadata = {
+    adminUserId: 1,
+    itemId: "poke-ball" as const,
+    quantity: 2,
+  };
+  await prepareShopParty(
+    giftUser,
+    "gift-client",
+    "gift-orphan",
+    2,
+    "gift",
+    orphanMetadata,
+  );
+  const orphanBefore = clone(saved(giftUser));
+  await applyShopWallet(freeWallet, [], {
+    abortUnlockRequestId: "gift-orphan",
+  });
+  assert.deepEqual(saved(giftUser), orphanBefore);
+  await clearAccountStore();
+  await activateAccountStore(giftUser);
+  const cancelledGift: ShopPurchase = {
+    ...giftReceipt,
+    ...orphanMetadata,
+    requestId: "gift-orphan",
+    status: "cancelled",
+    walletRevision: 2,
+  };
+  await applyGiftPurchase(freeWallet, cancelledGift, "gift-client");
+  assert.equal(saved(giftUser).shopLock, undefined);
+  const cancelledGiftParty = clone(saved(giftUser));
+  assert.deepEqual(cancelledGiftParty.bag, {
+    ...giftReleased.bag,
+    walletRevision: 2,
+    items: freeWallet.items,
+  });
+  await applyGiftPurchase(freeWallet, cancelledGift, "gift-client");
+  await assert.rejects(
+    applyGiftPurchase(
+      wallet(giftUser, 3, 500, { ...freeWallet.items, "poke-ball": 4 }),
+      { ...cancelledGift, status: "pending", walletRevision: 3 },
+      "gift-client",
+    ),
+    /reserva/,
+  );
+  assert.deepEqual(saved(giftUser), cancelledGiftParty);
+  await transactPvpParty(giftUser, async (current) => ({
+    party: { ...current, opponent: clone(ballBefore.opponent!) },
+    value: undefined,
+  }));
+  await assert.rejects(
+    prepareShopParty(
+      giftUser,
+      "gift-client",
+      "gift-during-battle",
+      2,
+      "gift",
+      orphanMetadata,
+    ),
+    /batalla/,
+  );
+  assert.equal(saved(giftUser).shopLock, undefined);
+  passed.push(
+    "An orphan gift stays locked through absence and reload until its matching durable cancelled receipt; cancellation preserves inventory, fences late delivery and new gifts refuse an ongoing battle",
+  );
+  const alternateBrowserBefore = clone(store.getState().party);
+  const alternateBrowserCombat = combatKey(alternateBrowserBefore);
+  const originalBrowserGift: ShopPurchase = {
+    ...giftReceipt,
+    clientId: "original-gift-browser",
+    requestId: "gift-other-browser",
+    itemId: "poke-ball",
+    quantity: 2,
+    walletRevision: 3,
+  };
+  const alternateBrowserWallet = wallet(giftUser, 3, 500, {
+    ...freeWallet.items,
+    "poke-ball": 4,
+  });
+  assert.equal(
+    await applyGiftPurchase(
+      alternateBrowserWallet,
+      originalBrowserGift,
+      "alternate-browser",
+    ),
+    "ignored",
+  );
+  assert.deepEqual(store.getState().party, alternateBrowserBefore);
+  await applyShopWallet(alternateBrowserWallet, [
+    originalBrowserGift.requestId,
+  ]);
+  assert.equal(combatKey(store.getState().party), alternateBrowserCombat);
+  assert.equal(saved(giftUser).shopLock, undefined);
+  assert.deepEqual(saved(giftUser).bag.items, alternateBrowserWallet.items);
+  assert.equal(saved(giftUser).bag.money, 500);
+  setShopSyncBlocked(true);
+  const alternateBrowserBlocked = clone(store.getState().party);
+  store.dispatch(toggleGymBadge("cascade"));
+  assert.deepEqual(store.getState().party, alternateBrowserBlocked);
+  setShopSyncBlocked(false);
+  passed.push(
+    "Another browser of the same account observes canonical gifted inventory without applying or acknowledging the original browser's receipt, changing its Party/combat or bypassing the pending-operation guard",
+  );
+  const scopedGiftUser = 618;
+  await activateAccountStore(scopedGiftUser);
+  await applyShopWallet(wallet(scopedGiftUser));
+  const firstAdminGift: ShopPurchase = {
+    ...giftReceipt,
+    userId: scopedGiftUser,
+    clientId: "scope-client",
+    requestId: "shared-admin-id",
+    adminUserId: 1,
+    itemId: "tm",
+    quantity: 1,
+  };
+  const secondAdminGift: ShopPurchase = {
+    ...firstAdminGift,
+    adminUserId: 2,
+    purchaseId: "second-admin-gift",
+    quantity: 2,
+    walletRevision: 2,
+  };
+  const firstTerminal = { ...firstAdminGift, status: "applied" as const };
+  const scopedMerge = mergeShopPurchases(
+    [firstTerminal],
+    [firstAdminGift, secondAdminGift],
+  );
+  assert.equal(scopedMerge.length, 2);
+  assert.equal(
+    scopedMerge.find((entry) => entry.adminUserId === 1)!.status,
+    "applied",
+  );
+  assert.equal(
+    scopedMerge.find((entry) => entry.adminUserId === 2)!.status,
+    "pending",
+  );
+  assert.equal(
+    mergeShopPurchases(scopedMerge, scopedMerge, {
+      ...secondAdminGift,
+      status: "applied",
+    }).find((entry) => entry.adminUserId === 2)!.status,
+    "applied",
+  );
+  await prepareShopParty(
+    scopedGiftUser,
+    "scope-client",
+    "shared-admin-id",
+    0,
+    "gift",
+    { adminUserId: 1, itemId: "tm", quantity: 1 },
+  );
+  await applyGiftPurchase(
+    wallet(scopedGiftUser, 1, 500, { tm: 1 }),
+    firstTerminal,
+    "scope-client",
+  );
+  await prepareShopParty(
+    scopedGiftUser,
+    "scope-client",
+    "shared-admin-id",
+    1,
+    "gift",
+    { adminUserId: 2, itemId: "tm", quantity: 2 },
+  );
+  const scopedLockBefore = clone(saved(scopedGiftUser));
+  await assert.rejects(
+    applyGiftPurchase(
+      wallet(scopedGiftUser, 2, 500, { tm: 3 }),
+      firstTerminal,
+      "scope-client",
+    ),
+    /no corresponde/,
+  );
+  assert.deepEqual(saved(scopedGiftUser), scopedLockBefore);
+  await applyGiftPurchase(
+    wallet(scopedGiftUser, 2, 500, { tm: 3 }),
+    secondAdminGift,
+    "scope-client",
+  );
+  await clearAccountStore();
+  await activateAccountStore(scopedGiftUser);
+  await applyGiftPurchase(
+    wallet(scopedGiftUser, 2, 500, { tm: 3 }),
+    { ...secondAdminGift, status: "applied" },
+    "scope-client",
+  );
+  assert.equal(saved(scopedGiftUser).bag.items.tm, 3);
+  assert.equal(saved(scopedGiftUser).bag.money, 500);
+  assert.equal(saved(scopedGiftUser).shopLock, undefined);
+  passed.push(
+    "Two administrators may reuse the same request ID for distinct gifts: composite receipt merging preserves both identities and the second admin's reserved delivery survives reload without accepting the first admin's terminal proof",
   );
   await clearAccountStore();
   persistor.pause();

@@ -143,6 +143,7 @@ export type ShopPlayer = {
   pendingAdjustment?: boolean;
   supportsBalanceAdjustments?: boolean;
   supportsCenterHealing?: boolean;
+  supportsItemGifts?: boolean;
   pendingCenter?: boolean;
 };
 export type ItemUse = {
@@ -167,6 +168,8 @@ export type GameReset = {
   status: "pending" | "applied" | "cancelled";
 };
 export type ShopPurchase = {
+  /** Missing on all historic paid/free store purchases. */
+  kind?: "gift";
   purchaseId: string;
   requestId: string;
   adminUserId: number;
@@ -179,7 +182,12 @@ export type ShopPurchase = {
   balanceBefore: number;
   balanceAfter: number;
   walletRevision: number;
-  status: "pending" | "applied";
+  status: "pending" | "applied" | "cancelled";
+};
+export type GiftPrepare = {
+  adminUserId: number;
+  itemId: ShopItemId;
+  quantity: number;
 };
 export type ShopState = {
   centerPreview?: CenterPreview;

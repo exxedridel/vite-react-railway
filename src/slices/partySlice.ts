@@ -154,9 +154,12 @@ export type PartyState = {
     requestId: string;
     userId: number;
     clientId: string;
-    operation?: "balance-adjustment";
+    operation?: "balance-adjustment" | "gift";
     expectedWalletRevision?: number;
     appliedWalletRevision?: number;
+    adminUserId?: number;
+    itemId?: import("@/lib/shop/types").ShopItemId;
+    quantity?: number;
   };
   resetLock?: {
     requestId: string;

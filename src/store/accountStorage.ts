@@ -1,7 +1,11 @@
 import type { PartyState } from "@/slices/partySlice";
 import { stablePvpJson } from "@/lib/pvp/types";
 import { getMaxMovePp } from "@/lib/movePp";
-import { BALL_ITEM_IDS, USABLE_ITEM_IDS } from "@/lib/shop/types";
+import {
+  BALL_ITEM_IDS,
+  USABLE_ITEM_IDS,
+  SHOP_ITEM_IDS,
+} from "@/lib/shop/types";
 
 export const PVP_PARTY_COMMIT = "party/pvpCommit";
 let pvpSyncBlocked = false;
@@ -308,8 +312,10 @@ export function decodeAccountParty(
         !Number.isSafeInteger(lock.userId) ||
         Number(lock.userId) <= 0 ||
         (lock.operation !== undefined &&
-          lock.operation !== "balance-adjustment") ||
-        (lock.operation === "balance-adjustment" &&
+          lock.operation !== "balance-adjustment" &&
+          lock.operation !== "gift") ||
+        ((lock.operation === "balance-adjustment" ||
+          lock.operation === "gift") &&
           (!Number.isSafeInteger(lock.expectedWalletRevision) ||
             Number(lock.expectedWalletRevision) < 0 ||
             (lock.appliedWalletRevision !== undefined &&
@@ -317,7 +323,19 @@ export function decodeAccountParty(
                 Number(lock.expectedWalletRevision) + 1))) ||
         (lock.operation === undefined &&
           (lock.expectedWalletRevision !== undefined ||
-            lock.appliedWalletRevision !== undefined))
+            lock.appliedWalletRevision !== undefined)) ||
+        (lock.operation === "gift"
+          ? !Number.isSafeInteger(lock.adminUserId) ||
+            Number(lock.adminUserId) <= 0 ||
+            !SHOP_ITEM_IDS.includes(
+              lock.itemId as (typeof SHOP_ITEM_IDS)[number],
+            ) ||
+            !Number.isSafeInteger(lock.quantity) ||
+            Number(lock.quantity) < 1 ||
+            Number(lock.quantity) > 99
+          : lock.adminUserId !== undefined ||
+            lock.itemId !== undefined ||
+            lock.quantity !== undefined)
       )
         throw new Error();
     }

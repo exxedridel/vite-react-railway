@@ -4,7 +4,7 @@ Frontend del juego con React, TypeScript y Vite. `mysql-restapi` autentica y
 administra usuarios; `nest-mongo-pokedex` comunica jugadores y conserva las
 batallas PvP, las carteras y los recibos del Poké Mart. El motor de combate se
 ejecuta en el panel administrador y, para encuentros individuales, en el frontend
-del jugador. Versión de la aplicación: **2.10.0**.
+del jugador. Versión de la aplicación: **2.11.0**.
 
 ## Desarrollo y comprobaciones
 
@@ -65,6 +65,28 @@ o falla el guardado, se muestra el error y se conserva la partida original.
 Los datos del escenario administrador siguen siendo locales al dispositivo.
 Importar una partida antigua conserva la cartera actual; no recupera su saldo
 antiguo. Tampoco se importa mientras hay una batalla o compra pendiente.
+
+## Regalar objetos desde Back office
+
+**Back office → Regalar objetos** permite elegir un jugador conectado, objeto
+y cantidad1–99 y confirmar la entrega. Muestra sus existencias en Bag y el total
+resultante. El regalo conserva Pokedollars y precios de Tienda, y se refleja
+automáticamente en el frontend del jugador. Sólo fuera de batalla y sin otras
+operaciones pendientes. El frontend del jugador debe estar actualizado.
+
+Cancelar antes de confirmar conserva el inventario. Tras enviar, la recuperación
+usa la misma solicitud y conserva los objetos ya entregados, incluso al recargar
+o fallar Storage. Los regalos pendientes y los últimos resultados se consultan
+en Back office. Los recibos de compra anteriores siguen funcionando.
+
+Desplegar Nest primero y React después, recargar ambos a2.11.0. Sin variables
+nuevas, MySQL, seed ni reinicio de partidas. Ver
+[ITEM_GIFTS_PROTOCOL.md](../ITEM_GIFTS_PROTOCOL.md).
+
+```bash
+npm run test:gifts
+npm run test:gifts:browser
+```
 
 ## Rivales automáticos
 
