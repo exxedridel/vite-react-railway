@@ -57,6 +57,7 @@ export type ShopItemId = (typeof SHOP_ITEM_IDS)[number];
 export type ShopCatalog = {
   revision: number;
   prices: Record<ShopItemId, number>;
+  captureDifficulty?: number;
 };
 export type BalanceAdjustment = {
   adjustmentId: string;
@@ -80,6 +81,16 @@ export const CONSUMABLE_ITEM_IDS = [
 export type ConsumableItemId = (typeof CONSUMABLE_ITEM_IDS)[number];
 export const BALL_ITEM_IDS = ["poke-ball", "great-ball", "ultra-ball"] as const;
 export type BallItemId = (typeof BALL_ITEM_IDS)[number];
+export type CaptureSettings = {
+  captureDifficulty: number;
+  captureRevision: number;
+};
+export type CaptureQuote = {
+  minimum: number;
+  encounterId: string;
+  captureDifficulty?: number;
+  captureRevision?: number;
+};
 export type CaptureAttempt = {
   version: 1;
   attemptId: string;
@@ -87,6 +98,8 @@ export type CaptureAttempt = {
   clientId: string;
   ballId: BallItemId;
   minimum: number;
+  captureDifficulty?: number;
+  captureRevision?: number;
   encounterId: string;
   pokemonName: string;
   captureId: string;
@@ -141,6 +154,7 @@ export type ItemUse = {
   context: "party" | "local-battle";
   planHash: string;
   expectedWalletRevision: number;
+  captureRevision?: number;
   walletRevision: number;
   status: "pending" | "applied" | "cancelled";
 };

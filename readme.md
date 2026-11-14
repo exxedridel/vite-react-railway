@@ -3,7 +3,7 @@
 Frontend del juego con React, TypeScript y Vite. `mysql-restapi` autentica y
 administra usuarios; `nest-mongo-pokedex` comunica jugadores y conserva las
 batallas PvP, las carteras y los recibos del Poké Mart. El motor de combate se
-ejecuta en el panel administrador. Versión de la aplicación: **2.8.0**.
+ejecuta en el panel administrador. Versión de la aplicación: **2.9.0**.
 
 ## Desarrollo y comprobaciones
 
@@ -67,6 +67,19 @@ antiguo. Tampoco se importa mientras hay una batalla o compra pendiente.
 
 ## Pokebolas y captura
 
+Desde2.9.0, **Back office → Dificultad de captura** permite sumar un entero
+entre0 y20 al mínimo D20 de todos los jugadores. 0 conserva la dificultad
+normal; +2 convierte un mínimo7+ en9+. Se suma después del mínimo base y sus
+bonos. El valor se guarda globalmente en Nest y se actualiza por WebSocket.
+Un mínimo superior a20 muestra la bola como imposible y no permite gastarla.
+
+Los intentos ya pagados conservan su bola y mínimo incluso si el administrador
+cambia la dificultad o el jugador recarga. Si las reglas cambian antes del cobro,
+se rechaza la cotización anterior sin gastar y se debe revisar el nuevo mínimo.
+Precios y dificultad comparten la revisión del catálogo; una edición puede exigir
+actualizar otra cotización todavía abierta. Desplegar Nest antes de React y
+recargar ambos a2.9.0; sin variables nuevas, MySQL, seed o reinicio de partidas.
+
 **Lanzar pokebola** permite elegir Poké Ball, Great Ball o Ultra Ball según las
 existencias de la Bag. Muestra el mínimo del D20 según especie, HP, estados y
 bola. Confirmar descuenta una unidad, tanto si acierta como si falla. Cancelar
@@ -84,7 +97,7 @@ volver a cobrar, capturar o sortear la respuesta. Equipo lleno, rival debilitado
 y acciones/reemplazos obligatorios impiden lanzar antes de gastar.
 
 Desplegar **Nest primero y React después**, sin variables nuevas ni MySQL,
-y recargar ambos frontends a2.8.0. No ejecutar seed ni reiniciar partidas.
+y recargar ambos frontends a2.9.0. No ejecutar seed ni reiniciar partidas.
 Ver [POKEBALL_PROTOCOL.md](../POKEBALL_PROTOCOL.md).
 
 ```bash

@@ -61,6 +61,8 @@ import type {
   CenterPreview,
   CenterPrepare,
   BallItemId,
+  CaptureQuote,
+  CaptureSettings,
 } from "@/lib/shop/types";
 
 type ShopContextValue = {
@@ -76,6 +78,11 @@ type ShopContextValue = {
   setPrice: (
     itemId: ShopItemId,
     price: number,
+    expectedCatalogRevision: number,
+    requestId?: string,
+  ) => Promise<ShopCatalog>;
+  setCaptureDifficulty: (
+    modifier: number,
     expectedCatalogRevision: number,
     requestId?: string,
   ) => Promise<ShopCatalog>;
@@ -108,10 +115,7 @@ type ShopContextValue = {
   sync: () => Promise<void>;
   restartGame: () => Promise<void>;
   useFullRestore: (captureId: string) => Promise<void>;
-  throwBall: (
-    ballId: BallItemId,
-    quote?: { minimum: number; encounterId: string },
-  ) => Promise<void>;
+  throwBall: (ballId: BallItemId, quote?: CaptureQuote) => Promise<void>;
   useTm: (
     captureId: string,
     move: PokemonMove,
@@ -270,7 +274,7 @@ export default function ShopProvider({
       captureId: string,
       moveId?: number,
       learning?: { move: PokemonMove; replaceMoveId?: number },
-      captureQuote?: { minimum: number; encounterId: string },
+      captureQuote?: CaptureQuote,
     ) => Promise<void>
   >(async () => {
     throw new Error("Inicia sesión para usar objetos de tu Bag.");
@@ -284,28 +288,24 @@ export default function ShopProvider({
     (captureId: string) => useItemRef.current("full-restore", captureId),
     [],
   );
-  const throwBall = useCallback(
-    (ballId: BallItemId, quote?: { minimum: number; encounterId: string }) => {
-      const party = store.getState().party;
-      const active =
-        party.pokemons.find(
-          (capture) => capture.captureId === party.battleField?.activeCaptureId,
-        ) ??
-        party.pokemons.find((capture) => getCurrentHp(capture.pokemon) > 0);
-      if (!active)
-        return Promise.reject(
-          new Error("Selecciona un Pokémon con HP antes de lanzar."),
-        );
-      return useItemRef.current(
-        ballId,
-        active.captureId,
-        undefined,
-        undefined,
-        quote,
+  const throwBall = useCallback((ballId: BallItemId, quote?: CaptureQuote) => {
+    const party = store.getState().party;
+    const active =
+      party.pokemons.find(
+        (capture) => capture.captureId === party.battleField?.activeCaptureId,
+      ) ?? party.pokemons.find((capture) => getCurrentHp(capture.pokemon) > 0);
+    if (!active)
+      return Promise.reject(
+        new Error("Selecciona un Pokémon con HP antes de lanzar."),
       );
-    },
-    [],
-  );
+    return useItemRef.current(
+      ballId,
+      active.captureId,
+      undefined,
+      undefined,
+      quote,
+    );
+  }, []);
   const useTm = useCallback(
     (captureId: string, move: PokemonMove, replaceMoveId?: number) =>
       useItemRef.current("tm", captureId, move.id, {
@@ -1076,6 +1076,9 @@ export default function ShopProvider({
         captureId: lock.captureId,
         ...(lock.itemId === undefined ? {} : { itemId: lock.itemId }),
         ...(lock.moveId === undefined ? {} : { moveId: lock.moveId }),
+        ...(lock.captureRevision === undefined
+          ? {}
+          : { expectedCaptureRevision: lock.captureRevision }),
         context: lock.context,
         planHash: lock.planHash,
         expectedWalletRevision: lock.expectedWalletRevision,
@@ -1224,6 +1227,20 @@ export default function ShopProvider({
           ? await import("@/lib/shop/ballCapture")
           : null;
         if (ball) await import("@/lib/captureTurn");
+        const captureCatalog = ball ? catalogRef.current : null;
+        if (
+          ball &&
+          (!captureCatalog || captureCatalog.captureDifficulty === undefined)
+        )
+          throw new Error(
+            "Actualiza el servicio Nest y sincroniza la dificultad de captura antes de lanzar.",
+          );
+        const captureSettings: CaptureSettings | undefined = captureCatalog
+          ? {
+              captureDifficulty: captureCatalog.captureDifficulty ?? 0,
+              captureRevision: captureCatalog.revision,
+            }
+          : undefined;
         const requestId = crypto.randomUUID();
         const resultCaptureId = ball ? crypto.randomUUID() : "";
         const seed: [number, number, number, number] = ball
@@ -1252,6 +1269,7 @@ export default function ShopProvider({
                 seed,
                 resultCaptureId,
                 captureQuote,
+                captureSettings,
               );
             }
             if (itemId === "tm") {
@@ -1275,6 +1293,7 @@ export default function ShopProvider({
           },
           itemId,
           moveId,
+          captureSettings?.captureRevision,
         );
         if (!current() || !socket.connected)
           throw new Error(
@@ -1622,6 +1641,20 @@ export default function ShopProvider({
       throw new Error("No se recibió el catálogo actualizado.");
     return response.catalog;
   }
+  async function setCaptureDifficulty(
+    modifier: number,
+    expectedCatalogRevision: number,
+    requestId: string = crypto.randomUUID(),
+  ): Promise<ShopCatalog> {
+    const response = await adminMutation("shop:capture-difficulty-set", {
+      requestId,
+      modifier,
+      expectedCatalogRevision,
+    });
+    if (!response.catalog)
+      throw new Error("No se recibió la dificultad de captura actualizada.");
+    return response.catalog;
+  }
   async function adjustBalance(
     player: ShopPlayer,
     delta: number,
@@ -1746,6 +1779,7 @@ export default function ShopProvider({
         catalog,
         adjustments,
         setPrice,
+        setCaptureDifficulty,
         adjustBalance,
         abortBalance,
         centerHeals,

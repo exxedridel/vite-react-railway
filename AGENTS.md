@@ -9,6 +9,16 @@ Acuerdo del usuario confirmado el 2026-11-08:
 
 Si esta disponible, leer [la memoria compartida](../PROJECT_MEMORY.md). Este resumen se conserva tambien aqui para sesiones que abran solo este repositorio.
 
+Etapa vigente2026-11-13 React2.9.0: BackOffice dificultadglobal0..20, +modifier
+despuésminbase1, >20bloqueadopredebito. CatálogoWS+revision, quoteincluyemin/
+encounterId/captureDifficulty/captureRevision; lock+receiptcaptureRevisionopt.
+Legacyplanes/hash/captureAttempt2.8 sincamposintactos. Pagaunavez bajo revisión
+vigente, paidmínimofijo trasedit/reload. Reactguardausenciacatalog.captureDifficulty
+antesPREPAREparaNestviejo. TS/build/wallet28/captura8/cuentas7/Party9/audit163 pasan;
+ChromeCapture+Shopcompleto/Center/dificultad aprobados sinJSerrors. Ver memoria/
+protocolos; Nest→React/recargar2.9.0 sinvars/
+MySQL/seed/reset/borrados. Motor/Party/dado siguenlocales.
+
 Etapa vigente2026-11-13 frontend2.8.0: Bag Poké/Great/Ultra, confirmar1bola+
 mínimoD20existente, gastar antesmanual Capturada/Escapó. Usuario confirmóacción
 consumida+respuestaautomáticasalvajealfallar. Reusarshop:use; captureAttempt se

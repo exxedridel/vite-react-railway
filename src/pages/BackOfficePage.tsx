@@ -157,6 +157,137 @@ function PriceRow({
     </li>
   );
 }
+function CaptureDifficultyPanel({ catalog }: { catalog: ShopCatalog }) {
+  const shop = useShopContext();
+  const modifier = catalog.captureDifficulty ?? 0;
+  const [value, setValue] = useState(String(modifier));
+  const [dirty, setDirty] = useState(false);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+  const pending = useRef<{
+    requestId: string;
+    modifier: number;
+    revision: number;
+  } | null>(null);
+  const submitting = useRef(false);
+  useEffect(() => {
+    if (!dirty) setValue(String(modifier));
+  }, [modifier, dirty]);
+  const parsed = amount(value, 0, 20);
+  async function save() {
+    if (parsed === null || submitting.current || !shop.connected || shop.busy)
+      return;
+    submitting.current = true;
+    setError("");
+    setSaved(false);
+    const request =
+      pending.current?.modifier === parsed
+        ? pending.current
+        : {
+            requestId: crypto.randomUUID(),
+            modifier: parsed,
+            revision: catalog.revision,
+          };
+    pending.current = request;
+    try {
+      await shop.setCaptureDifficulty(
+        request.modifier,
+        request.revision,
+        request.requestId,
+      );
+      pending.current = null;
+      setDirty(false);
+      setSaved(true);
+    } catch (reason) {
+      setError(errorText(reason));
+      await shop.sync().catch(() => {});
+      if ((reason as { code?: string })?.code) pending.current = null;
+    } finally {
+      submitting.current = false;
+    }
+  }
+  return (
+    <section
+      className="space-y-3 rounded-xl border bg-card p-4 text-card-foreground"
+      aria-labelledby="capture-difficulty-heading"
+    >
+      <h2 id="capture-difficulty-heading" className="text-xl font-semibold">
+        Dificultad de captura
+      </h2>
+      <p className="text-sm text-muted-foreground">
+        Suma al mínimo del D20 de todos los jugadores, después de los bonos de
+        HP, estados y pokebola. 0 conserva la dificultad normal.
+      </p>
+      <p
+        className="text-sm font-medium"
+        data-testid="capture-difficulty-current"
+      >
+        Vigente: +{modifier} al mínimo D20
+      </p>
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+        <label className="space-y-1 text-sm">
+          <span>Aumento del mínimo (0–20)</span>
+          <Input
+            type="number"
+            min={0}
+            max={20}
+            step={1}
+            inputMode="numeric"
+            aria-label="Dificultad global de captura"
+            value={value}
+            disabled={shop.busy}
+            onChange={(event) => {
+              setValue(event.target.value);
+              setDirty(true);
+              setSaved(false);
+              pending.current = null;
+            }}
+          />
+        </label>
+        <Button
+          variant="outline"
+          data-testid="capture-difficulty-save"
+          disabled={
+            !shop.connected ||
+            !shop.synced ||
+            shop.busy ||
+            parsed === null ||
+            (!dirty && parsed === modifier)
+          }
+          onClick={() => void save()}
+        >
+          Guardar dificultad
+        </Button>
+      </div>
+      {parsed !== null && (
+        <p className="text-sm">
+          Ejemplo: una captura que requiere 7+ pasará a necesitar{" "}
+          <strong>{7 + parsed}+</strong>.
+        </p>
+      )}
+      <p className="text-xs text-muted-foreground">
+        Si el mínimo supera 20, esa bola no se puede lanzar: mejora las
+        condiciones de captura o usa una bola mejor. Los intentos ya lanzados
+        conservan el mínimo confirmado.
+      </p>
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
+      {saved && (
+        <p
+          role="status"
+          data-testid="capture-difficulty-saved"
+          className="text-sm text-muted-foreground"
+        >
+          Dificultad guardada para todos los jugadores.
+        </p>
+      )}
+    </section>
+  );
+}
+
 type Draft = {
   player: ShopPlayer;
   delta: number;
@@ -284,7 +415,8 @@ export default function BackOfficePage() {
             Back office
           </h1>
           <p className="text-sm text-muted-foreground">
-            Precios del Poké Mart y Pokedollars de los jugadores.
+            Dificultad de captura, precios del Poké Mart y Pokedollars de los
+            jugadores.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -323,6 +455,7 @@ export default function BackOfficePage() {
           {error || shop.error}
         </p>
       )}
+      {shop.catalog && <CaptureDifficultyPanel catalog={shop.catalog} />}
       <section className="space-y-3" aria-labelledby="back-office-prices">
         <h2 id="back-office-prices" className="text-xl font-semibold">
           Precios de los objetos

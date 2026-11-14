@@ -146,7 +146,11 @@ export default function PokemonOpponentPanel({ opponent, onChange }: Props) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const opponentFainted = isPokemonFainted(opponent?.pokemon);
   const captureInfo = opponent
-    ? captureRequirements(opponent.pokemon, opponent.statuses)
+    ? captureRequirements(
+        opponent.pokemon,
+        opponent.statuses,
+        shop.catalog?.captureDifficulty ?? 0,
+      )
     : null;
   const canCapture =
     !!opponent &&

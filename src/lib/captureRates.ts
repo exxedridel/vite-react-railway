@@ -125,7 +125,16 @@ export const BALL_OPTIONS = [
 export function captureRequirements(
   pokemon: Pokemon,
   statuses: readonly PokemonStatus[] = [],
+  captureDifficulty = 0,
 ) {
+  if (
+    !Number.isSafeInteger(captureDifficulty) ||
+    captureDifficulty < 0 ||
+    captureDifficulty > 20
+  )
+    throw new Error(
+      "La dificultad de captura debe ser un entero entre 0 y 20.",
+    );
   const species = captureSpecies(pokemon.id),
     max = getMaxHp(pokemon),
     hp = getCurrentHp(pokemon);
@@ -139,6 +148,7 @@ export function captureRequirements(
   );
   const statusBonus = major ? 4 : minor ? 2 : 0;
   return {
+    captureDifficulty,
     species,
     tier,
     health,
@@ -154,7 +164,8 @@ export function captureRequirements(
       minimum:
         ball.id === "master"
           ? null
-          : Math.max(1, tier.targetD20 - hpBonus - statusBonus - ball.bonus),
+          : Math.max(1, tier.targetD20 - hpBonus - statusBonus - ball.bonus) +
+            captureDifficulty,
     })),
   };
 }

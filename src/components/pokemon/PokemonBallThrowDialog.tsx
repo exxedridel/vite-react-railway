@@ -38,8 +38,9 @@ export default function PokemonBallThrowDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const inFlight = useRef(false);
+  const difficulty = shop.catalog?.captureDifficulty ?? 0;
   const info = opponent
-    ? captureRequirements(opponent.pokemon, opponent.statuses)
+    ? captureRequirements(opponent.pokemon, opponent.statuses, difficulty)
     : null;
   const item = SHOP_ITEMS.find((item) => item.id === selected);
   const target = info?.balls.find(
@@ -49,6 +50,9 @@ export default function PokemonBallThrowDialog({
   const canThrow =
     !!selected &&
     !!target &&
+    target.minimum !== null &&
+    target.minimum <= 20 &&
+    !!shop.catalog &&
     stock > 0 &&
     !busy &&
     !shop.usingItem &&
@@ -65,6 +69,8 @@ export default function PokemonBallThrowDialog({
       await shop.throwBall(selected, {
         minimum: target.minimum!,
         encounterId: opponent.encounterId,
+        captureDifficulty: difficulty,
+        captureRevision: shop.catalog!.revision,
       });
       onOpenChange(false);
     } catch (reason) {
@@ -106,6 +112,12 @@ export default function PokemonBallThrowDialog({
             Primero confirma el lanzamiento; después tira tu D20 físico.
           </DialogDescription>
         </DialogHeader>
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="capture-difficulty-bonus"
+        >
+          Dificultad global: +{difficulty} al mínimo D20
+        </p>
         <div className="space-y-2" aria-label="Pokebolas disponibles">
           {BALL_ITEM_IDS.map((id) => {
             const entry = SHOP_ITEMS.find((item) => item.id === id)!;
@@ -121,7 +133,14 @@ export default function PokemonBallThrowDialog({
                 className="h-auto min-h-14 w-full justify-between gap-3 px-3 py-2"
                 data-testid={`capture-ball-${id}`}
                 aria-pressed={selected === id}
-                disabled={!quantity || !info || busy}
+                disabled={
+                  !quantity ||
+                  !info ||
+                  busy ||
+                  minimum === undefined ||
+                  minimum === null ||
+                  minimum > 20
+                }
                 onClick={() => {
                   setSelected(id);
                   setError("");
@@ -138,7 +157,13 @@ export default function PokemonBallThrowDialog({
                       {entry.name} · ×{quantity}
                     </span>
                     <span className="block text-xs font-normal">
-                      {quantity ? `D20 mínimo ${minimum}+` : "Sin existencias"}
+                      {!quantity
+                        ? "Sin existencias"
+                        : minimum !== undefined &&
+                            minimum !== null &&
+                            minimum > 20
+                          ? `Imposible · mínimo ${minimum}+`
+                          : `D20 mínimo ${minimum}+`}
                     </span>
                   </span>
                 </span>
@@ -156,6 +181,12 @@ export default function PokemonBallThrowDialog({
               Lanzarás <strong>1 {item.name}</strong>. Necesitas{" "}
               <strong>{target.minimum} o más</strong> en tu D20 físico.
             </p>
+            {target.minimum !== null && target.minimum > 20 && (
+              <p role="status" className="text-destructive">
+                Imposible con esta bola: el mínimo supera el máximo de tu D20.
+                No se gastará ninguna bola.
+              </p>
+            )}
             <p className="text-muted-foreground">
               La bola se gastará al confirmar, tanto si capturas al Pokémon como
               si escapa. Si falla, el salvaje responderá y se resolverá el
@@ -169,7 +200,10 @@ export default function PokemonBallThrowDialog({
               Cómo se calcula el mínimo
             </summary>
             <div className="mt-3">
-              <PokemonCaptureRequirements opponent={opponent} />
+              <PokemonCaptureRequirements
+                opponent={opponent}
+                difficulty={difficulty}
+              />
             </div>
           </details>
         )}

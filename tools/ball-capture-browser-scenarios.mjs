@@ -195,7 +195,7 @@ export async function runBallCaptureBrowserScenario({
       "success cannot be registered before spending a ball",
     );
   };
-  const chooseBall = async (ballId) => {
+  const chooseBall = async (ballId, difficulty = 0) => {
     await evalArgs(
       playerA,
       (id) => {
@@ -213,7 +213,7 @@ export async function runBallCaptureBrowserScenario({
     );
     const quote = await evalArgs(
       playerA,
-      async (id) => {
+      async (id, modifier) => {
         const [{ store }, rates] = await Promise.all([
           import("/src/store/store.ts"),
           import("/src/lib/captureRates.ts"),
@@ -226,13 +226,18 @@ export async function runBallCaptureBrowserScenario({
         }[id];
         return {
           minimum: rates
-            .captureRequirements(p.opponent.pokemon, p.opponent.statuses)
+            .captureRequirements(
+              p.opponent.pokemon,
+              p.opponent.statuses,
+              modifier,
+            )
             .balls.find((b) => b.id === code).minimum,
           text: document.querySelector('[data-testid="capture-ball-quote"]')
             .textContent,
         };
       },
       ballId,
+      difficulty,
     );
     assert.ok(quote.text.includes(`${quote.minimum} o más`));
     return quote.minimum;
@@ -745,5 +750,269 @@ export async function runBallCaptureBrowserScenario({
   );
   console.log(
     "PASS: depleted ball types stay disabled and the final failed physical throw leaves no further attempt available with an empty Bag.",
+  );
+
+  // Back office capture rules are shared live, but a paid physical throw keeps
+  // the exact quote that was accepted before inventory was consumed.
+  const difficultySelector = 'input[aria-label="Dificultad global de captura"]';
+  const routeBackOffice = async () => {
+    const origin = await evalArgs(admin, () => location.origin);
+    await cdp.request("Page.stopLoading", {}, admin);
+    await cdp.request("Page.navigate", { url: origin + "/back-office" }, admin);
+    await waitArgs(
+      admin,
+      (selector) =>
+        location.pathname === "/back-office" &&
+        !!document.querySelector(selector),
+      "admin capture difficulty editor ready",
+      difficultySelector,
+    );
+  };
+  const saveDifficulty = async (modifier) => {
+    await waitArgs(
+      admin,
+      (selector) => {
+        const input = document.querySelector(selector);
+        return input && !input.disabled;
+      },
+      "capture difficulty input available",
+      difficultySelector,
+    );
+    await field(admin, difficultySelector, String(modifier));
+    await waitArgs(
+      admin,
+      () => {
+        const button = document.querySelector(
+          '[data-testid="capture-difficulty-save"]',
+        );
+        return button && !button.disabled;
+      },
+      "capture difficulty is valid and ready to save",
+    );
+    await evalArgs(admin, () =>
+      document.querySelector('[data-testid="capture-difficulty-save"]').click(),
+    );
+    await backendWait(
+      async () =>
+        (await shopService.catalog.snapshot()).captureDifficulty === modifier,
+      "capture difficulty persisted in canonical catalog",
+    );
+    await waitArgs(
+      admin,
+      () =>
+        !!document.querySelector('[data-testid="capture-difficulty-saved"]'),
+      "admin sees saved capture difficulty",
+    );
+    return shopService.catalog.snapshot();
+  };
+  const assertMinima = async (modifier, baseMinima) => {
+    await waitArgs(
+      playerA,
+      (expected) => {
+        return ["poke-ball", "great-ball", "ultra-ball"].every((id, index) => {
+          const button = document.querySelector(
+            `[data-testid="capture-ball-${id}"]`,
+          );
+          return (
+            button &&
+            new RegExp(`mínimo\\s+${expected[index]}\\+`, "i").test(
+              button.textContent,
+            )
+          );
+        });
+      },
+      "live capture difficulty updates every ball minimum",
+      baseMinima.map((minimum) => minimum + modifier),
+    );
+  };
+  await fixtureWallet({
+    items: {
+      ...(await state()).bag.items,
+      "poke-ball": 3,
+      "great-ball": 3,
+      "ultra-ball": 3,
+    },
+  });
+  await fixtureEncounter("capture-global-difficulty");
+  const baseMinima = await evalArgs(playerA, async () => {
+    const [{ store }, rates] = await Promise.all([
+      import("/src/store/store.ts"),
+      import("/src/lib/captureRates.ts"),
+    ]);
+    const p = store.getState().party;
+    return rates
+      .captureRequirements(p.opponent.pokemon, p.opponent.statuses, 0)
+      .balls.filter((ball) => ball.id !== "master")
+      .map((ball) => ball.minimum);
+  });
+  await routeBackOffice();
+  const difficultyStart = await shopService.catalog.snapshot();
+  assert.equal(
+    difficultyStart.captureDifficulty,
+    0,
+    "legacy rules default to normal difficulty",
+  );
+  const walletBeforeRules = await shopRepository.get(2);
+  await saveDifficulty(2);
+  await openThrow();
+  await assertMinima(2, baseMinima);
+  await chooseBall("poke-ball", 2);
+  assert.equal(
+    (await shopRepository.get(2)).revision,
+    walletBeforeRules.revision,
+  );
+  assert.deepEqual(
+    (await shopRepository.get(2)).items,
+    walletBeforeRules.items,
+  );
+
+  // Invalid values cannot send a settings mutation from the real admin form.
+  const rulesBeforeInvalid = await shopService.catalog.snapshot();
+  for (const invalid of [-1, 1.5, 21]) {
+    await field(admin, difficultySelector, String(invalid));
+    assert.equal(
+      await evalArgs(
+        admin,
+        () =>
+          document.querySelector('[data-testid="capture-difficulty-save"]')
+            .disabled,
+      ),
+      true,
+    );
+    assert.equal(
+      (await shopService.catalog.snapshot()).revision,
+      rulesBeforeInvalid.revision,
+    );
+  }
+  await routeBackOffice();
+  await waitArgs(
+    admin,
+    (selector) => document.querySelector(selector)?.value === "2",
+    "capture difficulty survives admin reload",
+    difficultySelector,
+  );
+  await cdp.request("Page.reload", {}, playerA);
+  await openThrow();
+  await assertMinima(2, baseMinima);
+  await chooseBall("great-ball", 2);
+
+  // A quote that has not been paid follows the new global minimum live.
+  await saveDifficulty(0);
+  await assertMinima(0, baseMinima);
+  await chooseBall("poke-ball", 0);
+  await saveDifficulty(1);
+  await assertMinima(1, baseMinima);
+  await chooseBall("poke-ball", 1);
+  assert.equal(
+    (await shopRepository.get(2)).uses.length,
+    walletBeforeRules.uses.length,
+  );
+  await saveDifficulty(2);
+  await assertMinima(2, baseMinima);
+  const frozenMinimum = await chooseBall("poke-ball", 2);
+  const acceptedRules = await shopService.catalog.snapshot();
+  await confirmThrow();
+  const difficultyAttempt = await waitPaidRoll("poke-ball");
+  assert.equal(difficultyAttempt.minimum, frozenMinimum);
+  const paidRulesWallet = await shopRepository.get(2);
+  const rulesUse = paidRulesWallet.uses.find(
+    (use) => use.requestId === difficultyAttempt.attemptId,
+  );
+  assert.equal(
+    rulesUse.captureRevision,
+    acceptedRules.revision,
+    "the debit receipt binds the accepted rules revision",
+  );
+  await saveDifficulty(0);
+  assert.deepEqual(
+    (await state()).captureAttempt,
+    difficultyAttempt,
+    "changing global rules does not rewrite a paid attempt",
+  );
+  await cdp.request("Page.reload", {}, playerA);
+  assert.deepEqual(
+    await waitPaidRoll("poke-ball"),
+    difficultyAttempt,
+    "paid difficulty remains frozen after reload",
+  );
+  await outcome("escaped");
+  await waitOutcome(difficultyAttempt, "escaped");
+  assert.equal(
+    (await shopRepository.get(2)).revision,
+    paidRulesWallet.revision,
+  );
+  assert.equal(
+    (await shopRepository.get(2)).uses.length,
+    paidRulesWallet.uses.length,
+  );
+  console.log(
+    "PASS: Back office capture difficulty defaults0, persists+2, updates all three ball quotes live and after reload, rejects invalid inputs and keeps a paid throw's minimum/revision frozen across later rule edits.",
+  );
+
+  await fixtureEncounter("capture-difficulty-impossible");
+  await saveDifficulty(20);
+  await openThrow();
+  await assertMinima(20, baseMinima);
+  const impossibleWallet = await shopRepository.get(2);
+  assert.ok(baseMinima.every((minimum) => minimum + 20 > 20));
+  for (const ballId of balls)
+    assert.equal(
+      await evalArgs(
+        playerA,
+        (id) =>
+          document.querySelector(`[data-testid="capture-ball-${id}"]`).disabled,
+        ballId,
+      ),
+      true,
+    );
+  assert.equal(
+    await evalArgs(
+      playerA,
+      () =>
+        document.querySelector('[data-testid="capture-throw-confirm"]')
+          .disabled,
+    ),
+    true,
+  );
+  assert.ok(
+    await evalArgs(playerA, () =>
+      /imposible/i.test(
+        document.querySelector('[data-testid="capture-ball-poke-ball"]')
+          .textContent,
+      ),
+    ),
+  );
+  await evalArgs(playerA, () =>
+    document.querySelector('[data-testid="capture-throw-confirm"]').click(),
+  );
+  assert.equal((await state()).captureAttempt, undefined);
+  assert.equal(
+    (await shopRepository.get(2)).revision,
+    impossibleWallet.revision,
+  );
+  assert.equal(
+    (await shopRepository.get(2)).uses.length,
+    impossibleWallet.uses.length,
+  );
+  assert.deepEqual((await shopRepository.get(2)).items, impossibleWallet.items);
+  await saveDifficulty(0);
+  await assertMinima(0, baseMinima);
+  await chooseBall("poke-ball", 0);
+  assert.equal(
+    await evalArgs(
+      playerA,
+      () =>
+        document.querySelector('[data-testid="capture-throw-confirm"]')
+          .disabled,
+    ),
+    false,
+  );
+  assert.deepEqual(
+    cdp.exceptions,
+    [],
+    "Unexpected Chrome JavaScript exception",
+  );
+  console.log(
+    "PASS: a minimum above20 is shown as impossible, blocks all otherwise-stocked balls without charging, and restoring difficulty0 re-enables the normal quote.",
   );
 }

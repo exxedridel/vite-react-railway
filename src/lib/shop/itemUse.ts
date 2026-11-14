@@ -36,6 +36,9 @@ export function validItemUse(value: unknown): value is ItemUse {
     (item.itemId !== "tm" || item.context === "party") &&
     (!(BALL_ITEM_IDS as readonly string[]).includes(item.itemId) ||
       item.context === "local-battle") &&
+    (item.captureRevision === undefined ||
+      ((BALL_ITEM_IDS as readonly string[]).includes(item.itemId) &&
+        revision(item.captureRevision))) &&
     typeof item.planHash === "string" &&
     /^[a-f0-9]{64}$/.test(item.planHash) &&
     revision(item.expectedWalletRevision) &&
@@ -63,6 +66,7 @@ export function prepareItemUse(
   plan: (party: PartyState, captureId: string) => Promise<PartyState>,
   itemId: UsableItemId = "full-restore",
   moveId?: number,
+  captureRevision?: number,
 ): Promise<void> {
   return transactPvpParty(userId, async (party) => {
     if (
@@ -71,6 +75,9 @@ export function prepareItemUse(
       !id(captureId) ||
       !revision(expectedWalletRevision) ||
       !USABLE_ITEM_IDS.includes(itemId) ||
+      (captureRevision !== undefined &&
+        (!(BALL_ITEM_IDS as readonly string[]).includes(itemId) ||
+          !revision(captureRevision))) ||
       (itemId === "max-ether" || itemId === "tm"
         ? !Number.isSafeInteger(moveId) ||
           Number(moveId) < 1 ||
@@ -120,6 +127,7 @@ export function prepareItemUse(
         prepared.captureAttempt.userId !== userId ||
         prepared.captureAttempt.clientId !== clientId ||
         prepared.captureAttempt.ballId !== itemId ||
+        prepared.captureAttempt.captureRevision !== captureRevision ||
         prepared.captureAttempt.captureId !== captureId)
     )
       throw new Error("No se pudo guardar el lanzamiento seleccionado.");
@@ -142,6 +150,7 @@ export function prepareItemUse(
           captureId,
           itemId,
           ...(moveId === undefined ? {} : { moveId }),
+          ...(captureRevision === undefined ? {} : { captureRevision }),
           context,
           planHash,
           expectedWalletRevision,
@@ -181,6 +190,7 @@ export function applyItemUse(
       (lock.itemId ?? "full-restore") !== receipt.itemId ||
       lock.moveId !== receipt.moveId ||
       lock.context !== receipt.context ||
+      lock.captureRevision !== receipt.captureRevision ||
       lock.planHash !== receipt.planHash ||
       lock.expectedWalletRevision !== receipt.expectedWalletRevision
     )

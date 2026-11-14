@@ -60,6 +60,9 @@ export function validShopCatalog(value: unknown): value is ShopCatalog {
   return (
     record(value) &&
     integer(value.revision) &&
+    (value.captureDifficulty === undefined ||
+      (integer(value.captureDifficulty) &&
+        Number(value.captureDifficulty) <= 20)) &&
     record(value.prices) &&
     Object.keys(value.prices).length === SHOP_ITEM_IDS.length &&
     SHOP_ITEM_IDS.every(

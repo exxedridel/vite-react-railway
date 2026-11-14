@@ -255,6 +255,15 @@ export function decodeAccountParty(
         !Number.isSafeInteger(attempt.minimum) ||
         Number(attempt.minimum) < 1 ||
         Number(attempt.minimum) > 20 ||
+        !(
+          (attempt.captureRevision === undefined &&
+            attempt.captureDifficulty === undefined) ||
+          (Number.isSafeInteger(attempt.captureRevision) &&
+            Number(attempt.captureRevision) >= 0 &&
+            Number.isSafeInteger(attempt.captureDifficulty) &&
+            Number(attempt.captureDifficulty) >= 0 &&
+            Number(attempt.captureDifficulty) <= 20)
+        ) ||
         typeof attempt.pokemonName !== "string" ||
         !attempt.pokemonName ||
         attempt.pokemonName.length > 128 ||
@@ -352,6 +361,10 @@ export function decodeAccountParty(
         (lock.itemId === "tm" && lock.context !== "party") ||
         ((BALL_ITEM_IDS as readonly unknown[]).includes(lock.itemId) &&
           lock.context !== "local-battle") ||
+        (lock.captureRevision !== undefined &&
+          (!(BALL_ITEM_IDS as readonly unknown[]).includes(lock.itemId) ||
+            !Number.isSafeInteger(lock.captureRevision) ||
+            Number(lock.captureRevision) < 0)) ||
         typeof lock.planHash !== "string" ||
         !/^[a-f0-9]{64}$/.test(lock.planHash) ||
         typeof lock.expectedCombatHash !== "string" ||

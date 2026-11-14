@@ -14,6 +14,8 @@ import {
   type BallItemId,
   type CaptureAttempt,
   type CaptureAttemptResult,
+  type CaptureQuote,
+  type CaptureSettings,
 } from "./types";
 
 const identifier = (value: unknown): value is string =>
@@ -38,6 +40,13 @@ export function validCaptureAttempt(value: unknown): value is CaptureAttempt {
     Number.isSafeInteger(attempt.minimum) &&
     attempt.minimum >= 1 &&
     attempt.minimum <= 20 &&
+    ((attempt.captureRevision === undefined &&
+      attempt.captureDifficulty === undefined) ||
+      (Number.isSafeInteger(attempt.captureRevision) &&
+        Number(attempt.captureRevision) >= 0 &&
+        Number.isSafeInteger(attempt.captureDifficulty) &&
+        Number(attempt.captureDifficulty) >= 0 &&
+        Number(attempt.captureDifficulty) <= 20)) &&
     typeof attempt.pokemonName === "string" &&
     attempt.pokemonName.length > 0 &&
     attempt.pokemonName.length <= 128 &&
@@ -99,7 +108,8 @@ export async function prepareBallCaptureParty(
   identity: { userId: number; clientId: string; requestId: string },
   seed: [number, number, number, number],
   resultCaptureId: string,
-  quote?: { minimum: number; encounterId: string },
+  quote?: CaptureQuote,
+  settings?: CaptureSettings,
 ): Promise<PartyState> {
   if (
     !isBallItem(ballId) ||
@@ -138,14 +148,32 @@ export async function prepareBallCaptureParty(
   const minimum = captureRequirements(
     opponent.pokemon,
     opponent.statuses,
+    settings?.captureDifficulty ?? 0,
   )?.balls.find((ball) => ball.id === ballCode)?.minimum;
   if (minimum === undefined || minimum === null)
     throw new Error(
       "El Pokémon debe estar vivo y tener un mínimo de captura válido.",
     );
+  if (minimum > 20)
+    throw new Error(
+      "Esta captura es imposible con esa pokebola: el mínimo supera 20. Reduce HP, aplica un estado o elige otra bola.",
+    );
+  if (
+    settings &&
+    (!Number.isSafeInteger(settings.captureRevision) ||
+      settings.captureRevision < 0)
+  )
+    throw new Error(
+      "La revisión de dificultad no es válida. Actualiza la conexión.",
+    );
   if (
     quote &&
-    (quote.minimum !== minimum || quote.encounterId !== opponent.encounterId)
+    (quote.minimum !== minimum ||
+      quote.encounterId !== opponent.encounterId ||
+      (quote.captureDifficulty !== undefined &&
+        quote.captureDifficulty !== (settings?.captureDifficulty ?? 0)) ||
+      (quote.captureRevision !== undefined &&
+        quote.captureRevision !== settings?.captureRevision))
   )
     throw new Error(
       "El encuentro o el mínimo cambió. Revisa la captura y confirma de nuevo antes de gastar.",
@@ -161,6 +189,12 @@ export async function prepareBallCaptureParty(
     clientId: identity.clientId,
     ballId,
     minimum,
+    ...(settings
+      ? {
+          captureDifficulty: settings.captureDifficulty,
+          captureRevision: settings.captureRevision,
+        }
+      : {}),
     encounterId: opponent.encounterId,
     pokemonName: opponent.pokemon.name,
     captureId,

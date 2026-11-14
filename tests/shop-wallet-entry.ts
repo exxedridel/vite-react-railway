@@ -31,6 +31,7 @@ import {
   validWallet,
   applyBalanceAdjustment,
   validBalanceAdjustment,
+  validShopCatalog,
 } from "../src/lib/shop/wallet";
 import type {
   BalanceAdjustment,
@@ -38,7 +39,13 @@ import type {
   ItemUse,
   Wallet,
 } from "../src/lib/shop/types";
-import { applyItemUse, prepareItemUse } from "../src/lib/shop/itemUse";
+import {
+  applyItemUse,
+  prepareItemUse,
+  validItemUse,
+} from "../src/lib/shop/itemUse";
+import { SHOP_ITEM_IDS } from "../src/lib/shop/types";
+import { captureRequirements } from "../src/lib/captureRates";
 import {
   prepareBallCaptureParty,
   resolveCaptureAttempt,
@@ -1809,6 +1816,178 @@ export async function runAccountStorageTests() {
   );
   passed.push(
     "A favorable paid physical throw captures once with current HP, statuses and moves, consumes exactly its chosen ball, retains money, and survives outcome-storage failure plus reload/replay",
+  );
+  const difficultyUser = 614;
+  await activateAccountStore(difficultyUser);
+  await applyShopWallet(wallet(difficultyUser, 0, 888, { "poke-ball": 1 }));
+  await transactPvpParty(difficultyUser, async (current) => ({
+    party: {
+      ...clone(ballBefore),
+      bag: current.bag,
+      pvpRevision: (current.pvpRevision ?? 0) + 1,
+      itemUseLock: undefined,
+      captureAttempt: undefined,
+      lastCaptureResult: undefined,
+    },
+    value: undefined,
+  }));
+  const difficultyBefore = clone(store.getState().party);
+  const baseMinimum = captureRequirements(
+    difficultyBefore.opponent!.pokemon,
+    difficultyBefore.opponent!.statuses,
+  )!.balls[0].minimum!;
+  const difficultySettings = { captureDifficulty: 2, captureRevision: 6 };
+  const difficultyIdentity = {
+    userId: difficultyUser,
+    clientId: "difficulty-client",
+    requestId: "difficulty-use",
+  };
+  const difficultyQuote = {
+    minimum: baseMinimum + 2,
+    encounterId: "ball-wild-1",
+    ...difficultySettings,
+  };
+  for (const quote of [
+    { ...difficultyQuote, captureDifficulty: 1 },
+    { ...difficultyQuote, captureRevision: 5 },
+    { ...difficultyQuote, minimum: baseMinimum },
+  ])
+    await assert.rejects(
+      prepareBallCaptureParty(
+        difficultyBefore,
+        "ball-actor",
+        "poke-ball",
+        difficultyIdentity,
+        ballSeed,
+        "difficulty-caught",
+        quote,
+        difficultySettings,
+      ),
+      /mínimo cambió/,
+    );
+  await assert.rejects(
+    prepareBallCaptureParty(
+      difficultyBefore,
+      "ball-actor",
+      "poke-ball",
+      difficultyIdentity,
+      ballSeed,
+      "difficulty-caught",
+      undefined,
+      { captureDifficulty: 20, captureRevision: 6 },
+    ),
+    /imposible/,
+  );
+  await assert.rejects(
+    prepareBallCaptureParty(
+      difficultyBefore,
+      "ball-actor",
+      "poke-ball",
+      difficultyIdentity,
+      ballSeed,
+      "difficulty-caught",
+      undefined,
+      { captureDifficulty: -1, captureRevision: 6 },
+    ),
+    /entero entre 0 y 20/,
+  );
+  assert.deepEqual(
+    saved(difficultyUser),
+    difficultyBefore,
+    "stale or impossible quotes spend nothing and create no lock",
+  );
+  const prices = Object.fromEntries(SHOP_ITEM_IDS.map((item) => [item, 100]));
+  assert(validShopCatalog({ revision: 0, prices }));
+  assert(validShopCatalog({ revision: 1, prices, captureDifficulty: 20 }));
+  for (const modifier of [-1, 0.5, 21, null])
+    assert(
+      !validShopCatalog({ revision: 1, prices, captureDifficulty: modifier }),
+    );
+  passed.push(
+    "Global difficulty adds to the confirmed minimum, validates legacy/default catalogs and rejects stale revisions or impossible D20 captures without touching inventory or Party",
+  );
+  await prepareItemUse(
+    difficultyUser,
+    "difficulty-client",
+    "difficulty-use",
+    "ball-actor",
+    0,
+    (party, actor) =>
+      prepareBallCaptureParty(
+        party,
+        actor,
+        "poke-ball",
+        difficultyIdentity,
+        ballSeed,
+        "difficulty-caught",
+        difficultyQuote,
+        difficultySettings,
+      ),
+    "poke-ball",
+    undefined,
+    6,
+  );
+  const difficultyLock = store.getState().party.itemUseLock!;
+  assert.equal(difficultyLock.captureRevision, 6);
+  const difficultyReceipt: ItemUse = {
+    ...ballReceipt,
+    requestId: "difficulty-use",
+    userId: difficultyUser,
+    clientId: "difficulty-client",
+    planHash: difficultyLock.planHash,
+    captureRevision: 6,
+    status: "pending",
+  };
+  const difficultyWallet = wallet(difficultyUser, 1, 888, { "poke-ball": 0 });
+  assert(validItemUse(difficultyReceipt));
+  assert(!validItemUse({ ...difficultyReceipt, itemId: "full-restore" }));
+  assert(!validItemUse({ ...difficultyReceipt, captureRevision: -1 }));
+  await assert.rejects(
+    applyItemUse(
+      difficultyWallet,
+      { ...difficultyReceipt, captureRevision: 5 },
+      "difficulty-client",
+    ),
+    /no corresponde/,
+  );
+  await applyItemUse(difficultyWallet, difficultyReceipt, "difficulty-client");
+  await applyItemUse(
+    difficultyWallet,
+    { ...difficultyReceipt, status: "applied" },
+    "difficulty-client",
+  );
+  const frozenDifficultyAttempt = clone(saved(difficultyUser).captureAttempt);
+  assert.equal(frozenDifficultyAttempt.minimum, baseMinimum + 2);
+  assert.equal(frozenDifficultyAttempt.captureRevision, 6);
+  assert.equal(frozenDifficultyAttempt.captureDifficulty, 2);
+  assert.notEqual(
+    captureRequirements(
+      difficultyBefore.opponent!.pokemon,
+      difficultyBefore.opponent!.statuses,
+      10,
+    )!.balls[0].minimum,
+    frozenDifficultyAttempt.minimum,
+  );
+  await clearAccountStore();
+  await activateAccountStore(difficultyUser);
+  assert.deepEqual(
+    saved(difficultyUser).captureAttempt,
+    frozenDifficultyAttempt,
+    "new global settings never rewrite an already paid attempt across reload",
+  );
+  await resolveCaptureAttempt(difficultyUser, "difficulty-use", "caught");
+  await resolveCaptureAttempt(difficultyUser, "difficulty-use", "caught");
+  assert.equal(saved(difficultyUser).pokemons.length, 2);
+  assert.equal(saved(difficultyUser).bag.items["poke-ball"], 0);
+  assert.equal(saved(difficultyUser).bag.money, 888);
+  assert.equal(
+    paidAttempt.captureRevision,
+    undefined,
+    "2.8 attempts retain their original shape",
+  );
+  assert.equal(paidAttempt.captureDifficulty, undefined);
+  passed.push(
+    "New throws bind catalog revision in their durable lock and receipt; paid difficulty/minimum survive rule changes and reload, while legacy attempts and one-shot consumption remain intact",
   );
   await clearAccountStore();
   persistor.pause();

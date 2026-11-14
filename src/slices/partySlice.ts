@@ -176,6 +176,7 @@ export type PartyState = {
     planHash: string;
     expectedWalletRevision: number;
     expectedCombatHash: string;
+    captureRevision?: number;
     prepared: PartyState;
     appliedWalletRevision?: number;
   };

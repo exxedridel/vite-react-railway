@@ -151,6 +151,31 @@ test("mínimos Poké 13 / Great 11 / Ultra 9 y Master garantizada, sin Infinity 
     [1, 1, 1, null],
   );
 });
+
+test("Back office adds global difficulty after the existing minimum and rejects invalid modifiers", () => {
+  const p = pokemon(100);
+  p.id = 35;
+  p.name = "clefairy";
+  assert.equal(captureRequirements(p, ["paralyzed"])!.balls[0].minimum, 7);
+  assert.equal(captureRequirements(p, ["paralyzed"], 2)!.balls[0].minimum, 9);
+  assert.equal(captureRequirements(p, ["paralyzed"], 2)!.captureDifficulty, 2);
+  const easy = pokemon(1);
+  easy.id = 10;
+  easy.name = "caterpie";
+  assert.equal(captureRequirements(easy, ["asleep"])!.balls[0].minimum, 1);
+  assert.equal(captureRequirements(easy, ["asleep"], 2)!.balls[0].minimum, 3);
+  assert.equal(captureRequirements(easy, ["asleep"], 20)!.balls[0].minimum, 21);
+  assert.equal(
+    captureRequirements(p, [], 20)!.balls.find((ball) => ball.id === "master")!
+      .minimum,
+    null,
+  );
+  for (const modifier of [-1, 0.5, 21, NaN, Infinity])
+    assert.throws(
+      () => captureRequirements(p, [], modifier),
+      /entero entre 0 y 20/,
+    );
+});
 test("la previsualización cambia nivel y mantiene HP multiplier; generador conserva nivel y reglas de moves", async () => {
   let p = createLeveledPokemon(
     {

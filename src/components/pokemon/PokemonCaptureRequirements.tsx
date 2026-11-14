@@ -2,10 +2,16 @@ import type { BattleOpponent } from "@/lib/battleOpponent";
 import { captureRequirements } from "@/lib/captureRates";
 export default function PokemonCaptureRequirements({
   opponent,
+  difficulty = 0,
 }: {
   opponent: BattleOpponent;
+  difficulty?: number;
 }) {
-  const info = captureRequirements(opponent.pokemon, opponent.statuses);
+  const info = captureRequirements(
+    opponent.pokemon,
+    opponent.statuses,
+    difficulty,
+  );
   if (!info)
     return (
       <p className="text-sm text-destructive">
@@ -36,6 +42,9 @@ export default function PokemonCaptureRequirements({
         <p className="text-muted-foreground">
           {info.statusLabel}: −{info.statusBonus}
         </p>
+        <p className="text-muted-foreground">
+          Dificultad global: +{difficulty}
+        </p>
       </div>
       <table className="w-full text-sm">
         <caption className="mb-2 text-left font-semibold">
@@ -59,7 +68,11 @@ export default function PokemonCaptureRequirements({
                   </span>
                 </td>
                 <td className="py-2 text-right font-bold tabular-nums">
-                  {ball.minimum === null ? "Garantizada" : `${ball.minimum}+`}
+                  {ball.minimum === null
+                    ? "Garantizada"
+                    : ball.minimum > 20
+                      ? `${ball.minimum}+ · Imposible`
+                      : `${ball.minimum}+`}
                 </td>
               </tr>
             ))}
@@ -69,8 +82,8 @@ export default function PokemonCaptureRequirements({
         Frozen y Asleep descuentan 4. Paralyzed, Burned, Poisoned y Badly
         poisoned descuentan 2. Los estados secundarios no dan descuento y los
         bonos no se acumulan. Tira tu D20 físico y compara con la pokebola
-        usada. El mínimo es 1; un 1 natural no falla automáticamente en estas
-        reglas.
+        usada. El mínimo base es 1 y después se suma la dificultad global. Un 1
+        natural no falla automáticamente en estas reglas.
       </p>
     </div>
   );
