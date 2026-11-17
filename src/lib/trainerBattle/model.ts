@@ -14,6 +14,7 @@ import type { TrainerBattleSession, TrainerSide } from "./types";
 import { getMaxMovePp } from "@/lib/movePp";
 import { CONSUMABLE_ITEM_IDS } from "@/lib/shop/types";
 import type { LearnedMove } from "@/types/moves";
+import { validCombatRewardLedger } from "@/lib/battleRewards";
 
 export const TRAINER_BATTLE_STORAGE_KEY = "pokemon-admin-trainer-battle:v1";
 const sides: TrainerSide[] = ["a", "b"];
@@ -332,6 +333,7 @@ export function validTrainerBattleSession(
     !isRecord(value.teams)
   )
     return false;
+  if (value.rewards !== undefined && !validCombatRewardLedger(value.rewards)) return false;
   const ids: string[] = [];
   for (const side of sides) {
     const team = value.teams[side];

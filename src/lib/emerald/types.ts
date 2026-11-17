@@ -38,6 +38,8 @@ export type CombatState = Pick<
   "pokemons" | "opponent" | "battleField" | "emerald"
 >;
 export type EmeraldUpdate = CombatState & {
+  defeats?: import("@/lib/battleRewards").CombatDefeatReward[];
+  battleOutcome?: import("@/lib/battleRewards").LocalBattleOutcome;
   results: BattleResult[];
   events: string[];
   completed: boolean;

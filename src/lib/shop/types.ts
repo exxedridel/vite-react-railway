@@ -153,6 +153,7 @@ export type LocalItemOutbox = {
   operations: LocalItemDebit[];
 };
 export type Wallet = {
+  rewardEpoch?: number;
   consumptionAck?: ConsumptionAck;
   userId: number;
   balance: number;
@@ -220,6 +221,7 @@ export type GiftPrepare = {
   quantity: number;
 };
 export type ShopState = {
+  rewards?: import("./combatRewards").CombatReward[];
   centerPreview?: CenterPreview;
   centerHeal?: CenterHeal;
   centerHeals?: CenterHeal[];

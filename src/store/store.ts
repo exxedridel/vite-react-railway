@@ -363,6 +363,7 @@ export function importLegacyParty(userId: number): Promise<void> {
             party: {
               ...hydratePartyMovePp(legacy.party),
               localItemOutbox: current.localItemOutbox,
+              localRewardOutbox: current.localRewardOutbox,
               localItemConflicts: current.localItemConflicts,
               captureSettings:
                 current.captureSettings ?? legacy.party.captureSettings,

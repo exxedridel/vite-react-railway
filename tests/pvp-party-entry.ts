@@ -6,7 +6,13 @@ import partyReducer, {
   changePokemonHp,
   resetGame,
 } from "../src/slices/partySlice";
-import { getCurrentHp } from "../src/lib/pokemonStats";
+import {
+  changeLevel,
+  getCurrentHp,
+  getMaxHp,
+  isLeveled,
+  neutralBattleStages,
+} from "../src/lib/pokemonStats";
 import {
   accountStorage,
   accountStorageKey,
@@ -409,6 +415,100 @@ export async function runAccountStorageTests() {
   assert.deepEqual(afterSettlement.pokemons, store.getState().party.pokemons);
   passed.push(
     "a collecting battle keeps its held reservation while the local outbox settles, then submits the same party with its confirmed inventory barrier",
+  );
+  const rewardUser = 2008;
+  const beforeReward = fixture();
+  beforeReward.pokemons[0].moves![0].currentPp = 2;
+  testStorage.seed(
+    accountStorageKey(rewardUser),
+    encodeAccountParty(beforeReward),
+  );
+  await activateAccountStore(rewardUser);
+  const rewardSnapshot = await reservePvpParty({
+    battleId: "battle-level-reward",
+    userId: rewardUser,
+    clientId: "reward-client",
+  });
+  const rewardMember = clone(rewardSnapshot.pokemons[0]);
+  if (!isLeveled(rewardMember.pokemon))
+    throw new Error("The reward fixture must have level-based stats.");
+  const originalLevel = rewardMember.pokemon.level;
+  const oldMaxHp = getMaxHp(rewardMember.pokemon)!;
+  // A Full Restore during the match can leave more HP than at reservation.
+  // One point below the old maximum scales above that old maximum here, so
+  // accepting this result requires validating against the rewarded level.
+  rewardMember.pokemon.stats.find((stat) => stat.name === "hp")!.value =
+    oldMaxHp - 1;
+  const expectedRewardPokemon = changeLevel(
+    rewardMember.pokemon,
+    originalLevel + 2,
+  );
+  const finalHp = getCurrentHp(expectedRewardPokemon);
+  assert.ok(finalHp > oldMaxHp);
+  const rewardResult: PvpResult = {
+    battleId: rewardSnapshot.battleId,
+    resultId: "result-level-reward",
+    userId: rewardUser,
+    snapshotId: rewardSnapshot.snapshotId,
+    baseHash: rewardSnapshot.baseHash,
+    outcome: "win",
+    patches: [
+      {
+        captureId: rewardMember.captureId,
+        level: originalLevel + 2,
+        hp: finalHp,
+        statuses: ["asleep"],
+        statusTurns: { asleep: 3 },
+        movesPp: [{ moveId: 33, currentPp: 1 }],
+      },
+    ],
+  };
+  const lockedBeforeReward = clone(store.getState().party);
+  const diskBeforeReward = clone(saved(rewardUser));
+  for (const level of [originalLevel - 1, 101, null]) {
+    const invalid = clone(rewardResult);
+    // Deliberately malformed wire payload; null must not mean "level omitted".
+    (invalid.patches[0] as { level: unknown }).level = level;
+    await assert.rejects(applyPvpResult(invalid), /capturas|v[aá]lidos/);
+    assert.deepEqual(store.getState().party, lockedBeforeReward);
+    assert.deepEqual(saved(rewardUser), diskBeforeReward);
+  }
+  testStorage.failWritesFor.add(accountStorageKey(rewardUser));
+  await assert.rejects(applyPvpResult(rewardResult), /guardar/);
+  assert.deepEqual(saved(rewardUser), diskBeforeReward);
+  assert.equal(store.getState().party.pokemons[0].pokemon.level, originalLevel);
+  assert.equal(saved(rewardUser).pvpLock!.phase, "reserved");
+  assert.equal(saved(rewardUser).pvpReceipts?.length ?? 0, 0);
+  testStorage.failWritesFor.clear();
+  await applyPvpResult(rewardResult);
+  const rewardedParty = clone(store.getState().party);
+  assert.equal(rewardedParty.pvpLock!.phase, "saved");
+  assert.deepEqual(rewardedParty.pokemons[0].pokemon, {
+    ...expectedRewardPokemon,
+    battleStages: neutralBattleStages(),
+  });
+  assert.deepEqual(rewardedParty.pokemons[0].statuses, ["asleep"]);
+  assert.deepEqual(rewardedParty.pokemons[0].statusTurns, { asleep: 3 });
+  assert.equal(rewardedParty.pokemons[0].moves![0].currentPp, 1);
+  assert.equal(rewardedParty.pokemons[0].moves![0].pp, 35);
+  assert.deepEqual(rewardedParty.bag, beforeReward.bag);
+  assert.equal(saved(rewardUser).pvpReceipts!.length, 1);
+  await applyPvpResult(rewardResult);
+  assert.deepEqual(store.getState().party, rewardedParty);
+  await clearAccountStore();
+  await activateAccountStore(rewardUser);
+  await applyPvpResult(rewardResult);
+  assert.deepEqual(store.getState().party.pokemons, rewardedParty.pokemons);
+  await releasePvpParty(rewardSnapshot.battleId, rewardResult.resultId);
+  await applyPvpResult(rewardResult);
+  await clearAccountStore();
+  await activateAccountStore(rewardUser);
+  await applyPvpResult(rewardResult);
+  assert.equal(store.getState().party.pvpLock, null);
+  assert.deepEqual(store.getState().party.pokemons, rewardedParty.pokemons);
+  assert.equal(saved(rewardUser).pvpReceipts!.length, 1);
+  passed.push(
+    "level rewards validate new max HP and reject decrease/over-100/null; checked storage failures preserve the locked original, then retry/replay/release/reload award once with PP and primary status intact",
   );
   return passed;
 }

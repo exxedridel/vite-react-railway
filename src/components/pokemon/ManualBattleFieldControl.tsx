@@ -7,6 +7,7 @@ import { adjustBattleTurn, finishBattleTurn } from "@/slices/partySlice";
 import { getBattleField } from "@/lib/battleField";
 import { battleContextKey } from "@/lib/battleEngine";
 import { getCurrentHp } from "@/lib/pokemonStats";
+import { submitLegacyBattleAction } from "@/lib/legacyBattleAction";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -49,23 +50,31 @@ export default function ManualBattleFieldControl({
     )
       toast.error("El combate cambió. Revisa el turno e intenta nuevamente.");
   }
-  function finish() {
+  async function finish() {
     if (!opponent || !canFinish) return;
-    dispatch(
-      finishBattleTurn({
-        captureId,
-        expectedTurn: field.turn,
-        expectedContext: battleContextKey(capture!, opponent, field),
-      }),
-    );
-    if (
-      getBattleField(store.getState().party.battleField).turn !==
-      field.turn + 1
-    ) {
-      toast.error("El combate cambió. Revisa el turno e intenta nuevamente.");
-      return;
+    try {
+      await dispatch(
+        submitLegacyBattleAction(
+          finishBattleTurn({
+            captureId,
+            expectedTurn: field.turn,
+            expectedContext: battleContextKey(capture!, opponent, field),
+          }),
+        ),
+      );
+      if (
+        getBattleField(store.getState().party.battleField).turn !==
+        field.turn + 1
+      ) {
+        toast.error("El combate cambió. Revisa el turno e intenta nuevamente.");
+        return;
+      }
+      setOpen(false);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "No se pudo guardar el turno.",
+      );
     }
-    setOpen(false);
   }
   return (
     <Dialog open={open} onOpenChange={setOpen}>

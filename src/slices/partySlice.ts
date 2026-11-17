@@ -102,6 +102,13 @@ import {
 } from "@/lib/pokemonStats";
 import { PVP_PARTY_COMMIT } from "@/store/accountStorage";
 import { finishLegacyDelayedAttacks } from "@/lib/legacyDelayedAttacks";
+import {
+  activeRewardCapture,
+  finishLocalBattleRewards,
+  recordLocalDefeats,
+  recordLocalOpponentDefeat,
+} from "@/lib/battleRewards";
+import { queueLocalTrainerReward } from "@/lib/shop/combatRewards";
 import type { PvpPartyLock, PvpPartyReceipt } from "@/lib/pvpParty";
 import type {
   CaptureAttempt,
@@ -131,6 +138,8 @@ export type TmLearningInput = {
   replaceMoveId?: number;
 };
 export type PartyState = {
+  localBattleRewards?: import("@/lib/battleRewards").LocalBattleRewardLedger;
+  localRewardOutbox?: import("@/lib/shop/combatRewards").LocalTrainerRewardClaim[];
   pvpLock?: PvpPartyLock | null;
   pvpRevision?: number;
   pvpReceipts?: PvpPartyReceipt[];
@@ -217,6 +226,17 @@ const primaryStatuses = new Set<PokemonStatus>(
   STATUS_OPTIONS.filter((s) => s.group === "primary").map((s) => s.id),
 );
 
+function finishLocalRewardOutcome(state: PartyState, outcome: import("@/lib/battleRewards").LocalBattleOutcome): void {
+  finishLocalBattleRewards(state);
+  if (outcome === "win" && state.opponent?.kind !== "wild" && state.opponent)
+    queueLocalTrainerReward(state, state.opponent);
+}
+function awardLegacyDefeat(state: PartyState, oldOpponentHp: number, captureId: string, eventId: string): void {
+  if (!state.opponent || oldOpponentHp <= 0 || getCurrentHp(state.opponent.pokemon) > 0) return;
+  recordLocalOpponentDefeat(state, captureId, eventId);
+  finishLocalRewardOutcome(state, state.pokemons.some((capture) => getCurrentHp(capture.pokemon) > 0) ? "win" : "draw");
+}
+
 function restoreCapture(capture: CapturedPokemon): boolean {
   if (!isLeveled(capture.pokemon)) return false;
   const hp = capture.pokemon.stats.find((stat) => stat.name === "hp");
@@ -239,6 +259,7 @@ function advanceBattleTurn(
   const c = state.pokemons.find((p) => p.captureId === captureId),
     o = state.opponent;
   if (!c || !o) return;
+  const opponentHpBefore = getCurrentHp(o.pokemon);
   const field = state.battleField ?? (state.battleField = emptyBattleField());
   const details: string[] = [...initialDetails];
   const currentWeather = field.weather;
@@ -281,6 +302,9 @@ function advanceBattleTurn(
       state.lastMovesByPlayer[result.captureId] = result;
     } else state.lastOpponentMove = result;
   }
+  const delayedVictor = delayed.results.find((result) => result.actorSide === "player" &&
+    (result.targetHpBefore ?? 0) > 0 && result.targetHpAfter === 0)?.captureId;
+  awardLegacyDefeat(state, opponentHpBefore, delayedVictor ?? captureId, `${id}:ko`);
   if (getCurrentHp(c.pokemon) <= 0)
     clearFieldSource(field, { side: "player", captureId: c.captureId });
   if (getCurrentHp(o.pokemon) <= 0)
@@ -311,10 +335,16 @@ const partySlice = createSlice({
     ) {
       if (combatKey(state) !== action.payload.expected) return;
       const { update, id } = action.payload;
-      state.pokemons = update.pokemons;
+      // The defeat events and their final rewards are persisted with the turn,
+      // never from a render effect that could repeat after reload.
+      recordLocalDefeats(state, update.defeats ?? []);
+      // New payload objects are not drafted by Immer on assignment. Own the
+      // capture records before finalization replaces their level/stat objects.
+      state.pokemons = update.pokemons.map((capture) => ({ ...capture }));
       state.opponent = update.opponent;
       state.battleField = update.battleField;
       state.emerald = update.emerald;
+      if (update.battleOutcome) finishLocalRewardOutcome(state, update.battleOutcome);
       state.lastEmeraldBatch = {
         id,
         results: update.results,
@@ -469,7 +499,12 @@ const partySlice = createSlice({
       const max = getMaxHp(opponent.pokemon);
       const hp = opponent.pokemon.stats.find((s) => s.name === "hp");
       if (max === undefined || !hp) return;
+      const before = hp.value;
       hp.value = Math.max(0, Math.min(max, hp.value + action.payload.amount));
+      const winner = activeRewardCapture(state);
+      if (winner && !state.emerald)
+        awardLegacyDefeat(state, before, winner.captureId,
+          `manual:${opponent.encounterId ?? opponent.pokemon.id}:${state.localBattleRewards?.defeats.length ?? 0}`);
       if (hp.value === 0 && state.battleField)
         clearFieldSource(state.battleField, { side: "opponent" });
     },
@@ -693,6 +728,7 @@ const partySlice = createSlice({
           opponent,
           actorSide,
         );
+        const opponentHpBefore = getCurrentHp(opponent.pokemon);
         const result = resolveBattleMove(
           attacker,
           defender,
@@ -787,6 +823,7 @@ const partySlice = createSlice({
           ...(state.resolvedBattleIds ?? []),
           commandId,
         ];
+        awardLegacyDefeat(state, opponentHpBefore, captureId, `${commandId}:ko`);
       },
     },
     setBattleOpponent(state, action: PayloadAction<BattleOpponent | null>) {
@@ -804,6 +841,8 @@ const partySlice = createSlice({
       )
         return;
       if (!sameEncounter) {
+        finishLocalBattleRewards(state);
+        state.localBattleRewards = undefined;
         state.emerald = undefined;
         state.lastMovesByPlayer = {};
         state.lastOpponentMove = null;
@@ -820,12 +859,12 @@ const partySlice = createSlice({
         clearFieldSource(state.battleField, { side: "opponent" });
     },
     captureWildOpponent: {
-      prepare(encounterId: string) {
+      prepare(encounterId: string): { payload: { encounterId: string; captureId: string; rewardCaptureId?: string } } {
         return { payload: { encounterId, captureId: nanoid() } };
       },
       reducer(
         state,
-        action: PayloadAction<{ encounterId: string; captureId: string }>,
+        action: PayloadAction<{ encounterId: string; captureId: string; rewardCaptureId?: string }>,
       ) {
         const opponent = state.opponent;
         if (
@@ -855,6 +894,11 @@ const partySlice = createSlice({
           )
         )
           return;
+        const rewardCaptureId = action.payload.rewardCaptureId ?? activeRewardCapture(state)?.captureId;
+        if (rewardCaptureId) {
+          recordLocalOpponentDefeat(state, rewardCaptureId, `capture:${action.payload.captureId}`);
+          finishLocalBattleRewards(state);
+        }
         state.pokemons.push({
           captureId: action.payload.captureId,
           origin: "wild",

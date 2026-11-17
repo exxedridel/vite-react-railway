@@ -26,6 +26,12 @@ export type BattleOpponent = {
   moves?: LearnedMove[];
   /** Frozen when this encounter is created; missing legacy metadata is manual. */
   automation?: { enabled: boolean; catalogRevision: number };
+  /** Reward rules are frozen when the encounter is prepared. */
+  rewards?: {
+    version: 1;
+    color: import("@/lib/captureRates").CatchTierColor;
+    epoch: number;
+  };
 };
 export function isOpponentAutomatic(
   opponent: BattleOpponent | null | undefined,

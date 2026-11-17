@@ -10,6 +10,7 @@ import {
 import { GAME_DATA_VERSION, isGenerationThreeMove } from "@/lib/gameVersion";
 import {
   getCurrentHp,
+  changeLevel,
   getMaxHp,
   isLeveled,
   validBaseStats,
@@ -409,12 +410,18 @@ function validateResult(result: PvpResult, snapshot: PvpSnapshot): void {
   const seen = new Set<string>();
   for (const patch of result.patches) {
     const capture = captures.get(patch?.captureId);
+    const targetLevel = patch?.level === undefined ? capture?.pokemon.level : patch.level;
+    const rewardPokemon = capture && isLeveled(capture.pokemon) && Number.isSafeInteger(targetLevel) &&
+      Number(targetLevel) >= capture.pokemon.level && Number(targetLevel) <= 100
+      ? (targetLevel === capture.pokemon.level ? capture.pokemon : changeLevel(capture.pokemon, Number(targetLevel)))
+      : undefined;
     if (
       !capture ||
+      !rewardPokemon ||
       seen.has(patch.captureId) ||
       !Number.isSafeInteger(patch.hp) ||
       patch.hp < 0 ||
-      patch.hp > (getMaxHp(capture.pokemon) ?? -1) ||
+      patch.hp > (getMaxHp(rewardPokemon) ?? -1) ||
       !Array.isArray(patch.statuses) ||
       patch.statuses.some((status) => !allStatuses.has(status)) ||
       new Set(patch.statuses).size !== patch.statuses.length ||
@@ -517,6 +524,8 @@ export function applyPvpResult(result: PvpResult): Promise<void> {
     );
     const pokemons = party.pokemons.map((capture) => {
       const patch = patches.get(capture.captureId)!;
+      const pokemon = patch.level !== undefined && isLeveled(capture.pokemon) && patch.level !== capture.pokemon.level
+        ? changeLevel(capture.pokemon, patch.level) : capture.pokemon;
       return {
         ...capture,
         ...(patch.movesPp
@@ -530,8 +539,8 @@ export function applyPvpResult(result: PvpResult): Promise<void> {
             }
           : {}),
         pokemon: {
-          ...capture.pokemon,
-          stats: capture.pokemon.stats.map((stat) =>
+          ...pokemon,
+          stats: pokemon.stats.map((stat) =>
             stat.name === "hp" ? { ...stat, value: patch.hp } : stat,
           ),
           battleStages: neutralBattleStages(),

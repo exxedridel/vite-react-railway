@@ -18,7 +18,13 @@ import { store, transactPvpParty } from "@/store/store";
 import { commitLocalItemUse } from "@/lib/localItemUse";
 import { pendingLocalItemOperations } from "@/lib/shop/localItems";
 import {
+  matchingLocalReward,
+  validCombatReward,
+} from "@/lib/shop/combatRewards";
+import { toast } from "sonner";
+import {
   accountStorageKey,
+  pvpPartyRevision,
   isLocalPartyMutationBlocked,
   setResetSyncBlocked,
   setShopSyncBlocked,
@@ -126,6 +132,8 @@ type ShopContextValue = {
   localItemsReady: boolean;
   localItemPendingCount: number;
   localItemSyncError: string;
+  rewardPendingCount: number;
+  rewardSyncError: string;
   localItemConflicts: import("@/lib/shop/types").LocalConsumptionConflict[];
   dismissLocalItemConflicts: () => Promise<void>;
   sync: () => Promise<void>;
@@ -212,6 +220,9 @@ function validState(value: unknown): value is ShopState {
       (Array.isArray(state.adjustments) &&
         state.adjustments.every(validBalanceAdjustment))) &&
     (!state.wallet || validWallet(state.wallet)) &&
+    (!state.rewards ||
+      (Array.isArray(state.rewards) &&
+        state.rewards.every(validCombatReward))) &&
     (!state.purchases ||
       (Array.isArray(state.purchases) &&
         state.purchases.every(validPurchase))) &&
@@ -277,6 +288,7 @@ export default function ShopProvider({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [localItemSyncError, setLocalItemSyncError] = useState("");
+  const [rewardSyncError, setRewardSyncError] = useState("");
   const socketRef = useRef<Socket | null>(null);
   const ownerRef = useRef(user);
   ownerRef.current = user;
@@ -476,6 +488,7 @@ export default function ShopProvider({
     setError("");
     setBusy(false);
     setLocalItemSyncError("");
+    setRewardSyncError("");
     mutation.current = false;
     if (!user) {
       setShopSyncBlocked(false);
@@ -570,6 +583,7 @@ export default function ShopProvider({
         .then((response) => {
           consumptionPresenceReported = true;
           void flushConsumption().catch(() => {});
+          void flushRewards().catch(() => {});
           return receive(response);
         })
         .catch((reason) => {
@@ -586,6 +600,46 @@ export default function ShopProvider({
       proof?: { abortUnlockRequestId?: string },
     ) {
       if (!current()) return;
+      if (
+        actor.role === "player" &&
+        next.rewards?.length &&
+        store.getState().party.localRewardOutbox?.length
+      ) {
+        const confirmed = await transactPvpParty(actor.id, async (party) => {
+          const pending = party.localRewardOutbox ?? [];
+          const receipts = pending.flatMap((claim) => {
+            const receipt = next.rewards!.find((entry) =>
+              matchingLocalReward(claim, entry, actor.id),
+            );
+            return receipt ? [receipt] : [];
+          });
+          if (!receipts.length) return { party, value: receipts };
+          return {
+            party: {
+              ...party,
+              pvpRevision: pvpPartyRevision(party) + 1,
+              localRewardOutbox: pending.filter(
+                (claim) =>
+                  !receipts.some((entry) =>
+                    matchingLocalReward(claim, entry, actor.id),
+                  ),
+              ),
+            },
+            value: receipts,
+          };
+        });
+        if (!current()) return;
+        const amount = confirmed.reduce(
+          (total, entry) =>
+            total + (entry.status === "credited" ? entry.amount : 0),
+          0,
+        );
+        if (amount) toast.success(`Recompensa: +${amount} Pokedollars`);
+        if (confirmed.some((entry) => entry.status === "rejected"))
+          toast.info(
+            "Se descartó una recompensa de una partida anterior al reinicio.",
+          );
+      }
       if (next.centerHeals || next.centerHeal) {
         const previous = new Map(
           latestCenterHeals.map((entry) => [entry.requestId, entry]),
@@ -1092,6 +1146,55 @@ export default function ShopProvider({
       return operation;
     }
     flushConsumptionRef.current = flushConsumption;
+    let rewardFlush: Promise<void> | null = null;
+    let rewardTimer: number | undefined;
+    function flushRewards(): Promise<void> {
+      if (rewardFlush) return rewardFlush;
+      if (
+        !current() ||
+        actor.role !== "player" ||
+        !socket.connected ||
+        !applied
+      )
+        return Promise.resolve();
+      const operation = (async () => {
+        while (current() && socket.connected) {
+          const claims = store.getState().party.localRewardOutbox ?? [];
+          if (!claims.length) return;
+          const response = await emit("shop:reward-claim", {
+            rewards: claims.slice(0, 100),
+          });
+          await receive(response);
+          if (current()) setRewardSyncError("");
+          if (
+            store
+              .getState()
+              .party.localRewardOutbox?.some(
+                (entry) => entry.encounterId === claims[0].encounterId,
+              )
+          )
+            throw new Error("El servidor no confirmó la recompensa pendiente.");
+        }
+      })();
+      rewardFlush = operation;
+      void operation
+        .catch((reason) => {
+          if (current()) setRewardSyncError(message(reason));
+        })
+        .finally(() => {
+          if (rewardFlush === operation) rewardFlush = null;
+          if (
+            current() &&
+            socket.connected &&
+            store.getState().party.localRewardOutbox?.length
+          )
+            rewardTimer = window.setTimeout(() => {
+              rewardTimer = undefined;
+              void flushRewards().catch(() => {});
+            }, 2000);
+        });
+      return operation;
+    }
     let recoveringGift: Promise<void> | null = null;
     recoverGiftRef.current = () => {
       if (recoveringGift) return recoveringGift;
@@ -1709,6 +1812,8 @@ export default function ShopProvider({
     const unsubscribe = store.subscribe(() => {
       schedulePresence();
       if (!consumptionFlush) void flushConsumption().catch(() => {});
+      if (!rewardFlush && rewardTimer === undefined)
+        void flushRewards().catch(() => {});
     });
     const onStorage = (event: StorageEvent) => {
       if (
@@ -1737,6 +1842,7 @@ export default function ShopProvider({
       window.removeEventListener("storage", onStorage);
       if (presenceTimer !== undefined) window.clearTimeout(presenceTimer);
       if (consumptionTimer !== undefined) window.clearTimeout(consumptionTimer);
+      if (rewardTimer !== undefined) window.clearTimeout(rewardTimer);
       socket.removeAllListeners();
       socket.disconnect();
       if (socketRef.current === socket) {
@@ -2047,6 +2153,8 @@ export default function ShopProvider({
           partyState.bag?.walletUserId === user?.id,
         localItemPendingCount: pendingLocalItemOperations(partyState).length,
         localItemSyncError,
+        rewardPendingCount: partyState.localRewardOutbox?.length ?? 0,
+        rewardSyncError,
         localItemConflicts: partyState.localItemConflicts ?? [],
         dismissLocalItemConflicts: async () => {
           const id = ownerRef.current?.id;

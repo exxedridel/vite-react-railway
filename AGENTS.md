@@ -1,5 +1,17 @@
 # Contexto de la trilogia Pokemon
 
+Etapa actual2026-11-17 React2.13.0/Nest: recompensasautomáticasterminadaslocal.
+CadaKOautorreal/fallbackactivo/capturaactivo +1si rival<=/+2mayor; nivelesfinal
+alguardar/saliradmin cap100 HPproporcional/status/PPconservados. Dinero sóloPvE
+repetible nohuida/rendición/empate/JcJ. Colorelegidocongeladotambiéncustom:
+pink200green300blue400yellow500red600gold0(sólocaptura). Presets tablaenmemoria.
+LedgerKOobservacional, localRewardOutbox BG/recibosexactos; Wallet.rewardEpoch
+resetfence cachemonotónica; no modificarlegacyhash. Legacymove/finish/opponentHP
+checkedantesreveal; mantenerguardiawallettransitoria.168combat6dinero42wallet/
+11Party7cuentas/TS/build/audit174, ChromeRewardsaislado+ShopCOMPLETOPASSsinJSerrors.
+Ver memoria/BATTLE_REWARDS_PROTOCOL. Nest→React/recargar2.13.0 sinvars/MySQL/
+seed/reset/borrados/despliegue; producciónnoverificada.
+
 Acuerdo del usuario confirmado el 2026-11-08:
 
 - `mysql-restapi` gestiona autenticacion e identidad mediante JWT.

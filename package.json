@@ -1,8 +1,10 @@
 {
   "name": "pokemon-master-trainer",
-  "version": "2.12.0",
+  "version": "2.13.0",
   "type": "module",
   "scripts": {
+    "test:rewards": "node --import tsx --test tests/combat-rewards.test.ts tests/combat-reward-money.test.ts && node tools/test-account-storage.mjs --shop && node tools/test-account-storage.mjs --pvp",
+    "test:rewards:browser": "node tools/test-pvp-browser.mjs --rewards-only",
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit --incremental false",

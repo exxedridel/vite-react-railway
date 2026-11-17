@@ -58,6 +58,7 @@ export type TrainerBag = {
   currencyVersion?: 1;
   walletRevision?: number;
   walletUserId?: number;
+  rewardEpoch?: number;
 };
 export type MoneyDirection = "add" | "subtract";
 export const emptyTrainerBag = (): TrainerBag => ({

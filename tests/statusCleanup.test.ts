@@ -89,13 +89,16 @@ function fixture(): PartyState {
   state.opponent!.pokemon.stats.find((stat) => stat.name === "hp")!.value -= 3;
   return state;
 }
-function assertPartyRecovered(before: PartyState, after: PartyState) {
+function assertPartyRecovered(before: PartyState, after: PartyState, rewardedCaptureId?: string) {
   for (const old of before.pokemons) {
     const member = after.pokemons.find(
       (pokemon) => pokemon.captureId === old.captureId,
     )!;
+    const expected = old.captureId === rewardedCaptureId
+      ? changeLevel(old.pokemon as ReturnType<typeof createLeveledPokemon>, old.pokemon.level! + 1)
+      : old.pokemon;
     assert.deepEqual(member.pokemon, {
-      ...old.pokemon,
+      ...expected,
       battleStages: neutralBattleStages(),
     });
     assert.deepEqual(member.moves, old.moves);
@@ -119,7 +122,7 @@ test("capturar neutraliza el equipo completo y la captura sin curar HP ni estado
   const next = reducer(before, captureWildOpponent("enc"));
   assert.equal(next.pokemons.length, 3);
   assert.equal(next.opponent, null);
-  assertPartyRecovered(before, next);
+  assertPartyRecovered(before, next, "a");
   const captured = next.pokemons[2];
   assert.deepEqual(captured.pokemon, {
     ...before.opponent!.pokemon,

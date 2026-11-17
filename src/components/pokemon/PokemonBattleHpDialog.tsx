@@ -1,4 +1,6 @@
 import { store } from "@/store/store";
+import { submitLegacyBattleAction } from "@/lib/legacyBattleAction";
+import { toast } from "sonner";
 import { normalizeStages, clampStage } from "@/lib/battleModifiers";
 import PokemonBattleStatsControls from "./PokemonBattleStatsControls";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
@@ -57,15 +59,23 @@ export default function PokemonBattleHpDialog({
                 if (side === "player")
                   dispatch(changePokemonHp({ captureId, amount }));
                 else if (opponent)
-                  dispatch(
-                    changeOpponentHp({
-                      amount,
-                      expectedOpponent: JSON.stringify([
-                        opponent.encounterId,
-                        opponent.pokemon.id,
-                        opponent.kind,
-                      ]),
-                    }),
+                  void dispatch(
+                    submitLegacyBattleAction(
+                      changeOpponentHp({
+                        amount,
+                        expectedOpponent: JSON.stringify([
+                          opponent.encounterId,
+                          opponent.pokemon.id,
+                          opponent.kind,
+                        ]),
+                      }),
+                    ),
+                  ).catch((error: unknown) =>
+                    toast.error(
+                      error instanceof Error
+                        ? error.message
+                        : "No se pudo guardar el HP.",
+                    ),
                   );
               }}
             />

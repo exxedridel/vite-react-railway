@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import reducer, {
   applyFullRestoreToParty,
   changeBagMoney,
+  changeOpponentHp,
   addPokemon,
   configureGame,
   learnPokemonMoveWithTm,
@@ -67,9 +68,13 @@ import { trainerMoves } from "../src/lib/trainerBattle/catalog";
 import {
   getCurrentHp,
   getMaxHp,
+  changeLevel,
+  isLeveled,
   neutralBattleStages,
 } from "../src/lib/pokemonStats";
 import { combatKey } from "../src/lib/emerald/types";
+import { queueLocalTrainerReward } from "../src/lib/shop/combatRewards";
+import { submitLegacyBattleAction } from "../src/lib/legacyBattleAction";
 declare const testStorage: {
   getItem(key: string): string | null;
   failWritesFor: Set<string>;
@@ -2777,6 +2782,224 @@ export async function runAccountStorageTests() {
   );
   passed.push(
     "A confirmed game reset preserves the empty consumption stream counter and watermark so new uses cannot reuse already accepted sequence numbers",
+  );
+  await clearAccountStore();
+  const rewardUser = 641;
+  await activateAccountStore(rewardUser);
+  const rewardWallet = (revision = 0, balance = 500, epoch = 7): Wallet => ({
+    ...wallet(rewardUser, revision, balance),
+    rewardEpoch: epoch,
+  });
+  assert.equal(validWallet(rewardWallet()), true);
+  assert.equal(validWallet({ ...rewardWallet(), rewardEpoch: -1 }), false);
+  assert.equal(validWallet({ ...rewardWallet(), rewardEpoch: 1.5 }), false);
+  await applyShopWallet(rewardWallet());
+  assert.equal(saved(rewardUser).bag.rewardEpoch, 7);
+  const queueReward = () =>
+    transactPvpParty(rewardUser, async (current) => {
+      const next = clone(current);
+      next.bag!.badges = ["cascade"];
+      queueLocalTrainerReward(next, {
+        kind: "trainer",
+        encounterId: "vm-reward-encounter",
+        rewards: { version: 1, color: "pink", epoch: 7 },
+      } as Parameters<typeof queueLocalTrainerReward>[1]);
+      return { party: next, value: undefined };
+    });
+  const beforeRewardWrite = clone(saved(rewardUser));
+  testStorage.failWritesFor.add(accountStorageKey(rewardUser));
+  await assert.rejects(queueReward(), /guardar/);
+  testStorage.failWritesFor.clear();
+  assert.deepEqual(saved(rewardUser), beforeRewardWrite);
+  assert.deepEqual(
+    store.getState().party,
+    beforeRewardWrite,
+    "a failed checked write exposes neither the completed-game edit nor its reward intent",
+  );
+  await queueReward();
+  const queuedReward = clone(saved(rewardUser));
+  assert.deepEqual(queuedReward.localRewardOutbox, [
+    {
+      encounterId: "vm-reward-encounter",
+      epoch: 7,
+      color: "pink",
+    },
+  ]);
+  assert.equal(isLocalPartyMutationBlocked(store.getState().party), false);
+  const staleRewardParty = clone(queuedReward);
+  delete staleRewardParty.localRewardOutbox;
+  staleRewardParty.bag.money = 9999;
+  await accountStorage.setItem(
+    "persist:root",
+    encodeAccountParty(staleRewardParty),
+  );
+  assert.deepEqual(
+    saved(rewardUser),
+    queuedReward,
+    "an equal-revision persistence callback cannot erase a pending combat reward",
+  );
+  await clearAccountStore();
+  await activateAccountStore(rewardUser);
+  assert.deepEqual(
+    store.getState().party.localRewardOutbox,
+    queuedReward.localRewardOutbox,
+  );
+  await applyShopWallet(rewardWallet(1, 700));
+  assert.equal(saved(rewardUser).bag.money, 700);
+  assert.deepEqual(
+    saved(rewardUser).localRewardOutbox,
+    queuedReward.localRewardOutbox,
+    "a credited wallet alone is not proof to remove a specific queued reward",
+  );
+  const legacyRewardWallet = rewardWallet(1, 700);
+  delete legacyRewardWallet.rewardEpoch;
+  await applyShopWallet(legacyRewardWallet);
+  assert.equal(
+    saved(rewardUser).bag.rewardEpoch,
+    7,
+    "an older response without reward metadata cannot regress the saved game epoch",
+  );
+  await applyShopWallet(rewardWallet(1, 700, 6));
+  assert.equal(saved(rewardUser).bag.rewardEpoch, 7);
+  assert.deepEqual(
+    saved(rewardUser).localRewardOutbox,
+    queuedReward.localRewardOutbox,
+  );
+  passed.push(
+    "Combat reward intents share checked persistence with the local result, remain playable, survive reload and equal-revision stale writes, and require an exact receipt rather than a wallet snapshot to disappear",
+  );
+  await prepareGameReset(rewardUser, "vm-reward-client", "vm-reward-reset", 1);
+  const rewardReset: GameReset = {
+    requestId: "vm-reward-reset",
+    userId: rewardUser,
+    clientId: "vm-reward-client",
+    walletRevision: 2,
+    status: "pending",
+  };
+  const rewardResetWallet = rewardWallet(2, 500, 8);
+  await applyGameReset(rewardResetWallet, rewardReset, "vm-reward-client");
+  await applyGameReset(
+    rewardResetWallet,
+    { ...rewardReset, status: "applied" },
+    "vm-reward-client",
+  );
+  assert.equal(saved(rewardUser).bag.rewardEpoch, 8);
+  assert.equal(saved(rewardUser).bag.money, 500);
+  assert.equal(
+    saved(rewardUser).localRewardOutbox?.length ?? 0,
+    0,
+    "an explicit confirmed new game discards unsent rewards from the old game",
+  );
+  await applyShopWallet(rewardWallet(1, 700, 7));
+  assert.equal(saved(rewardUser).bag.rewardEpoch, 8);
+  assert.equal(saved(rewardUser).bag.money, 500);
+  await clearAccountStore();
+  await activateAccountStore(rewardUser);
+  assert.equal(saved(rewardUser).bag.rewardEpoch, 8);
+  assert.equal(saved(rewardUser).localRewardOutbox?.length ?? 0, 0);
+  passed.push(
+    "A confirmed reset advances the combat-reward epoch, drops old unsent claims and prevents delayed older wallets from restoring the old balance or reward queue after reload",
+  );
+  await clearAccountStore();
+  const legacyRewardUser = 642;
+  await activateAccountStore(legacyRewardUser);
+  await applyShopWallet({ ...wallet(legacyRewardUser), rewardEpoch: 0 });
+  await transactPvpParty(legacyRewardUser, async (current) => {
+    const actor = clone(legacyTeam[0]);
+    if (!isLeveled(actor.pokemon))
+      throw new Error("Legacy reward fixture needs a leveled Pokémon");
+    const leveledActor = changeLevel(actor.pokemon, 20);
+    actor.pokemon = leveledActor;
+    actor.pokemon.stats.find((stat) => stat.name === "hp")!.value = 15;
+    const foe = changeLevel(clone(leveledActor), 21);
+    foe.stats.find((stat) => stat.name === "hp")!.value = 1;
+    return {
+      party: {
+        ...current,
+        pokemons: [actor],
+        gameSettings: clone(legacySettings),
+        starterClaimed: true,
+        emerald: undefined,
+        opponent: {
+          encounterId: "vm-manual-reward",
+          kind: "trainer",
+          pokemon: foe,
+          stages: neutralBattleStages(),
+          statuses: [],
+          statusTurns: {},
+          rewards: { version: 1, color: "blue", epoch: 0 },
+        },
+        battleField: {
+          version: 1,
+          turn: 1,
+          activeCaptureId: actor.captureId,
+          weather: null,
+          waterSport: null,
+          mudSport: null,
+        },
+      },
+      value: undefined,
+    };
+  });
+  const manualBefore = clone(saved(legacyRewardUser));
+  const manualKo = changeOpponentHp({
+    amount: -1,
+    expectedOpponent: JSON.stringify([
+      manualBefore.opponent.encounterId,
+      manualBefore.opponent.pokemon.id,
+      manualBefore.opponent.kind,
+    ]),
+  });
+  let visibleManualReward = 0;
+  const unsubscribeManualReward = store.subscribe(() => {
+    if (store.getState().party.localRewardOutbox?.length) visibleManualReward++;
+  });
+  testStorage.failWritesFor.add(accountStorageKey(legacyRewardUser));
+  await assert.rejects(
+    store.dispatch(submitLegacyBattleAction(manualKo)),
+    /guardar/,
+  );
+  testStorage.failWritesFor.clear();
+  assert.deepEqual(saved(legacyRewardUser), manualBefore);
+  assert.deepEqual(store.getState().party, manualBefore);
+  assert.equal(
+    visibleManualReward,
+    0,
+    "a background reward subscriber cannot see an unpersisted manual KO",
+  );
+  await store.dispatch(submitLegacyBattleAction(manualKo));
+  unsubscribeManualReward();
+  const manualAfter = clone(saved(legacyRewardUser));
+  assert.equal(
+    manualAfter.opponent.pokemon.stats.find(
+      (stat: { name: string }) => stat.name === "hp",
+    ).value,
+    0,
+  );
+  assert.equal(manualAfter.pokemons[0].pokemon.level, 22);
+  assert.deepEqual(manualAfter.localRewardOutbox, [
+    {
+      encounterId: "vm-manual-reward",
+      epoch: 0,
+      color: "blue",
+    },
+  ]);
+  assert.deepEqual(
+    manualAfter.pokemons[0].moves,
+    manualBefore.pokemons[0].moves,
+  );
+  assert.equal(manualAfter.bag.money, 500);
+  assert(visibleManualReward > 0);
+  await clearAccountStore();
+  await activateAccountStore(legacyRewardUser);
+  await store.dispatch(submitLegacyBattleAction(manualKo));
+  assert.deepEqual(saved(legacyRewardUser).pokemons, manualAfter.pokemons);
+  assert.deepEqual(
+    saved(legacyRewardUser).localRewardOutbox,
+    manualAfter.localRewardOutbox,
+  );
+  passed.push(
+    "Legacy manual KOs use checked persistence before subscribers can claim money: quota failure reveals no KO, level or claim; retry saves all three once, preserving PP through reload and action replay",
   );
   await clearAccountStore();
   persistor.pause();

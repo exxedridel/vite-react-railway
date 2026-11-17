@@ -4,6 +4,7 @@
  */
 import { turnHighlights } from "./highlights";
 import { installRollAudit } from "./audit";
+import { installDefeatAudit } from "./defeatAudit";
 import {
   Battle,
   Dex,
@@ -391,16 +392,25 @@ function syncStatus(
     const status = c.statuses?.map((s) => primary[s]).find(Boolean) ?? "";
     if (p.status !== status) {
       p.clearStatus();
-      if (status) p.setStatus(status, foe, undefined, true);
+      if (status) {
+        p.setStatus(status, foe, undefined, true);
+        // Imported board conditions have no recorded attacker. The simulator
+        // needs a source for its mechanics, but that synthetic source must not
+        // become an invented reward author after a subsequent switch.
+        p.statusState.boardRewardSourceUnknown = true;
+      }
     }
     for (const [id, effect] of Object.entries(volatile)) {
       if (c.statuses?.includes(id as PokemonStatus)) {
-        if (!p.volatiles[effect])
+        if (!p.volatiles[effect]) {
           p.addVolatile(
             effect,
             foe,
             dex.getActiveMove(effect === "partiallytrapped" ? "bind" : effect),
           );
+          const imported = p.volatiles[effect] as SimPokemon["statusState"] | undefined;
+          if (imported) imported.boardRewardSourceUnknown = true;
+        }
       } else if (p.volatiles[effect]) p.removeVolatile(effect);
     }
   }
@@ -1107,6 +1117,18 @@ export function runEmeraldAction(
     }
   }
   let escaped = false;
+  const defeatAudit = installDefeatAudit(b, `${id}:${existing?.serial ?? 0}`, (pokemon) => {
+    const player = pokemon.side.id === "p1";
+    const capture = player
+      ? state.pokemons.find((entry) => entry.captureId === pokemon.set.name)
+      : state.opponent;
+    if (!capture) return undefined;
+    return {
+      side: player ? "a" : "b",
+      captureId: player ? pokemon.set.name : "opponent",
+      level: capture.pokemon.level ?? 5,
+    };
+  });
   if (b.allChoicesDone()) {
     // Showdown models trainer battles. Adapt the three escape moves for a wild
     // single encounter; all accuracy, action-blocking and PP still run natively.
@@ -1186,12 +1208,14 @@ export function runEmeraldAction(
       b.commitChoices();
     } finally {
       uninstallAudit();
+      defeatAudit.uninstall();
       Reflect.deleteProperty(b, "runAction");
       Reflect.deleteProperty(b.dex, "getActiveMove");
     }
     delete pending.player;
     delete pending.opponent;
   }
+  defeatAudit.uninstall();
   const raw = publicLines(b.log.slice(start));
   exportState(b, state, oldTurn, turn);
   const results = resultsFrom(raw, before, b, id);
@@ -1248,6 +1272,10 @@ export function runEmeraldAction(
   );
   return {
     ...state,
+    ...(defeatAudit.defeats.length ? { defeats: defeatAudit.defeats } : {}),
+    ...(b.ended ? {
+      battleOutcome: escaped ? "escape" as const : b.winner === b.p1.name ? "win" as const : b.winner === b.p2.name ? "lose" as const : "draw" as const,
+    } : {}),
     results,
     events,
     highlights,

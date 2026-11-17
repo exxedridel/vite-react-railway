@@ -1,6 +1,11 @@
 import type { PartyState } from "@/slices/partySlice";
 import { stablePvpJson } from "@/lib/pvp/types";
 import { getMaxMovePp } from "@/lib/movePp";
+import { validLocalBattleRewards } from "@/lib/battleRewards";
+import {
+  validLocalRewardOutbox,
+  validLocalRewardClaim,
+} from "@/lib/shop/combatRewards";
 import {
   validConsumptionAck,
   validLocalItemOutbox,
@@ -173,6 +178,36 @@ export function decodeAccountParty(
     )
       throw new Error();
     if (isRecord(party.opponent)) validateStoredMovePp(party.opponent.moves);
+    if (isRecord(party.opponent) && party.opponent.rewards !== undefined) {
+      const reward = party.opponent.rewards;
+      if (
+        !isRecord(reward) ||
+        reward.version !== 1 ||
+        !validLocalRewardClaim({
+          encounterId: party.opponent.encounterId,
+          epoch: reward.epoch,
+          color: reward.color,
+        })
+      )
+        throw new Error();
+    }
+    if (
+      party.localRewardOutbox !== undefined &&
+      !validLocalRewardOutbox(party.localRewardOutbox)
+    )
+      throw new Error();
+    if (
+      party.localBattleRewards !== undefined &&
+      !validLocalBattleRewards(party.localBattleRewards)
+    )
+      throw new Error();
+    if (
+      isRecord(party.bag) &&
+      party.bag.rewardEpoch !== undefined &&
+      (!Number.isSafeInteger(party.bag.rewardEpoch) ||
+        Number(party.bag.rewardEpoch) < 0)
+    )
+      throw new Error();
     if (
       party.localItemOutbox !== undefined &&
       !validLocalItemOutbox(party.localItemOutbox)
@@ -499,6 +534,13 @@ function writeNormalAccountRoot(userId: number, raw: string): void {
       pvpPartyRevision(previous) === pvpPartyRevision(incoming) &&
       stablePvpJson(previous.localItemOutbox) !==
         stablePvpJson(incoming.localItemOutbox)
+    )
+      return;
+    if (
+      previous.localRewardOutbox?.length &&
+      pvpPartyRevision(previous) === pvpPartyRevision(incoming) &&
+      stablePvpJson(previous.localRewardOutbox) !==
+        stablePvpJson(incoming.localRewardOutbox)
     )
       return;
   }

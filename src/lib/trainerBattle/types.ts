@@ -36,6 +36,7 @@ export type TrainerTurnSummary = {
   highlights: string[];
 };
 export type TrainerBattleSession = {
+  rewards?: import("@/lib/battleRewards").CombatRewardLedger;
   version: 1;
   id: string;
   networkBattleId?: string;

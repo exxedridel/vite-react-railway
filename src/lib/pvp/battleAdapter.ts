@@ -8,7 +8,8 @@ import {
   chooseTrainerAction,
 } from "@/lib/trainerBattle/engine";
 import { clearBattleConditions } from "@/lib/pokemonCondition";
-import { getCurrentHp } from "@/lib/pokemonStats";
+import { changeLevel, getCurrentHp, isLeveled } from "@/lib/pokemonStats";
+import { levelRewardTotal, rewardedLevel } from "@/lib/battleRewards";
 import { getCurrentMovePp } from "@/lib/movePp";
 import type {
   TrainerBattleSession,
@@ -170,9 +171,14 @@ export function pvpTeamPatches(
       "El combate debe terminar antes de actualizar los equipos.",
     );
   return clone(session.teams[side].pokemons).map((capture) => {
+    const levels = levelRewardTotal(session.rewards, side, capture.captureId);
+    const rewarded = levels > 0 && isLeveled(capture.pokemon) && capture.pokemon.level < 100;
+    if (levels > 0 && isLeveled(capture.pokemon) && capture.pokemon.level < 100)
+      capture.pokemon = changeLevel(capture.pokemon, rewardedLevel(capture.pokemon.level!, levels));
     clearBattleConditions(capture);
     return {
       captureId: capture.captureId,
+      ...(rewarded ? { level: capture.pokemon.level } : {}),
       hp: getCurrentHp(capture.pokemon),
       statuses: [...(capture.statuses ?? [])],
       statusTurns: { ...(capture.statusTurns ?? {}) },

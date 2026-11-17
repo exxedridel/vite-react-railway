@@ -6,6 +6,7 @@ import { STATUS_OPTIONS } from "@/types/pokemon";
 import { getCurrentHp } from "@/lib/pokemonStats";
 import { clearBattleConditions } from "@/lib/pokemonCondition";
 import { installRollAudit } from "@/lib/emerald/audit";
+import { installDefeatAudit } from "@/lib/emerald/defeatAudit";
 import { turnHighlights } from "@/lib/emerald/highlights";
 import {
   createEmeraldPokemonSet,
@@ -624,11 +625,22 @@ export function chooseTrainerAction(
       return result;
     };
     const uninstall = installRollAudit(battle);
+    const roster = entries(session);
+    const defeatAudit = installDefeatAudit(battle, `${session.id}:${runtime.serial + 1}`, (pokemon) => {
+      const entry = roster.find((candidate) => candidate.key === pokemon.set.name &&
+        candidate.side === (pokemon.side.id === "p1" ? "a" : "b"));
+      return entry ? { side: entry.side, captureId: entry.capture.captureId, level: entry.capture.pokemon.level ?? 5 } : undefined;
+    });
     try {
       battle.commitChoices();
     } finally {
       uninstall();
+      defeatAudit.uninstall();
       Reflect.deleteProperty(battle, "runAction");
+    }
+    if (defeatAudit.defeats.length) {
+      session.rewards ??= { version: 1, defeats: [] };
+      session.rewards.defeats.push(...defeatAudit.defeats);
     }
     delete pending.a;
     delete pending.b;

@@ -15,6 +15,7 @@ import { runBallCaptureBrowserScenario } from "./ball-capture-browser-scenarios.
 import { runOpponentAutoBrowserScenario } from "./opponent-auto-browser-scenarios.mjs";
 import { runItemGiftBrowserScenario } from "./item-gift-browser-scenarios.mjs";
 import { runLocalItemsBrowserScenario } from "./local-items-browser-scenarios.mjs";
+import { runBattleRewardsBrowserScenario } from "./battle-rewards-browser-scenarios.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const nestRoot = resolve(root, "../nest-mongo-pokedex");
@@ -853,7 +854,15 @@ try {
   const admin = await openAccount(ADMIN_EMAIL, frontendUrl);
   const playerA = await openAccount(PLAYER_EMAIL, frontendUrl);
   const playerB = await openAccount(OTHER_EMAIL, frontendUrl);
-  if (process.argv.includes("--local-items-only")) {
+  if (process.argv.includes("--rewards-only")) {
+    await runBattleRewardsBrowserScenario({
+      admin, playerA, playerB, cdp, evalArgs, waitArgs, field, clickButton,
+      seedPvpTeam, partyState, frontendUrl, backendUrl, shopRepository,
+      shopService: app.get(ShopService), shopGateway: app.get(ShopGateway),
+      pvpRepository, pvpService: app.get(PvpService),
+      pvpGateway: app.get(PvpGateway),
+    });
+  } else if (process.argv.includes("--local-items-only")) {
     await runLocalItemsBrowserScenario({
       admin, playerA, cdp, evalArgs, waitArgs, field, clickButton,
       seedPvpTeam, shopRepository, shopService: app.get(ShopService),

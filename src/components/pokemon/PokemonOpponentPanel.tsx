@@ -14,6 +14,7 @@ import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { store } from "@/store/store";
 import { useShopContext } from "@/context/ShopContext";
 import { BALL_ITEM_IDS } from "@/lib/shop/types";
+import { TRAINER_REWARD_AMOUNTS } from "@/lib/shop/combatRewards";
 import { isLocalPartyMutationBlocked } from "@/store/accountStorage";
 import { canChooseStarter } from "@/lib/starterPokemon";
 import { generateWildEncounter } from "@/lib/wildEncounter";
@@ -353,6 +354,11 @@ export default function PokemonOpponentPanel({
       await onCreate({
         ...encounter,
         kind: rivalKind,
+        rewards: {
+          version: 1,
+          color: tierColor,
+          epoch: store.getState().party.bag?.rewardEpoch ?? 0,
+        },
         automation: {
           enabled: rules?.automaticOpponents ?? false,
           catalogRevision: rules?.revision ?? 0,
@@ -609,9 +615,14 @@ export default function PokemonOpponentPanel({
               value={rivalKind}
               disabled={searching || building}
               className="min-h-10 w-full rounded-md border bg-background px-3 text-foreground"
-              onChange={(event) =>
-                setRivalKind(event.target.value as "wild" | "trainer")
-              }
+              onChange={(event) => {
+                const kind = event.target.value as "wild" | "trainer";
+                setRivalKind(kind);
+                if (kind === "trainer" && tierColor === "gold") {
+                  setTierColor("pink");
+                  setCandidate(null);
+                }
+              }}
             >
               <option value="wild">Salvaje</option>
               <option value="trainer">Entrenador (un Pokémon)</option>
@@ -659,14 +670,17 @@ export default function PokemonOpponentPanel({
             movimientos de Emerald, priorizando STAB cuando exista. Los espacios
             restantes podrán completarse con TM/HM.
           </p>
-          {encounterKind === "random" ? (
-            <form onSubmit={handleSearch} className="space-y-3">
-              <fieldset disabled={searching || building}>
-                <legend className="mb-2 text-sm font-medium">
-                  Color de la casilla
-                </legend>
-                <div className="grid grid-cols-3 gap-2">
-                  {Object.values(CATCH_TIERS).map((tier) => (
+          {(encounterKind === "random" || rivalKind === "trainer") && (
+            <fieldset disabled={searching || building}>
+              <legend className="mb-2 text-sm font-medium">
+                Color de la casilla
+              </legend>
+              <div className="grid grid-cols-3 gap-2">
+                {Object.values(CATCH_TIERS)
+                  .filter(
+                    (tier) => rivalKind !== "trainer" || tier.color !== "gold",
+                  )
+                  .map((tier) => (
                     <label
                       key={tier.color}
                       className={`cursor-pointer rounded-lg border p-2 text-sm ${tierColor === tier.color ? "border-brand ring-1 ring-brand bg-muted" : "bg-card"}`}
@@ -678,7 +692,7 @@ export default function PokemonOpponentPanel({
                         checked={tierColor === tier.color}
                         onChange={() => {
                           setTierColor(tier.color);
-                          setCandidate(null);
+                          if (encounterKind === "random") setCandidate(null);
                         }}
                         className="mr-1"
                       />
@@ -690,8 +704,21 @@ export default function PokemonOpponentPanel({
                       {tier.name}
                     </label>
                   ))}
-                </div>
-              </fieldset>
+              </div>
+            </fieldset>
+          )}
+          {rivalKind === "trainer" && (
+            <p
+              data-testid="trainer-reward-quote"
+              className="text-xs text-muted-foreground"
+            >
+              Victoria de casilla {CATCH_TIERS[tierColor].name}:{" "}
+              {TRAINER_REWARD_AMOUNTS[tierColor]} Pokedollars. El premio se
+              conserva al iniciar el encuentro.
+            </p>
+          )}
+          {encounterKind === "random" ? (
+            <form onSubmit={handleSearch} className="space-y-3">
               <p className="text-xs text-muted-foreground">
                 {CATCH_TIERS[tierColor].description}. {pool.length} especies
                 posibles en {allowedRegionsLabel}.

@@ -8,6 +8,7 @@ import {
 } from "../src/lib/emerald/engine";
 import {
   createLeveledPokemon,
+  changeLevel,
   getCurrentHp,
   getMaxHp,
   neutralBattleStages,
@@ -527,8 +528,11 @@ test("physical capture preserves moves/level/primary status and clears engine/se
     const member = s.pokemons.find(
       (pokemon) => pokemon.captureId === old.captureId,
     )!;
+    const expected = old.captureId === s.localBattleRewards?.defeats[0].winnerCaptureId
+      ? changeLevel(old.pokemon as ReturnType<typeof createLeveledPokemon>, old.pokemon.level! + 1)
+      : old.pokemon;
     assert.deepEqual(member.pokemon, {
-      ...old.pokemon,
+      ...expected,
       battleStages: neutralBattleStages(),
     });
     assert.deepEqual(member.moves, old.moves);

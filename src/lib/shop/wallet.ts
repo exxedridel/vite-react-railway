@@ -24,6 +24,7 @@ export function validWallet(value: unknown): value is Wallet {
     !integer(value.userId, 1) ||
     !integer(value.balance) ||
     !integer(value.revision) ||
+    (value.rewardEpoch !== undefined && !integer(value.rewardEpoch)) ||
     !record(value.items)
   )
     return false;
@@ -173,6 +174,9 @@ export function partyWithWallet(party: PartyState, wallet: Wallet): PartyState {
   const current = party.bag;
   const sameOwner =
     current?.walletUserId === wallet.userId && current.currencyVersion === 1;
+  const rewardEpoch =
+    wallet.rewardEpoch ?? (sameOwner ? (current.rewardEpoch ?? 0) : 0);
+  if (sameOwner && rewardEpoch < (current.rewardEpoch ?? 0)) return party;
   if (
     sameOwner &&
     current?.consumptionAck &&
@@ -245,6 +249,7 @@ export function partyWithWallet(party: PartyState, wallet: Wallet): PartyState {
         );
       if (
         JSON.stringify(current.consumptionAck) === JSON.stringify(ack) &&
+        (current.rewardEpoch ?? 0) === rewardEpoch &&
         JSON.stringify(outbox) === JSON.stringify(nextOutbox)
       )
         return party;
@@ -263,6 +268,7 @@ export function partyWithWallet(party: PartyState, wallet: Wallet): PartyState {
       currencyVersion: 1,
       walletRevision: wallet.revision,
       walletUserId: wallet.userId,
+      rewardEpoch,
     },
   };
 }

@@ -17,6 +17,7 @@ import { CURATED_MOVE_CATALOG } from "../src/lib/curatedMoveCatalog";
 import { emptyBattleField, getBattleField } from "../src/lib/battleField";
 import {
   createLeveledPokemon,
+  changeLevel,
   getCurrentHp,
   neutralBattleStages,
 } from "../src/lib/pokemonStats";
@@ -300,9 +301,13 @@ test("a pending opposing attack survives its caster being knocked out by another
   state = structuredClone(state);
   state.opponent!.pokemon.stats.find((stat) => stat.name === "hp")!.value = 1;
   const ownHp = getCurrentHp(state.pokemons[0].pokemon);
+  const afterDamage = structuredClone(state.pokemons[0].pokemon);
+  afterDamage.stats.find((stat) => stat.name === "hp")!.value = ownHp - 54;
+  const expectedAfterReward = changeLevel(afterDamage as ReturnType<typeof createLeveledPokemon>, afterDamage.level! + 1);
   state = end(state);
   assert.equal(getCurrentHp(state.opponent!.pokemon), 0);
-  assert.equal(getCurrentHp(state.pokemons[0].pokemon), ownHp - 54);
+  assert.equal(getCurrentHp(state.pokemons[0].pokemon), getCurrentHp(expectedAfterReward));
+  assert.equal(state.pokemons[0].pokemon.level, 51);
   assert.equal(state.battleField!.pendingDelayedAttacks, undefined);
 });
 

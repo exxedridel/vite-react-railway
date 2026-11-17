@@ -4,7 +4,31 @@ Frontend del juego con React, TypeScript y Vite. `mysql-restapi` autentica y
 administra usuarios; `nest-mongo-pokedex` comunica jugadores y conserva las
 batallas PvP, las carteras y los recibos del Poké Mart. El motor de combate se
 ejecuta en el panel administrador y, para encuentros individuales, en el frontend
-del jugador. Versión de la aplicación: **2.12.0**.
+del jugador. Versión de la aplicación: **2.13.0**.
+
+## Recompensas automáticas de combate
+
+Cada KO premia al Pokémon que lo causó con1nivel si el rival era igual o menor,
+o2si era mayor. Capturar también premia al Pokémon activo. Se aplican al guardar
+el encuentro, con máximo100, conservando HP proporcional, estados y PP. En
+JcJ/Trainer del admin llegan mediante el resultado al salir; los niveles no
+alteran las estadísticas durante la pelea.
+
+Las victorias contra entrenadores individuales dan200/300/400/500/600Pokedollars
+en casillas rosa/verde/azul/amarilla/roja. Se elige y conserva el color al crear
+el encuentro, incluso personalizado. Dorada es sólo para captura. Los presets
+Kanto tienen los premios acordados para gimnasios, Alto Mando y rival. JcJ no
+paga dinero ni incorpora apuestas. Huida, rendición y empate no pagan.
+
+El dinero permanece central en Nest; una cola guardada reintenta los premios
+locales en segundo plano sin bloquear juego/música. Identificadores y recibos
+evitan cobros duplicados al recargar. Reiniciar cambia la generación de premios
+y descarta reclamaciones de partidas anteriores. Ver reglas, compatibilidad y
+validación en [BATTLE_REWARDS_PROTOCOL.md](../BATTLE_REWARDS_PROTOCOL.md).
+
+Desplegar Nest primero y React después y recargar a2.13.0. Sin variables nuevas,
+cambios MySQL, seed ni borrar partidas. `npm run test:rewards` comprueba niveles,
+dinero y guardado; `npm run test:rewards:browser` valida el flujo en Chrome local.
 
 ## Desarrollo y comprobaciones
 

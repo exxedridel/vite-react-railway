@@ -100,9 +100,11 @@ function captureParty(
   party: PartyState,
   encounterId: string,
   captureId: string,
+  rewardCaptureId?: string,
 ): PartyState {
   const action = captureWildOpponent(encounterId);
   action.payload.captureId = captureId;
+  if (rewardCaptureId) action.payload.rewardCaptureId = rewardCaptureId;
   const next = partyReducer(party, action);
   if (
     next.pokemons.length !== party.pokemons.length + 1 ||
@@ -195,7 +197,7 @@ export async function prepareBallCaptureParty(
       "El encuentro o el mínimo cambió. Revisa la captura y confirma de nuevo antes de gastar.",
     );
   // Validate the complete success path before a unit can be debited.
-  captureParty(clone(party), opponent.encounterId, resultCaptureId);
+  captureParty(clone(party), opponent.encounterId, resultCaptureId, captureId);
   const turn = await import("@/lib/captureTurn");
   turn.assertCaptureTurnAvailable(party, captureId, seed);
   const attempt: CaptureAttempt = {
@@ -231,7 +233,7 @@ async function applyCaptureOutcome(
   const clean = { ...party, captureAttempt: undefined };
   let next: PartyState;
   if (outcome === "caught")
-    next = captureParty(clean, attempt.encounterId, attempt.resultCaptureId);
+    next = captureParty(clean, attempt.encounterId, attempt.resultCaptureId, attempt.captureId);
   else {
     const turn = await import("@/lib/captureTurn");
     const id = `ball-miss:${attempt.attemptId}`;

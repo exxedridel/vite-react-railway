@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { store } from "@/store/store";
 import { executePokemonMove } from "@/slices/partySlice";
+import { submitLegacyBattleAction } from "@/lib/legacyBattleAction";
 import {
   battleContextKey,
   battleParticipants,
@@ -130,7 +131,7 @@ export default function ManualMoveExecutionDialog({
       }
     }
   }
-  function confirm() {
+  async function confirm() {
     if (
       submitted.current ||
       result ||
@@ -141,21 +142,32 @@ export default function ManualMoveExecutionDialog({
     )
       return;
     submitted.current = true;
-    dispatch(
-      executePokemonMove({
-        captureId,
-        actorSide,
-        moveId,
-        commandId,
-        expectedContext,
-        conditionsConfirmed,
-        options,
-      }),
-    );
-    if (store.getState().party.lastBattleResult?.id !== commandId) {
+    try {
+      await dispatch(
+        submitLegacyBattleAction(
+          executePokemonMove({
+            captureId,
+            actorSide,
+            moveId,
+            commandId,
+            expectedContext,
+            conditionsConfirmed,
+            options,
+          }),
+        ),
+      );
+      if (store.getState().party.lastBattleResult?.id !== commandId) {
+        submitted.current = false;
+        toast.error(
+          "El combate cambió. Cierra esta ventana y vuelve a elegir el movimiento.",
+        );
+      }
+    } catch (error) {
       submitted.current = false;
       toast.error(
-        "El combate cambió. Cierra esta ventana y vuelve a elegir el movimiento.",
+        error instanceof Error
+          ? error.message
+          : "No se pudo guardar el movimiento.",
       );
     }
   }

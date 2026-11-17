@@ -41,6 +41,7 @@ export type PvpSnapshot = {
 };
 export type PvpPatch = {
   captureId: string;
+  level?: number;
   hp: number;
   statuses: PokemonStatus[];
   statusTurns: Record<string, number>;
