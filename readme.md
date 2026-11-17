@@ -4,7 +4,7 @@ Frontend del juego con React, TypeScript y Vite. `mysql-restapi` autentica y
 administra usuarios; `nest-mongo-pokedex` comunica jugadores y conserva las
 batallas PvP, las carteras y los recibos del Poké Mart. El motor de combate se
 ejecuta en el panel administrador y, para encuentros individuales, en el frontend
-del jugador. Versión de la aplicación: **2.11.0**.
+del jugador. Versión de la aplicación: **2.12.0**.
 
 ## Desarrollo y comprobaciones
 
@@ -66,6 +66,35 @@ Los datos del escenario administrador siguen siendo locales al dispositivo.
 Importar una partida antigua conserva la cartera actual; no recupera su saldo
 antiguo. Tampoco se importa mientras hay una batalla o compra pendiente.
 
+## Objetos inmediatos y sincronización central
+
+Full Restore, Max Ether, Max Elixir, TM y pokebolas del frontend del jugador
+guardan su efecto y consumo al instante. La app envía los consumos por lotes en
+segundo plano y permite continuar jugando, sin diálogo de validación por uso.
+Nest sigue siendo la autoridad del inventario y de los Pokedollars. La Bag
+descuenta también los consumos pendientes para que reconectar no reponga objetos.
+
+La primera sincronización habilita el flujo; una interrupción posterior de Nest
+conserva los consumos en este navegador hasta poder enviarlos. Esto no añade una
+PWA ni elimina las dependencias iniciales de autenticación, assets o PokéAPI.
+Si varios dispositivos gastan las mismas existencias, el servidor resuelve el
+conflicto y la app ajusta la Bag con un aviso, conservando los turnos y capturas
+ya guardados. No se impone un navegador dueño de la cuenta.
+
+Compras, regalos, Poké Center, reinicio y snapshots de batalla esperan a que la
+cola se sincronice. Los objetos de JcJ/Trainer del administrador conservan su
+validación central; reciben el stock actualizado antes de iniciar la batalla.
+Las operaciones antiguas pendientes conservan su recuperación y sus hashes.
+
+Desplegar **Nest primero y React después**, y recargar ambos a2.12.0. Sin nuevas
+variables, MySQL, seed ni reinicio de partidas. Ver
+[LOCAL_ITEM_SYNC_PROTOCOL.md](../LOCAL_ITEM_SYNC_PROTOCOL.md).
+
+```bash
+npm run test:local-items
+npm run test:local-items:browser
+```
+
 ## Regalar objetos desde Back office
 
 **Back office → Regalar objetos** permite elegir un jugador conectado, objeto
@@ -120,32 +149,25 @@ normal; +2 convierte un mínimo7+ en9+. Se suma después del mínimo base y sus
 bonos. El valor se guarda globalmente en Nest y se actualiza por WebSocket.
 Un mínimo superior a20 muestra la bola como imposible y no permite gastarla.
 
-Los intentos ya pagados conservan su bola y mínimo incluso si el administrador
-cambia la dificultad o el jugador recarga. Si las reglas cambian antes del cobro,
-se rechaza la cotización anterior sin gastar y se debe revisar el nuevo mínimo.
-Precios y dificultad comparten la revisión del catálogo; una edición puede exigir
-actualizar otra cotización todavía abierta. Desplegar Nest antes de React y
-recargar ambos a2.9.0; sin variables nuevas, MySQL, seed o reinicio de partidas.
+Desde2.12.0, **Lanzar pokebola** muestra Poké Ball, Great Ball y Ultra Ball con
+sus existencias y mínimos. **Tocar una bola realiza directamente el lanzamiento**:
+gasta una unidad, tira un D20 uniforme y resuelve automáticamente éxito o fallo.
+No hay una segunda confirmación ni botones para marcar Capturada/Escapó.
 
-**Lanzar pokebola** permite elegir Poké Ball, Great Ball o Ultra Ball según las
-existencias de la Bag. Muestra el mínimo del D20 según especie, HP, estados y
-bola. Confirmar descuenta una unidad, tanto si acierta como si falla. Cancelar
-antes de confirmar conserva el objeto; una bola agotada queda deshabilitada.
+Captura cuando el dado iguala o supera el mínimo. Conserva nivel, HP, estados
+principales y PP del Pokémon. Si falla, consume tu acción y el salvaje responde
+automáticamente sin gastar PP propios. Cada intento gasta una bola. Stock0,
+equipo lleno, rival debilitado, mínimo>20 y acciones obligatorias impiden lanzar.
+No se utilizan contra jugadores o entrenadores.
 
-Después del consumo, tira el dado físico y marca **Capturada** o **Escapó**.
-La captura gratuita anterior desapareció. Capturada incorpora el Pokémon
-conservando nivel, HP, estados principales y PP. Escapó gasta tu acción y resuelve
-automáticamente la respuesta legal del salvaje, sin gastar PP de tus movimientos.
-Sin bolas no puedes intentar otra captura. No se usan contra jugadores/trainers.
+Dado, mínimo, resultado y consumo se guardan juntos antes de mostrarse. Recargar
+no vuelve a tirar, cobrar ni repetir el ataque salvaje. La dificultad utilizada
+es la última recibida del admin, también guardada para interrupciones de Nest.
+Un intento antiguo ya pagado conserva su bola, mínimo y semilla, guarda una
+tirada automática una vez y termina sin cobrar otra unidad.
 
-Recargar conserva la misma tirada pendiente con bola y mínimo fijos. Mientras
-se resuelve bloquea otras acciones. Fallos de red/guardado se recuperan sin
-volver a cobrar, capturar o sortear la respuesta. Equipo lleno, rival debilitado
-y acciones/reemplazos obligatorios impiden lanzar antes de gastar.
-
-Desplegar **Nest primero y React después**, sin variables nuevas ni MySQL,
-y recargar ambos frontends a2.9.0. No ejecutar seed ni reiniciar partidas.
-Ver [POKEBALL_PROTOCOL.md](../POKEBALL_PROTOCOL.md).
+Ver [LOCAL_ITEM_SYNC_PROTOCOL.md](../LOCAL_ITEM_SYNC_PROTOCOL.md) y la
+compatibilidad anterior en [POKEBALL_PROTOCOL.md](../POKEBALL_PROTOCOL.md).
 
 ```bash
 npm run test:capture
@@ -283,11 +305,11 @@ En la Party, **Acciones → Full Restore** muestra las existencias y consume una
 unidad para recuperar todo el HP, retirar estados/contadores negativos y dejar
 los modificadores de combate a0. Conserva el comportamiento del tablero existente,
 incluida la recuperación de un Pokémon debilitado. No cambia niveles, movimientos
-ni PP. Sin existencias, sin conexión o con una compra, reinicio, consumo o batalla
-administrada pendiente no se puede usar. Un objetivo que no necesita curación
+ni PP. Sin existencias, sin la primera sincronización o con una compra, reinicio,
+operación antigua o batalla administrada pendiente no se puede usar. Un objetivo que no necesita curación
 no gasta el objeto.
 
-En el combate individual aparece también en **BATTLE MOVES**. En un encuentro
+En el combate individual aparece en el acordeón **Items**. En un encuentro
 salvaje ocupa la acción del jugador y se resuelve junto con la acción rival en
 la cola nativa. No permite atacar además ni cancelar el objeto ya confirmado.
 En el encuentro local antiguo, bloquea la acción hasta **Finalizar turno**.
@@ -298,10 +320,10 @@ resuelva; el consumo se confirma cuando el motor ejecuta la curación. Rendirse
 antes de ejecutar un objeto pendiente tampoco lo gasta. El NPC no utiliza la
 mochila de ningún jugador.
 
-Nest conserva las existencias. Para el uso individual el dispositivo guarda un
-plan local antes de solicitar el consumo y guarda la cura/acción junto con la
-wallet antes del ACK. Si falla Storage o la red, **Recuperar Full Restore** continúa
-la misma operación sin volver a consumir ni ejecutar un turno. Para los combates
+Nest conserva las existencias. Desde2.12.0 el uso individual guarda cura/acción,
+descuento y cola juntos; no espera validación de red. Reconectar confirma el
+consumo sin volver a ejecutar el turno. Las reservas de versiones anteriores
+conservan **Recuperar Full Restore** hasta completar su operación. Para los combates
 admin, un checkpoint pendiente se guarda antes del débito; la recuperación
 completa ese mismo checkpoint y deduplica por batalla/comando. Se conserva el
 motor y su azar en React. No se traslada la Party general al servidor.
@@ -336,11 +358,9 @@ entre movimientos legales y no utiliza objetos de jugadores.
 
 Desde2.4.1, los objetos de combate están en **Items**, un acordeón independiente
 debajo de **Battle moves**, tanto para el jugador como en el panel admin.
-Al confirmar un objeto, un diálogo modal compacto bloquea las acciones mientras
-se guarda su efecto. El combate permanece visible y montado, con su música
-continua. No se puede cerrar ese aviso con Escape o clic fuera; si falla la
-conexión o el guardado, permite recuperar la misma operación. Esta corrección
-sólo requiere desplegar React; conserva inventario, PP y protocolo Nest.
+Los usos nuevos se aplican localmente sin el diálogo de validación. El combate
+y su música permanecen montados. El modal compacto anterior se conserva para
+recuperar operaciones antiguas pendientes, con sus planes y recibos originales.
 
 ### TM: aprender movimientos fuera de combate
 
@@ -354,12 +374,12 @@ Las dos elecciones gratuitas del Pokémon inicial siguen siendo gratuitas y no
 gastan TM. Sustituir después uno de esos movimientos sí cuesta una TM; no vuelve
 a conceder elecciones gratis. Los movimientos ya aprendidos permanecen intactos.
 
-Sin TM, conexión/sincronización o con una batalla u operación pendiente, el canje
+Sin TM, sin la primera sincronización o con una batalla u operación pendiente, el canje
 no está disponible. Las TM **sólo se usan fuera de combate** y no aparecen entre
 los objetos de turno del jugador o administrador. Cancelar el selector no consume.
-El inventario y el movimiento se guardan antes de confirmar el uso; una caída de
-red o Storage conserva el mismo plan para recuperarlo sin aprender o gastar dos
-veces. Para habilitar este flujo, desplegar **Nest primero y React después**;
+El inventario, movimiento y consumo pendiente se guardan juntos. La red se
+sincroniza en segundo plano y un reintento no vuelve a aprender ni gastar.
+Para habilitar este flujo, desplegar **Nest primero y React después**;
 sin cambios en MySQL, variables ni reinicio de partidas.
 
 La cartera es la autoridad para saldo y objetos comprados; el resto de la partida

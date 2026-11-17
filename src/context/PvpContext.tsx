@@ -22,6 +22,7 @@ import type {
   TrainerSide,
 } from "@/lib/trainerBattle/types";
 import { store } from "@/store/store";
+import { pendingLocalItemOperations } from "@/lib/shop/localItems";
 import {
   applyPvpResult,
   getPvpLock,
@@ -289,6 +290,17 @@ export default function PvpProvider({
     }
     clientRef.current = id;
     setClientId(id);
+    const canPlayVerifiedLocalParty = () => {
+      const party = store.getState().party;
+      return (
+        actor.role === "player" &&
+        !getPvpLock(party) &&
+        !(stateRef.current && !TERMINAL.has(stateRef.current.phase)) &&
+        party.bag?.walletUserId === actor.id &&
+        party.bag?.consumptionAck?.clientId === id
+      );
+    };
+    if (canPlayVerifiedLocalParty()) setPvpSyncBlocked(false);
     const socket = io(endpoint, {
       auth: { token, clientId: id },
       autoConnect: false,
@@ -379,7 +391,16 @@ export default function PvpProvider({
       if (next.phase === "collecting" && owner.clientId === id && !snapshot) {
         const key = next.battleId;
         if (!sentSnapshots.current.has(key)) {
+          if (pendingLocalItemOperations(store.getState().party).length) {
+            setError(
+              "Sincronizando los objetos utilizados antes de enviar el equipo.",
+            );
+            needsInitialSync = false;
+            setSynced(false);
+            return;
+          }
           try {
+            setError("");
             const prepared = await reservePvpParty({
               battleId: key,
               userId: actor.id,
@@ -390,6 +411,15 @@ export default function PvpProvider({
             sentSnapshots.current.add(key);
             queueStateRef.current(response.state);
           } catch (reason) {
+            // A local use may have finished while the original reservation was
+            // acquiring its checked storage lock. Let its outbox settle without
+            // declining or releasing this valid collecting battle.
+            if (pendingLocalItemOperations(store.getState().party).length) {
+              setError(
+                "Sincronizando los objetos utilizados antes de enviar el equipo.",
+              );
+              return;
+            }
             // A bad/empty team cannot strand the other participant in preparation.
             const latest = stateRef.current;
             if (
@@ -493,7 +523,7 @@ export default function PvpProvider({
       sentSnapshots.current.clear();
       needsInitialSync = true;
       if (actor.role === "player") {
-        setPvpSyncBlocked(true);
+        setPvpSyncBlocked(!canPlayVerifiedLocalParty());
         setSynced(false);
       }
       void sync().catch((reason) => {
@@ -541,6 +571,25 @@ export default function PvpProvider({
           });
       }
     }
+    let pendingItemCount = pendingLocalItemOperations(
+      store.getState().party,
+    ).length;
+    const unsubscribeInventory = store.subscribe(() => {
+      const previous = pendingItemCount;
+      pendingItemCount = pendingLocalItemOperations(
+        store.getState().party,
+      ).length;
+      const battle = stateRef.current;
+      if (
+        previous &&
+        !pendingItemCount &&
+        current() &&
+        socket.connected &&
+        actor.role === "player" &&
+        battle?.phase === "collecting"
+      )
+        queueStateRef.current(battle);
+    });
     window.addEventListener("storage", refreshSaved);
     const timer = window.setInterval(() => {
       if (!current()) return;
@@ -564,6 +613,7 @@ export default function PvpProvider({
     return () => {
       ++generation.current;
       window.clearInterval(timer);
+      unsubscribeInventory();
       window.removeEventListener("storage", refreshSaved);
       if (socketRef.current === socket) socketRef.current = null;
       socket.removeAllListeners();

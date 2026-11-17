@@ -1,12 +1,17 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useAppSelector } from "@/store/hooks";
 import { SHOP_ITEMS } from "@/lib/adminShop";
-import { resolveCaptureAttempt } from "@/lib/shop/ballCapture";
+import {
+  ensureAutomaticCaptureRoll,
+  resolveCaptureAttempt,
+} from "@/lib/shop/ballCapture";
+import { automaticCaptureOutcome } from "@/lib/captureRoll";
+import LocalInventoryNotice from "@/components/shop/LocalInventoryNotice";
 
-/** A paid external roll survives navigation/reloads. The game stays mounted. */
+/** Finish old, already-paid throws automatically without modifying locked plans. */
 export default function CaptureAttemptGate({
   children,
 }: {
@@ -17,27 +22,38 @@ export default function CaptureAttemptGate({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const inFlight = useRef(false);
+  const resolveRef = useRef<() => Promise<void>>(async () => {});
   const ball = SHOP_ITEMS.find((item) => item.id === attempt?.ballId);
-  async function resolve(outcome: "caught" | "escaped") {
+  async function resolve() {
     if (!attempt || itemLock || inFlight.current) return;
     inFlight.current = true;
     setBusy(true);
     setError("");
     try {
+      const roll = await ensureAutomaticCaptureRoll(
+        attempt.userId,
+        attempt.attemptId,
+      );
+      const outcome = automaticCaptureOutcome(roll, attempt.minimum);
       const result = await resolveCaptureAttempt(
         attempt.userId,
         attempt.attemptId,
         outcome,
       );
-      toast.success(
+      toast(
         result.outcome === "caught"
           ? `${result.pokemonName} se unió a tu equipo.`
           : `${result.pokemonName} escapó de la pokebola.`,
         {
-          description:
-            result.outcome === "caught"
-              ? "Conserva su nivel, HP, estados principales y PP actuales."
-              : "El lanzamiento gastó la acción y se resolvió la respuesta del salvaje.",
+          id: `capture:${attempt.attemptId}`,
+          description: (
+            <span data-testid="capture-auto-result">
+              D20: {roll} · mínimo: {attempt.minimum}.{" "}
+              {result.outcome === "caught"
+                ? "Captura conseguida."
+                : "El salvaje respondió al lanzamiento."}
+            </span>
+          ),
         },
       );
     } catch (reason) {
@@ -51,9 +67,17 @@ export default function CaptureAttemptGate({
       setBusy(false);
     }
   }
+  resolveRef.current = resolve;
+  const attemptId = attempt?.attemptId;
+  const itemRequestId = itemLock?.requestId;
+  useEffect(() => {
+    if (attemptId && !itemRequestId) void resolveRef.current();
+    // A die saved for this same attempt must not start a second resolution.
+  }, [attemptId, itemRequestId]);
   return (
     <>
       {children}
+      <LocalInventoryNotice />
       {attempt && !itemLock && (
         <Dialog.Root open modal onOpenChange={() => {}}>
           <Dialog.Portal>
@@ -78,11 +102,11 @@ export default function CaptureAttemptGate({
               </Dialog.Title>
               <Dialog.Description className="text-sm text-muted-foreground">
                 Ya gastaste 1 {ball?.name ?? "pokebola"} en{" "}
-                {attempt.pokemonName}. Tira tu D20 físico: necesitas{" "}
+                {attempt.pokemonName}. La tirada automática necesita{" "}
                 <strong className="text-foreground">
                   {attempt.minimum} o más
                 </strong>
-                . Marca el resultado de esa tirada.
+                . Se conservará el mismo resultado al recargar.
               </Dialog.Description>
               <p className="text-xs text-muted-foreground">
                 La bola ya se gastó y no se devuelve. Si recargas, continuarás
@@ -93,23 +117,15 @@ export default function CaptureAttemptGate({
                   {error}
                 </p>
               )}
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  variant="outline"
-                  disabled={busy}
-                  data-testid="capture-result-escaped"
-                  onClick={() => void resolve("escaped")}
-                >
-                  Escapó
-                </Button>
+              {error && (
                 <Button
                   disabled={busy}
-                  data-testid="capture-result-caught"
-                  onClick={() => void resolve("caught")}
+                  data-testid="capture-recover-result"
+                  onClick={() => void resolve()}
                 >
-                  Capturada
+                  Recuperar lanzamiento
                 </Button>
-              </div>
+              )}
               {busy && (
                 <p role="status" className="text-xs text-muted-foreground">
                   Guardando el resultado…

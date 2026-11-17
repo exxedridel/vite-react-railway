@@ -93,6 +93,7 @@ export type CaptureQuote = {
   captureRevision?: number;
 };
 export type CaptureAttempt = {
+  autoRoll?: number;
   version: 1;
   attemptId: string;
   userId: number;
@@ -109,6 +110,8 @@ export type CaptureAttempt = {
   expectedCombatHash: string;
 };
 export type CaptureAttemptResult = {
+  roll?: number;
+  minimum?: number;
   attemptId: string;
   userId: number;
   ballId: BallItemId;
@@ -123,7 +126,34 @@ export const USABLE_ITEM_IDS = [
   ...BALL_ITEM_IDS,
 ] as const;
 export type UsableItemId = (typeof USABLE_ITEM_IDS)[number];
+export type LocalConsumptionConflict = {
+  operationId: string;
+  sequence: number;
+  itemId: UsableItemId;
+  reason: "INSUFFICIENT_ITEMS";
+};
+export type ConsumptionAck = {
+  clientId: string;
+  throughSequence: number;
+  rejected?: LocalConsumptionConflict[];
+};
+export type LocalItemDebit = {
+  operationId: string;
+  sequence: number;
+  itemId: UsableItemId;
+  quantity: 1;
+  captureId: string;
+  context: "party" | "local-battle";
+  moveId?: number;
+};
+export type LocalItemOutbox = {
+  version: 1;
+  clientId: string;
+  nextSequence: number;
+  operations: LocalItemDebit[];
+};
 export type Wallet = {
+  consumptionAck?: ConsumptionAck;
   userId: number;
   balance: number;
   revision: number;

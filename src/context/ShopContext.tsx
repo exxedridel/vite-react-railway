@@ -5,6 +5,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import { io, type Socket } from "socket.io-client";
@@ -13,7 +14,9 @@ import type { PokemonMove } from "@/types/moves";
 import { getCurrentHp } from "@/lib/pokemonStats";
 import { BALL_ITEM_IDS, SHOP_ITEM_IDS } from "@/lib/shop/types";
 import { testMessagesUrl } from "@/lib/testMessages";
-import { store } from "@/store/store";
+import { store, transactPvpParty } from "@/store/store";
+import { commitLocalItemUse } from "@/lib/localItemUse";
+import { pendingLocalItemOperations } from "@/lib/shop/localItems";
 import {
   accountStorageKey,
   isLocalPartyMutationBlocked,
@@ -120,6 +123,11 @@ type ShopContextValue = {
   usingItem: boolean;
   error: string;
   busy: boolean;
+  localItemsReady: boolean;
+  localItemPendingCount: number;
+  localItemSyncError: string;
+  localItemConflicts: import("@/lib/shop/types").LocalConsumptionConflict[];
+  dismissLocalItemConflicts: () => Promise<void>;
   sync: () => Promise<void>;
   restartGame: () => Promise<void>;
   useFullRestore: (captureId: string) => Promise<void>;
@@ -247,6 +255,10 @@ export default function ShopProvider({
   onSessionExpired: (token?: string) => Promise<unknown>;
   children: ReactNode;
 }) {
+  const partyState = useSyncExternalStore(
+    store.subscribe,
+    () => store.getState().party,
+  );
   const [clientId, setClientId] = useState("");
   const [connected, setConnected] = useState(false);
   const [synced, setSynced] = useState(false);
@@ -264,6 +276,7 @@ export default function ShopProvider({
   const [usingItem, setUsingItem] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [localItemSyncError, setLocalItemSyncError] = useState("");
   const socketRef = useRef<Socket | null>(null);
   const ownerRef = useRef(user);
   ownerRef.current = user;
@@ -280,6 +293,7 @@ export default function ShopProvider({
   const recoverResetRef = useRef<() => Promise<void>>(async () => {});
   const recoverCenterRef = useRef<() => Promise<void>>(async () => {});
   const recoverGiftRef = useRef<() => Promise<void>>(async () => {});
+  const flushConsumptionRef = useRef<() => Promise<void>>(async () => {});
   const restartRef = useRef<() => Promise<void>>(async () => {
     throw new Error("Inicia sesión para reiniciar la partida.");
   });
@@ -435,6 +449,7 @@ export default function ShopProvider({
       ...(centerLock ? { centerRequestId: centerLock.requestId } : {}),
     });
     await queueState.current(response, { abortUnlockRequestId });
+    void flushConsumptionRef.current();
     await recoverGiftRef.current();
     await recoverResetRef.current();
     await recoverItemUseRef.current();
@@ -460,6 +475,7 @@ export default function ShopProvider({
     setUsingItem(false);
     setError("");
     setBusy(false);
+    setLocalItemSyncError("");
     mutation.current = false;
     if (!user) {
       setShopSyncBlocked(false);
@@ -497,6 +513,7 @@ export default function ShopProvider({
     });
     socketRef.current = socket;
     let reconciliation = Promise.resolve();
+    let consumptionPresenceReported = false;
     let applied = false;
     let latestWallet: Wallet | null = null;
     let latestPurchases: ShopPurchase[] = [];
@@ -529,6 +546,7 @@ export default function ShopProvider({
         !party.itemUseLock &&
         !party.centerLock &&
         !party.captureAttempt &&
+        !pendingLocalItemOperations(party).length &&
         !latestResets.some((reset) => reset.status === "pending") &&
         !latestUses.some((use) => use.status === "pending") &&
         !latestAdjustments.some((entry) => entry.status === "pending") &&
@@ -536,7 +554,8 @@ export default function ShopProvider({
           (entry) => entry.kind === "gift" && entry.status === "pending",
         ) &&
         !latestCenterHeals.some((entry) => entry.status === "pending");
-      const next = JSON.stringify([ready, localBattle]);
+      const pendingConsumption = !!pendingLocalItemOperations(party).length;
+      const next = JSON.stringify([ready, localBattle, pendingConsumption]);
       if (next === presenceKey) return;
       presenceKey = next;
       void emit("shop:presence", {
@@ -545,8 +564,14 @@ export default function ShopProvider({
         supportsBalanceAdjustments: true,
         supportsCenterHealing: true,
         supportsItemGifts: true,
+        supportsBackgroundItemUses: true,
+        pendingConsumption,
       })
-        .then((response) => receive(response))
+        .then((response) => {
+          consumptionPresenceReported = true;
+          void flushConsumption().catch(() => {});
+          return receive(response);
+        })
         .catch((reason) => {
           presenceKey = "";
           if (current()) setError(message(reason));
@@ -725,6 +750,24 @@ export default function ShopProvider({
         )
           return;
         latestWallet = next.wallet;
+      }
+      if (next.catalog?.captureDifficulty !== undefined) {
+        const settings = {
+          captureDifficulty: next.catalog.captureDifficulty,
+          captureRevision: next.catalog.revision,
+        };
+        if (
+          (store.getState().party.captureSettings?.captureRevision ?? -1) <
+          settings.captureRevision
+        )
+          await transactPvpParty(actor.id, async (party) => ({
+            party:
+              (party.captureSettings?.captureRevision ?? -1) <
+              settings.captureRevision
+                ? { ...party, captureSettings: settings }
+                : party,
+            value: undefined,
+          }));
       }
       if (next.purchases || next.purchase) {
         latestPurchases = mergeShopPurchases(
@@ -1000,6 +1043,55 @@ export default function ShopProvider({
       return operation;
     }
     queueState.current = receive;
+    let consumptionFlush: Promise<void> | null = null;
+    let consumptionTimer: number | undefined;
+    function flushConsumption(): Promise<void> {
+      if (consumptionFlush) return consumptionFlush;
+      if (
+        !current() ||
+        actor.role !== "player" ||
+        !socket.connected ||
+        !consumptionPresenceReported
+      )
+        return Promise.resolve();
+      const operation = (async () => {
+        while (current() && socket.connected) {
+          const outbox = store.getState().party.localItemOutbox;
+          if (!outbox?.operations.length || outbox.clientId !== id) return;
+          const response = await emit("shop:consume-batch", {
+            clientId: id,
+            operations: outbox.operations.slice(0, 100),
+          });
+          await receive(response);
+          if (current()) setLocalItemSyncError("");
+          const remaining = store.getState().party.localItemOutbox;
+          if (
+            remaining?.operations[0]?.sequence === outbox.operations[0].sequence
+          )
+            throw new Error(
+              "El servidor no confirmó la sincronización de los objetos utilizados.",
+            );
+        }
+      })();
+      consumptionFlush = operation;
+      void operation
+        .catch((reason) => {
+          if (current()) setLocalItemSyncError(message(reason));
+        })
+        .finally(() => {
+          if (consumptionFlush === operation) consumptionFlush = null;
+          if (
+            current() &&
+            socket.connected &&
+            pendingLocalItemOperations(store.getState().party).length
+          )
+            consumptionTimer = window.setTimeout(() => {
+              void flushConsumption().catch(() => {});
+            }, 2000);
+        });
+      return operation;
+    }
+    flushConsumptionRef.current = flushConsumption;
     let recoveringGift: Promise<void> | null = null;
     recoverGiftRef.current = () => {
       if (recoveringGift) return recoveringGift;
@@ -1292,13 +1384,7 @@ export default function ShopProvider({
     ) => {
       if (itemStarting || itemRecovery)
         throw new Error("Espera a que termine el uso del objeto anterior.");
-      if (
-        !current() ||
-        !socket.connected ||
-        !applied ||
-        !latestWallet ||
-        actor.role !== "player"
-      )
+      if (!current() || actor.role !== "player")
         throw new Error(
           "Conecta y sincroniza tu inventario antes de usar un objeto.",
         );
@@ -1306,12 +1392,11 @@ export default function ShopProvider({
         throw new Error(
           "Termina la batalla reservada o la operación pendiente antes de usar un objeto.",
         );
-      if ((latestWallet.items[itemId] ?? 0) < 1)
+      if ((store.getState().party.bag?.items?.[itemId] ?? 0) < 1)
         throw new Error("No tienes existencias de este objeto en tu Bag.");
       itemStarting = true;
       setUsingItem(true);
       setError("");
-      setItemUseSyncBlocked(true);
       try {
         // Load before the storage transaction. The resulting effects are planned
         // once against its latest state and persisted before any server debit.
@@ -1323,19 +1408,12 @@ export default function ShopProvider({
           : null;
         if (ball) await import("@/lib/captureTurn");
         const captureCatalog = ball ? catalogRef.current : null;
-        if (
-          ball &&
-          (!captureCatalog || captureCatalog.captureDifficulty === undefined)
-        )
-          throw new Error(
-            "Actualiza el servicio Nest y sincroniza la dificultad de captura antes de lanzar.",
-          );
         const captureSettings: CaptureSettings | undefined = captureCatalog
           ? {
               captureDifficulty: captureCatalog.captureDifficulty ?? 0,
               captureRevision: captureCatalog.revision,
             }
-          : undefined;
+          : store.getState().party.captureSettings;
         const requestId = crypto.randomUUID();
         const resultCaptureId = ball ? crypto.randomUUID() : "";
         const seed: [number, number, number, number] = ball
@@ -1346,19 +1424,20 @@ export default function ShopProvider({
               number,
             ])
           : [0, 0, 0, 0];
-        if (!current() || !socket.connected)
+        if (!current())
           throw new Error("La conexión cambió antes de preparar el objeto.");
-        await prepareItemUse(
-          actor.id,
-          id,
-          requestId,
+        await commitLocalItemUse({
+          userId: actor.id,
+          clientId: id,
+          operationId: requestId,
+          itemId,
           captureId,
-          latestWallet.revision,
-          (party, target) => {
+          ...(moveId !== undefined ? { moveId } : {}),
+          plan: (party) => {
             if (ball && capturePlanner) {
-              return capturePlanner.prepareBallCaptureParty(
+              return capturePlanner.prepareAutomaticBallCaptureParty(
                 party,
-                target,
+                captureId,
                 itemId as BallItemId,
                 { userId: actor.id, clientId: id, requestId },
                 seed,
@@ -1374,27 +1453,20 @@ export default function ShopProvider({
                 );
               return planner.prepareTmParty(
                 party,
-                target,
+                captureId,
                 learning.move,
                 learning.replaceMoveId,
               );
             }
             return planner.preparePartyItem(
               party,
-              target,
+              captureId,
               itemId as ConsumableItemId,
               moveId,
             );
           },
-          itemId,
-          moveId,
-          captureSettings?.captureRevision,
-        );
-        if (!current() || !socket.connected)
-          throw new Error(
-            "Recupera el uso del objeto desde este navegador al volver a conectar.",
-          );
-        await recoverItemUse();
+        });
+        void flushConsumption().catch(() => {});
       } catch (reason) {
         if (current()) setError(message(reason));
         throw reason;
@@ -1608,6 +1680,7 @@ export default function ShopProvider({
     socket.on("connect", () => {
       if (!current()) return;
       applied = false;
+      consumptionPresenceReported = false;
       setConnected(true);
       setSynced(false);
       presenceKey = "";
@@ -1633,7 +1706,10 @@ export default function ShopProvider({
           void expiryRef.current(capturedToken);
       },
     );
-    const unsubscribe = store.subscribe(schedulePresence);
+    const unsubscribe = store.subscribe(() => {
+      schedulePresence();
+      if (!consumptionFlush) void flushConsumption().catch(() => {});
+    });
     const onStorage = (event: StorageEvent) => {
       if (
         event.key === accountStorageKey(actor.id) &&
@@ -1660,6 +1736,7 @@ export default function ShopProvider({
       unsubscribe();
       window.removeEventListener("storage", onStorage);
       if (presenceTimer !== undefined) window.clearTimeout(presenceTimer);
+      if (consumptionTimer !== undefined) window.clearTimeout(consumptionTimer);
       socket.removeAllListeners();
       socket.disconnect();
       if (socketRef.current === socket) {
@@ -1672,6 +1749,7 @@ export default function ShopProvider({
         recoverItemUseRef.current = async () => {};
         recoverCenterRef.current = async () => {};
         recoverGiftRef.current = async () => {};
+        flushConsumptionRef.current = async () => {};
         useItemRef.current = async () => {
           throw new Error("Inicia sesión para usar un objeto.");
         };
@@ -1963,6 +2041,23 @@ export default function ShopProvider({
         usingItem,
         error,
         busy,
+        localItemsReady:
+          !!clientId &&
+          partyState.bag?.consumptionAck?.clientId === clientId &&
+          partyState.bag?.walletUserId === user?.id,
+        localItemPendingCount: pendingLocalItemOperations(partyState).length,
+        localItemSyncError,
+        localItemConflicts: partyState.localItemConflicts ?? [],
+        dismissLocalItemConflicts: async () => {
+          const id = ownerRef.current?.id;
+          if (!id) return;
+          await transactPvpParty(id, async (party) => ({
+            party: party.localItemConflicts?.length
+              ? { ...party, localItemConflicts: [] }
+              : party,
+            value: undefined,
+          }));
+        },
         sync,
         restartGame,
         useFullRestore,

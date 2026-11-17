@@ -47,8 +47,7 @@ export default function PokemonActionsDialog({
   const restoreUnavailable =
     stock < 1 ||
     shop.usingItem ||
-    !shop.connected ||
-    !shop.synced ||
+    !shop.localItemsReady ||
     isLocalPartyMutationBlocked(party) ||
     turnUnavailable ||
     (localBattleActive(party) &&
@@ -181,9 +180,10 @@ export default function PokemonActionsDialog({
                   No tienes Full Restore en la Bag.
                 </p>
               )}
-              {stock > 0 && (!shop.connected || !shop.synced) && (
+              {stock > 0 && !shop.localItemsReady && (
                 <p role="status" className="text-xs text-muted-foreground">
-                  Conecta y sincroniza tu Bag para usar este objeto.
+                  Sincroniza la Bag una primera vez para habilitar el uso local
+                  de objetos.
                 </p>
               )}
               {turnUnavailable && (

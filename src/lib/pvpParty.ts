@@ -23,6 +23,10 @@ import {
 import { TIMED_STATUSES, validTurns } from "@/lib/statusTurns";
 import { getMaxMovePp } from "@/lib/movePp";
 import {
+  pendingLocalItemOperations,
+  validConsumptionAck,
+} from "@/lib/shop/localItems";
+import {
   stablePvpJson,
   type PvpSnapshot,
   type PvpResult,
@@ -245,6 +249,10 @@ export function holdPvpParty(input: PvpReservation): Promise<void> {
 export function reservePvpParty(input: PvpReservation): Promise<PvpSnapshot> {
   validateReservation(input);
   return transactPvpParty(input.userId, async (party) => {
+    if (pendingLocalItemOperations(party).length)
+      throw new Error(
+        "Sincroniza los objetos utilizados antes de ingresar a la batalla.",
+      );
     if (
       party.shopLock ||
       party.resetLock ||
@@ -279,6 +287,14 @@ export function reservePvpParty(input: PvpReservation): Promise<PvpSnapshot> {
           getCurrentHp(capture.pokemon) > 0,
       ) ?? pokemons.find((capture) => getCurrentHp(capture.pokemon) > 0)!;
     const snapshot: PvpSnapshot = {
+      ...(party.bag?.consumptionAck
+        ? {
+            consumptionBarrier: {
+              clientId: party.bag.consumptionAck.clientId,
+              throughSequence: party.bag.consumptionAck.throughSequence,
+            },
+          }
+        : {}),
       version: 1,
       ...input,
       snapshotId: globalThis.crypto?.randomUUID?.() ?? nanoid(),
@@ -298,6 +314,11 @@ export function reservePvpParty(input: PvpReservation): Promise<PvpSnapshot> {
 }
 
 function validateSnapshot(snapshot: PvpSnapshot): void {
+  if (
+    snapshot.consumptionBarrier !== undefined &&
+    !validConsumptionAck(snapshot.consumptionBarrier)
+  )
+    throw new Error("La barrera de inventario de la batalla no es válida.");
   validateReservation(snapshot);
   if (
     snapshot.version !== 1 ||

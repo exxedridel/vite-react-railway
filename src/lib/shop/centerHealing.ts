@@ -10,6 +10,7 @@ import {
 import { getCurrentMovePp, getMaxMovePp, restoreMovePp } from "@/lib/movePp";
 import { hashPvpPokemons } from "@/lib/pvpParty";
 import { localBattleActive } from "./wallet";
+import { pendingLocalItemOperations } from "./localItems";
 import type {
   CenterHeal,
   CenterLock,
@@ -116,6 +117,10 @@ export function validCenterPreview(value: unknown): value is CenterPreview {
 }
 
 function assertAvailable(party: PartyState): void {
+  if (pendingLocalItemOperations(party).length)
+    throw new Error(
+      "Sincroniza los objetos utilizados antes de usar Poké Center.",
+    );
   if (
     localBattleActive(party) ||
     party.shopLock ||

@@ -48,7 +48,7 @@ export default function PokemonCaptureRequirements({
       </div>
       <table className="w-full text-sm">
         <caption className="mb-2 text-left font-semibold">
-          Mínimo necesario en tu D20 físico
+          Mínimo necesario en el D20 automático
         </caption>
         <thead>
           <tr className="border-b text-left text-muted-foreground">
@@ -81,9 +81,10 @@ export default function PokemonCaptureRequirements({
       <p className="text-xs text-muted-foreground">
         Frozen y Asleep descuentan 4. Paralyzed, Burned, Poisoned y Badly
         poisoned descuentan 2. Los estados secundarios no dan descuento y los
-        bonos no se acumulan. Tira tu D20 físico y compara con la pokebola
-        usada. El mínimo base es 1 y después se suma la dificultad global. Un 1
-        natural no falla automáticamente en estas reglas.
+        bonos no se acumulan. Al tocar una pokebola, el juego tira el D20 y
+        compara el resultado con su mínimo. El mínimo base es 1 y después se
+        suma la dificultad global. Un 1 natural no falla automáticamente en
+        estas reglas.
       </p>
     </div>
   );

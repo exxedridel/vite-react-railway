@@ -8,6 +8,7 @@ import { pvpPartyRevision } from "@/store/accountStorage";
 import { captureRequirements } from "@/lib/captureRates";
 import { getCurrentHp } from "@/lib/pokemonStats";
 import { combatKey } from "@/lib/emerald/types";
+import { automaticCaptureOutcome, rollCaptureD20 } from "@/lib/captureRoll";
 import { itemUseHash } from "./itemUse";
 import {
   BALL_ITEM_IDS,
@@ -40,6 +41,10 @@ export function validCaptureAttempt(value: unknown): value is CaptureAttempt {
     Number.isSafeInteger(attempt.minimum) &&
     attempt.minimum >= 1 &&
     attempt.minimum <= 20 &&
+    (attempt.autoRoll === undefined ||
+      (Number.isSafeInteger(attempt.autoRoll) &&
+        attempt.autoRoll >= 1 &&
+        attempt.autoRoll <= 20)) &&
     ((attempt.captureRevision === undefined &&
       attempt.captureDifficulty === undefined) ||
       (Number.isSafeInteger(attempt.captureRevision) &&
@@ -73,6 +78,17 @@ export function validCaptureResult(
     typeof result.pokemonName === "string" &&
     result.pokemonName.length > 0 &&
     result.pokemonName.length <= 128 &&
+    ((result.roll === undefined && result.minimum === undefined) ||
+      (Number.isSafeInteger(result.roll) &&
+        Number(result.roll) >= 1 &&
+        Number(result.roll) <= 20 &&
+        Number.isSafeInteger(result.minimum) &&
+        Number(result.minimum) >= 1 &&
+        Number(result.minimum) <= 20 &&
+        result.outcome ===
+          (Number(result.roll) >= Number(result.minimum)
+            ? "caught"
+            : "escaped"))) &&
     (result.outcome === "caught"
       ? identifier(result.captureId)
       : result.outcome === "escaped" && result.captureId === undefined)
@@ -207,6 +223,126 @@ export async function prepareBallCaptureParty(
   return { ...party, captureAttempt: attempt };
 }
 
+async function applyCaptureOutcome(
+  party: PartyState,
+  attempt: CaptureAttempt,
+  outcome: "caught" | "escaped",
+): Promise<PartyState> {
+  const clean = { ...party, captureAttempt: undefined };
+  let next: PartyState;
+  if (outcome === "caught")
+    next = captureParty(clean, attempt.encounterId, attempt.resultCaptureId);
+  else {
+    const turn = await import("@/lib/captureTurn");
+    const id = `ball-miss:${attempt.attemptId}`;
+    const update = turn.runFailedCaptureTurn(
+      clean,
+      attempt.captureId,
+      attempt.seed,
+      id,
+    );
+    next = partyReducer(
+      clean,
+      commitEmeraldAction({ expected: combatKey(clean), update, id }),
+    );
+    if (next.lastEmeraldBatch?.id !== id)
+      throw new Error("No se pudo guardar la respuesta del Pokémon salvaje.");
+  }
+  const result: CaptureAttemptResult = {
+    attemptId: attempt.attemptId,
+    userId: attempt.userId,
+    ballId: attempt.ballId,
+    pokemonName: attempt.pokemonName,
+    outcome,
+    ...(attempt.autoRoll === undefined
+      ? {}
+      : { roll: attempt.autoRoll, minimum: attempt.minimum }),
+    ...(outcome === "caught" ? { captureId: attempt.resultCaptureId } : {}),
+  };
+  if (!validCaptureResult(result))
+    throw new Error("El resultado D20 no es válido.");
+  return { ...next, captureAttempt: undefined, lastCaptureResult: result };
+}
+
+/** New throws are planned completely before their local debit/outbox commit.
+ * The caller owns that checked transaction; no result is revealed before it.
+ * Battle RNG uses the existing Uint16 seed, independently of the D20 sample. */
+export async function prepareAutomaticBallCaptureParty(
+  party: PartyState,
+  captureId: string,
+  ballId: BallItemId,
+  identity: { userId: number; clientId: string; requestId: string },
+  seed: [number, number, number, number],
+  resultCaptureId: string,
+  quote?: CaptureQuote,
+  settings?: CaptureSettings,
+  roll: () => number = rollCaptureD20,
+): Promise<PartyState> {
+  const planned = await prepareBallCaptureParty(
+    party,
+    captureId,
+    ballId,
+    identity,
+    seed,
+    resultCaptureId,
+    quote,
+    settings,
+  );
+  const attempt = { ...planned.captureAttempt!, autoRoll: roll() };
+  if (!validCaptureAttempt(attempt))
+    throw new Error("La tirada D20 no es válida.");
+  return applyCaptureOutcome(
+    planned,
+    attempt,
+    automaticCaptureOutcome(attempt.autoRoll, attempt.minimum),
+  );
+}
+
+/** Upgrade an already-paid legacy throw only after its original item plan has
+ * been confirmed. Persist its die before resolution, retaining hashes/seed/IDs. */
+export function ensureAutomaticCaptureRoll(
+  userId: number,
+  attemptId: string,
+): Promise<number> {
+  return transactPvpParty(userId, async (party) => {
+    const attempt = party.captureAttempt;
+    if (
+      !validCaptureAttempt(attempt) ||
+      attempt.userId !== userId ||
+      attempt.attemptId !== attemptId
+    )
+      throw new Error("No se encontró ese lanzamiento pendiente.");
+    if (
+      party.itemUseLock ||
+      party.pvpLock ||
+      party.shopLock ||
+      party.resetLock ||
+      party.centerLock
+    )
+      throw new Error(
+        "Confirma primero la operación pendiente de la pokebola.",
+      );
+    if (attempt.autoRoll !== undefined)
+      return { party, value: attempt.autoRoll };
+    if (
+      party.opponent?.encounterId !== attempt.encounterId ||
+      (await itemUseHash(combatKey(party))) !== attempt.expectedCombatHash
+    )
+      throw new Error(
+        "El encuentro cambió. Recupera el lanzamiento en el navegador original.",
+      );
+    const roll = rollCaptureD20();
+    return {
+      party: {
+        ...party,
+        captureAttempt: { ...attempt, autoRoll: roll },
+        pvpRevision: pvpPartyRevision(party) + 1,
+      },
+      value: roll,
+    };
+  });
+}
+
 /** Resolve exactly one already-paid throw; retries reuse its seed and capture ID. */
 export async function resolveCaptureAttempt(
   userId: number,
@@ -215,7 +351,6 @@ export async function resolveCaptureAttempt(
 ): Promise<{ outcome: "caught" | "escaped"; pokemonName: string }> {
   if (!identifier(attemptId) || !["caught", "escaped"].includes(outcome))
     throw new Error("El resultado de captura no es válido.");
-  const turn = await import("@/lib/captureTurn");
   return transactPvpParty(userId, async (party) => {
     const previous = party.lastCaptureResult;
     if (previous?.attemptId === attemptId && previous.userId === userId) {
@@ -252,38 +387,16 @@ export async function resolveCaptureAttempt(
       throw new Error(
         "El encuentro cambió. Conserva el navegador original para recuperar el lanzamiento.",
       );
-    const clean = { ...party, captureAttempt: undefined };
-    let next: PartyState;
-    if (outcome === "caught")
-      next = captureParty(clean, attempt.encounterId, attempt.resultCaptureId);
-    else {
-      const id = `ball-miss:${attemptId}`;
-      const update = turn.runFailedCaptureTurn(
-        clean,
-        attempt.captureId,
-        attempt.seed,
-        id,
-      );
-      next = partyReducer(
-        clean,
-        commitEmeraldAction({ expected: combatKey(clean), update, id }),
-      );
-      if (next.lastEmeraldBatch?.id !== id)
-        throw new Error("No se pudo guardar la respuesta del Pokémon salvaje.");
-    }
-    const result: CaptureAttemptResult = {
-      attemptId,
-      userId,
-      ballId: attempt.ballId,
-      pokemonName: attempt.pokemonName,
-      outcome,
-      ...(outcome === "caught" ? { captureId: attempt.resultCaptureId } : {}),
-    };
+    if (
+      attempt.autoRoll !== undefined &&
+      outcome !== automaticCaptureOutcome(attempt.autoRoll, attempt.minimum)
+    )
+      throw new Error("El resultado debe coincidir con el D20 ya guardado.");
+    const next = await applyCaptureOutcome(party, attempt, outcome);
     return {
       party: {
         ...next,
         captureAttempt: undefined,
-        lastCaptureResult: result,
         pvpRevision:
           Math.max(pvpPartyRevision(next), pvpPartyRevision(party)) + 1,
       },

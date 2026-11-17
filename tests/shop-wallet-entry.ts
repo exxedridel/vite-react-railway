@@ -2544,6 +2544,240 @@ export async function runAccountStorageTests() {
   passed.push(
     "Two administrators may reuse the same request ID for distinct gifts: composite receipt merging preserves both identities and the second admin's reserved delivery survives reload without accepting the first admin's terminal proof",
   );
+  const localUser = 620,
+    localClient = "local-items-client";
+  const { commitLocalItemUse } = await import("../src/lib/localItemUse");
+  const { reservePvpParty, releasePvpParty } = await import(
+    "../src/lib/pvpParty"
+  );
+  await activateAccountStore(localUser);
+  const localWallet = (
+    revision = 0,
+    throughSequence = 0,
+    items: Wallet["items"] = { "full-restore": 2, "max-ether": 2 },
+  ): Wallet => ({
+    ...wallet(localUser, revision, 500, items),
+    consumptionAck: { clientId: localClient, throughSequence },
+  });
+  await applyShopWallet(localWallet());
+  await transactPvpParty(localUser, async (current) => {
+    const actor = clone(legacyTeam[0]);
+    actor.captureId = "local-actor";
+    actor.pokemon.stats.find((stat) => stat.name === "hp")!.value = 1;
+    actor.moves = [
+      { ...clone(trainerMoves.find((move) => move.id === 33)!), currentPp: 0 },
+    ];
+    return {
+      party: {
+        ...current,
+        pokemons: [actor],
+        gameSettings: clone(legacySettings),
+      },
+      value: undefined,
+    };
+  });
+  const restoreLocal = (operationId: string) =>
+    commitLocalItemUse({
+      userId: localUser,
+      clientId: localClient,
+      operationId,
+      itemId: "full-restore",
+      captureId: "local-actor",
+      plan: (party) => preparePartyItem(party, "local-actor", "full-restore"),
+    });
+  await restoreLocal("local-full-restore");
+  await commitLocalItemUse({
+    userId: localUser,
+    clientId: localClient,
+    operationId: "local-ether",
+    itemId: "max-ether",
+    captureId: "local-actor",
+    moveId: 33,
+    plan: (party) => preparePartyItem(party, "local-actor", "max-ether", 33),
+  });
+  const appliedLocal = clone(saved(localUser));
+  assert.equal(appliedLocal.bag.items["full-restore"], 1);
+  assert.equal(appliedLocal.bag.items["max-ether"], 1);
+  assert.equal(appliedLocal.localItemOutbox.operations.length, 2);
+  assert.equal(appliedLocal.itemUseLock, undefined);
+  assert.equal(
+    getCurrentHp(appliedLocal.pokemons[0].pokemon),
+    getMaxHp(appliedLocal.pokemons[0].pokemon),
+  );
+  assert.equal(appliedLocal.pokemons[0].moves[0].currentPp, 35);
+  await restoreLocal("local-full-restore");
+  assert.deepEqual(
+    saved(localUser),
+    appliedLocal,
+    "retrying a queued operation never applies its effect again",
+  );
+  store.dispatch(toggleGymBadge("cascade"));
+  assert(
+    store.getState().party.bag!.badges.includes("cascade"),
+    "the outbox is not a global Party lock",
+  );
+  await assert.rejects(
+    prepareShopParty(localUser, localClient, "while-outbox", 0),
+    /sincronicen/,
+  );
+  await assert.rejects(
+    prepareGameReset(localUser, localClient, "reset-outbox", 0),
+    /Sincroniza/,
+  );
+  await assert.rejects(
+    previewCenterParty(localUser, localClient),
+    /Sincroniza/,
+  );
+  await assert.rejects(
+    reservePvpParty({
+      userId: localUser,
+      clientId: localClient,
+      battleId: "outbox-battle",
+    }),
+    /Sincroniza/,
+  );
+  await applyShopWallet(localWallet());
+  assert.equal(saved(localUser).bag.items["full-restore"], 1);
+  assert(
+    saved(localUser).bag.badges.includes("cascade"),
+    "ordinary Party edits remain persisted while item synchronization is pending",
+  );
+  assert.equal(saved(localUser).bag.items["max-ether"], 1);
+  const checkpointPokemons = clone(saved(localUser).pokemons);
+  const beforeMissingAck = clone(saved(localUser));
+  const missingAckWallet = localWallet(1, 1, {
+    "full-restore": 1,
+    "max-ether": 2,
+  });
+  delete missingAckWallet.consumptionAck;
+  await applyShopWallet(missingAckWallet);
+  assert.deepEqual(
+    saved(localUser),
+    beforeMissingAck,
+    "an ambiguous wallet without ACK cannot prune or replace a pending local debit",
+  );
+  await applyShopWallet(
+    localWallet(1, 1, { "full-restore": 1, "max-ether": 2 }),
+  );
+  assert.equal(saved(localUser).localItemOutbox.operations.length, 1);
+  assert.equal(saved(localUser).bag.items["max-ether"], 1);
+  await clearAccountStore();
+  await activateAccountStore(localUser);
+  await applyShopWallet(localWallet());
+  assert.equal(
+    saved(localUser).localItemOutbox.operations.length,
+    1,
+    "stale snapshots cannot revive an already accepted debit",
+  );
+  await applyShopWallet(
+    localWallet(2, 2, { "full-restore": 1, "max-ether": 1 }),
+  );
+  assert.equal(saved(localUser).localItemOutbox.operations.length, 0);
+  assert.equal(saved(localUser).localItemOutbox.nextSequence, 3);
+  assert.deepEqual(saved(localUser).pokemons, checkpointPokemons);
+  passed.push(
+    "Instant local item effects and inventory debits persist together without a global lock; multiple uses survive reload and canonical snapshots subtract only unacknowledged operations without replaying effects",
+  );
+  await transactPvpParty(localUser, async (current) => {
+    const next = clone(current);
+    next.pokemons[0].pokemon.stats.find((stat) => stat.name === "hp")!.value =
+      1;
+    return { party: next, value: undefined };
+  });
+  const failedLocalBefore = clone(saved(localUser));
+  testStorage.failWritesFor.add(accountStorageKey(localUser));
+  await assert.rejects(restoreLocal("failed-local-write"), /guardar/);
+  testStorage.failWritesFor.clear();
+  assert.deepEqual(saved(localUser), failedLocalBefore);
+  await restoreLocal("local-conflict");
+  const pendingConflict = clone(saved(localUser));
+  await applyShopWallet(
+    localWallet(3, 2, { "full-restore": 0, "max-ether": 1 }),
+  );
+  assert.equal(saved(localUser).bag.items["full-restore"], 0);
+  assert.equal(saved(localUser).localItemOutbox.operations.length, 1);
+  const rejectedWallet = localWallet(3, 3, {
+    "full-restore": 0,
+    "max-ether": 1,
+  });
+  rejectedWallet.consumptionAck!.rejected = [
+    {
+      operationId: "local-conflict",
+      sequence: 3,
+      itemId: "full-restore",
+      reason: "INSUFFICIENT_ITEMS",
+    },
+  ];
+  await applyShopWallet(rejectedWallet);
+  assert.equal(saved(localUser).localItemOutbox.operations.length, 0);
+  assert.equal(saved(localUser).localItemConflicts.length, 1);
+  assert.deepEqual(
+    saved(localUser).pokemons,
+    pendingConflict.pokemons,
+    "a central stock conflict never rolls back played effects",
+  );
+  await applyShopWallet(rejectedWallet);
+  assert.equal(saved(localUser).localItemConflicts.length, 1);
+  await transactPvpParty(localUser, async (party) => ({
+    party: { ...party, localItemConflicts: [] },
+    value: undefined,
+  }));
+  await applyShopWallet(rejectedWallet);
+  assert.deepEqual(saved(localUser).localItemConflicts, []);
+  const terminalConsumption = clone(saved(localUser));
+  await applyShopWallet(
+    localWallet(3, 2, { "full-restore": 0, "max-ether": 1 }),
+  );
+  await applyShopWallet(
+    localWallet(4, 2, { "full-restore": 0, "max-ether": 1 }),
+  );
+  assert.deepEqual(
+    saved(localUser),
+    terminalConsumption,
+    "stale same-client ACK cannot lower a rejection watermark even at a newer wallet revision",
+  );
+  passed.push(
+    "Checked-write failures spend nothing; another device can exhaust canonical stock and terminal rejections clear the outbox with one persistent notice while preserving the already played Party effect",
+  );
+  const consumptionSnapshot = await reservePvpParty({
+    userId: localUser,
+    clientId: localClient,
+    battleId: "consumption-barrier",
+  });
+  assert.deepEqual(consumptionSnapshot.consumptionBarrier, {
+    clientId: localClient,
+    throughSequence: 3,
+  });
+  await releasePvpParty("consumption-barrier");
+  await prepareGameReset(localUser, localClient, "local-reset", 3);
+  const resetLocalWallet = localWallet(4, 3, {});
+  resetLocalWallet.consumptionAck!.rejected =
+    rejectedWallet.consumptionAck!.rejected;
+  const resetLocalReceipt: GameReset = {
+    requestId: "local-reset",
+    userId: localUser,
+    clientId: localClient,
+    walletRevision: 4,
+    status: "pending",
+  };
+  await applyGameReset(resetLocalWallet, resetLocalReceipt, localClient);
+  await applyGameReset(
+    resetLocalWallet,
+    { ...resetLocalReceipt, status: "applied" },
+    localClient,
+  );
+  assert.equal(saved(localUser).localItemOutbox.nextSequence, 4);
+  assert.equal(saved(localUser).localItemOutbox.operations.length, 0);
+  assert.equal(saved(localUser).bag.consumptionAck.throughSequence, 3);
+  assert.equal(saved(localUser).pokemons.length, 0);
+  assert.equal(
+    saved(localUser).localItemConflicts?.length ?? 0,
+    0,
+    "reset never revives dismissed historical conflicts",
+  );
+  passed.push(
+    "A confirmed game reset preserves the empty consumption stream counter and watermark so new uses cannot reuse already accepted sequence numbers",
+  );
   await clearAccountStore();
   persistor.pause();
   await persistor.flush();

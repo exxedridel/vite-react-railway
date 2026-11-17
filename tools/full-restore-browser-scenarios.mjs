@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { prepareLegacyBrowserItem, startLegacyBrowserItem } from "./legacy-item-browser-fixture.mjs";
 
 export async function fullRestoreBrowserScenario({
   admin,
@@ -20,6 +21,7 @@ export async function fullRestoreBrowserScenario({
 }) {
   const row = await shopRepository.get(2),
     previous = row.storageRevision;
+  const priorLegacyUses = row.uses?.length ?? 0;
   row.balance = 2000;
   row.revision++;
   row.storageRevision++;
@@ -102,6 +104,7 @@ export async function fullRestoreBrowserScenario({
         return (
           p.bag.walletUserId === 2 &&
           !p.itemUseLock &&
+          !(p.localItemOutbox?.operations.length ?? 0) &&
           !storage.isLocalPartyMutationBlocked(p) &&
           p.bag.items["full-restore"] === count &&
           stats.getCurrentHp(p.pokemons[0]?.pokemon) ===
@@ -273,10 +276,10 @@ export async function fullRestoreBrowserScenario({
     await blockedUse;
     return originalUse.apply(this, args);
   };
+  let heldLegacyUse;
   try {
-    await evalArgs(playerA, () =>
-      document.querySelector('[data-testid="battle-full-restore"]').click(),
-    );
+    const prepared = await prepareLegacyBrowserItem({ playerA, evalArgs, shopService });
+    heldLegacyUse = startLegacyBrowserItem({ prepared, shopService, shopGateway });
     await waitArgs(
       playerA,
       () =>
@@ -381,6 +384,7 @@ export async function fullRestoreBrowserScenario({
     shopService.use = originalUse;
     releaseUse();
   }
+  await heldLegacyUse;
   await waitArgs(
     playerA,
     async () => {
@@ -478,7 +482,8 @@ export async function fullRestoreBrowserScenario({
       return original.call(this, key, value);
     };
   });
-  await consumeFromActions();
+  const interruptedLegacy = await prepareLegacyBrowserItem({ playerA, evalArgs, shopService });
+  await startLegacyBrowserItem({ prepared: interruptedLegacy, shopService, shopGateway });
   await waitArgs(
     playerA,
     () => !!document.querySelector('[data-testid="item-use-lock"]'),
@@ -495,7 +500,8 @@ export async function fullRestoreBrowserScenario({
   assert.equal((await shopRepository.get(2)).items["full-restore"], 0);
   await cdp.request("Page.reload", {}, playerA);
   await saved(0);
-  assert.equal((await shopRepository.get(2)).uses.length, 3);
+  assert.equal((await shopRepository.get(2)).uses.length, priorLegacyUses + 2,
+    "two pre-upgrade intents recover exactly once; modern UI consumption uses the local outbox");
   await actions();
   assert.equal(
     await evalArgs(

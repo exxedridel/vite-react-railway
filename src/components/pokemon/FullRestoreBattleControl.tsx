@@ -22,8 +22,7 @@ export default function FullRestoreBattleControl({
     busy ||
     shop.usingItem ||
     stock < 1 ||
-    !shop.connected ||
-    !shop.synced ||
+    !shop.localItemsReady ||
     isLocalPartyMutationBlocked(party) ||
     !!runtime?.pending.player ||
     !!request?.waiting ||
@@ -68,7 +67,7 @@ export default function FullRestoreBattleControl({
         </Button>
         <p className="text-xs text-muted-foreground">
           Consume 1 Full Restore de tu Bag y la acción de tu Pokémon en este
-          turno. Requiere conexión.
+          turno. Se guarda al instante y se sincroniza en segundo plano.
         </p>
       </div>
       <PpRestoreControls captureId={captureId} battle disabled={busy} />

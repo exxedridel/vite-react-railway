@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { prepareLegacyBrowserItem, startLegacyBrowserItem, waitLocalItemFlush } from "./legacy-item-browser-fixture.mjs";
 
 /** Real BackOffice/player UI against the isolated identity, Nest and Chrome harness. */
 export async function runOpponentAutoBrowserScenario({
   admin, playerA, cdp, evalArgs, waitArgs, field, clickButton,
-  seedPvpTeam, shopRepository, shopGateway,
+  seedPvpTeam, shopRepository, shopGateway, shopService,
 }) {
   const state = () => evalArgs(playerA, async () => JSON.parse(JSON.stringify(
     (await import("/src/store/store.ts")).store.getState().party,
@@ -457,6 +458,7 @@ export async function runOpponentAutoBrowserScenario({
   assert.equal(after.pokemons[0].moves[0].currentPp, 17,
     "item action spends no player move PP");
   await closeHighlights();
+  await waitLocalItemFlush({ playerA, waitArgs });
   // Fail only the final checked application, after the durable paid plan exists.
   await evalArgs(playerA, () => {
     const original = Storage.prototype.setItem;
@@ -471,7 +473,10 @@ export async function runOpponentAutoBrowserScenario({
       return original.call(this, key, value);
     };
   });
-  await useItemUi("max-ether");
+  const legacyEther = await prepareLegacyBrowserItem({
+    playerA, evalArgs, shopService, itemId: "max-ether", moveId: 150,
+  });
+  await startLegacyBrowserItem({ prepared: legacyEther, shopService, shopGateway });
   await waitArgs(playerA, () => window.__qaAutomationSaveFailed &&
     !!document.querySelector('[data-testid="item-use-lock"]'),
     "paid automatic turn remains recoverable after checked-save failure");
@@ -485,8 +490,8 @@ export async function runOpponentAutoBrowserScenario({
   const finalWallet = await shopRepository.get(2);
   assert.equal(finalWallet.items["full-restore"], 2, "Full Restore debit occurs once");
   assert.equal(finalWallet.items["max-ether"], 2, "Max Ether debit occurs once after recovery");
-  assert.equal(finalWallet.uses.length, beforeItems.uses.length + 2,
-    "two paid actions produce exactly two canonical use receipts");
+  assert.equal(finalWallet.uses.length, beforeItems.uses.length + 1,
+    "modern Full Restore uses the outbox and the saved legacy Ether recovers one receipt");
   await cdp.request("Page.reload", {}, playerA);
   await waitArgs(playerA, async (encounterId, revision) => {
     const [{ store }, storage] = await Promise.all([

@@ -9,6 +9,20 @@ Acuerdo del usuario confirmado el 2026-11-08:
 
 Si esta disponible, leer [la memoria compartida](../PROJECT_MEMORY.md). Este resumen se conserva tambien aqui para sesiones que abran solo este repositorio.
 
+Etapa vigente2026-11-16 React2.12.0: D20clickdirectobola (sinconfirm/manual),
+efecto/debit/outboxpersistantesrevelar. UserconfirmainventarioCENTRAL/syncBG,
+sólofrontjugador, adminitemscentralcontinúa, multidispositivoconflictospermitidos.
+commitLocalItemUse noGate/ACKwait, seq/hashIDporclient; WalletACKproyecta stock−
+noACK ypruneatómico. Rechazosterminales (sinnegativo/sinrollbackParty) avisosinmodal;
+cola+conflictos sobrevivenreload, no reponerporwalletvieja/ACKmissing/retroceso.
+Compras/gift/reset/Center/PvPsnapshots esperanflush. PvpContextcollectingesperadrain
+sindecline/holdpreservado; cachedidle perfil/ACKclient sinlock permiteNestcaído,
+Gate noexigesyncedredsiyacacheverificada. Reservasconocidaspermanecenbloqueadas.
+Legacyplans/hash/recovery intactos, v1ballpagadaautoRoll despuésAPPLIED sinredebit.
+Testswallet39/cuentas7/Party10/12captura/TS/build/audit170yChromeLocalItems+
+CaptureLegacyaislados+ShopCOMPLETO PASS sinJSerrors. Ver memoria/protocoloBG;
+Nest→React/recargar2.12.0 sinvars/MySQL/seed/reset/borrados. No producciónverificada.
+
 Etapa vigente2026-11-14 React2.11.0: BackOffice Regalarobjetos eligejugador/item/
 cantidad1–99, confirma y sumaBag sinPD/precios. giftItems+supportsItemGifts;
 shopLock.operationgift metadataadmin/item/qty/rev antesACKPREPARE. applyGiftPurchase

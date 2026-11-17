@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { prepareLegacyBrowserItem, startLegacyBrowserItem } from "./legacy-item-browser-fixture.mjs";
 
 /** Exercises real player learning and the Nest inventory receipt, not a free dispatch. */
 export async function tmBrowserScenario({
@@ -212,6 +213,7 @@ export async function tmBrowserScenario({
           move.currentPp === move.pp &&
           party.bag.items.tm === stock &&
           !party.itemUseLock &&
+          !(party.localItemOutbox?.operations.length ?? 0) &&
           !storage.isLocalPartyMutationBlocked(party)
         );
       },
@@ -285,7 +287,8 @@ export async function tmBrowserScenario({
   assert.equal(
     (await shopRepository.get(2)).uses.filter((use) => use.itemId === "tm")
       .length,
-    priorUses + 1,
+    priorUses,
+    "modern TM learning is synchronized through the outbox, not a legacy use receipt",
   );
   await closeBattle();
   await cdp.request("Page.reload", {}, playerA);
@@ -331,24 +334,14 @@ export async function tmBrowserScenario({
   await openMoves();
   await addEnabled(true);
   await cdp.request("Network.enable", {}, playerA);
-  await cdp.request(
-    "Network.emulateNetworkConditions",
-    { offline: true, latency: 0, downloadThroughput: -1, uploadThroughput: -1 },
-    playerA,
-  );
+  const backendPort = shopGateway.namespace.server.httpServer.address().port;
+  await cdp.request("Network.setBlockedURLs", {
+    urls: [`http://127.0.0.1:${backendPort}/socket.io/*`],
+  }, playerA);
   for (const socket of shopGateway.namespace.sockets.values())
     if (socket.data.identity?.user.id === 2) socket.disconnect(true);
-  await addEnabled(false);
-  await cdp.request(
-    "Network.emulateNetworkConditions",
-    {
-      offline: false,
-      latency: 0,
-      downloadThroughput: -1,
-      uploadThroughput: -1,
-    },
-    playerA,
-  );
+  await addEnabled(true);
+  await cdp.request("Network.setBlockedURLs", { urls: [] }, playerA);
   await cdp.request("Page.reload", {}, playerA);
   await learned(33, 1);
   // Refill the local catalog cache after reloading; no external API is required.
@@ -379,9 +372,10 @@ export async function tmBrowserScenario({
       return original.call(this, key, value);
     };
   });
-  await openMoves();
-  await openPicker("Growl");
-  await confirmTwice();
+  const legacyTm = await prepareLegacyBrowserItem({
+    playerA, evalArgs, shopService: shopGateway.service, itemId: "tm", moveId: 45,
+  });
+  await startLegacyBrowserItem({ prepared: legacyTm, shopService: shopGateway.service, shopGateway });
   await waitArgs(
     playerA,
     () =>
@@ -402,7 +396,7 @@ export async function tmBrowserScenario({
   assert.equal(pending.items.tm, 0);
   assert.equal(
     pending.uses.filter((use) => use.itemId === "tm").length,
-    priorUses + 2,
+    priorUses + 1,
   );
   assert.equal(pending.uses.at(-1).status, "pending");
   assert.equal(
@@ -429,7 +423,7 @@ export async function tmBrowserScenario({
   assert.equal(
     (await shopRepository.get(2)).uses.filter((use) => use.itemId === "tm")
       .length,
-    priorUses + 2,
+    priorUses + 1,
   );
   await openMoves();
   await addEnabled(false);
@@ -536,7 +530,8 @@ export async function tmBrowserScenario({
   assert.equal(replacementWallet.items.tm, 0);
   assert.equal(
     replacementWallet.uses.filter((use) => use.itemId === "tm").length,
-    priorUses + 3,
+    priorUses + 1,
+    "the saved legacy TM is recovered once while modern replacement uses the outbox",
   );
   await cdp.request("Page.reload", {}, playerA);
   await learned(1, 0);

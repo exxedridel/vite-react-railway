@@ -13,12 +13,18 @@ export default function PvpPartyGate({ children }: { children: ReactNode }) {
   const pvp = usePvpContext();
   const lock = useAppSelector((state) => getPvpLock(state.party));
   const party = useAppSelector((state) => state.party.pokemons);
+  const savedInventory = useAppSelector((state) => state.party.bag);
   const [retrying, setRetrying] = useState(false);
   const [localError, setLocalError] = useState("");
   if (pvp.user?.role !== "player") return <>{children}</>;
   const battle = pvp.state;
   const active = !!battle && !["finalized", "cancelled"].includes(battle.phase);
-  if (pvp.synced && !lock && !active) return <>{children}</>;
+  const verifiedLocalParty =
+    savedInventory?.walletUserId === pvp.user.id &&
+    !!pvp.clientId &&
+    savedInventory.consumptionAck?.clientId === pvp.clientId;
+  if ((pvp.synced || verifiedLocalParty) && !lock && !active)
+    return <>{children}</>;
   const waitingConnection = !pvp.connected || !pvp.synced;
   const side =
     battle?.side ?? (battle?.players.a.user.id === pvp.user.id ? "a" : "b");

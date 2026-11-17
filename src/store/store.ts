@@ -37,6 +37,7 @@ import {
 import partyReducer, { resetGame } from "@/slices/partySlice";
 import { emptyTrainerBag } from "@/lib/trainerBag";
 import { hydratePartyMovePp } from "@/lib/movePp";
+import { pendingLocalItemOperations } from "@/lib/shop/localItems";
 
 import { pokeApi } from "@/api/pokeApi";
 
@@ -307,6 +308,10 @@ export function importLegacyParty(userId: number): Promise<void> {
         throw new Error(
           "La partida está reservada para una batalla o compra, o esperando sincronización. La importación anterior se conserva.",
         );
+      if (pendingLocalItemOperations(store.getState().party).length)
+        throw new Error(
+          "Sincroniza los objetos utilizados antes de importar otra partida.",
+        );
       if (!legacyAvailableTo(userId))
         throw new Error(
           "La partida anterior ya está vinculada a otra cuenta o fue importada.",
@@ -357,6 +362,10 @@ export function importLegacyParty(userId: number): Promise<void> {
           resumeWithParty({
             party: {
               ...hydratePartyMovePp(legacy.party),
+              localItemOutbox: current.localItemOutbox,
+              localItemConflicts: current.localItemConflicts,
+              captureSettings:
+                current.captureSettings ?? legacy.party.captureSettings,
               pvpRevision:
                 Math.max(
                   pvpPartyRevision(current),

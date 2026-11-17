@@ -150,9 +150,15 @@ function BattleDialogContent({ captureId, onClose }: Props) {
   const paidCaptureId = useAppSelector(
     (state) => state.party.captureAttempt?.attemptId,
   );
+  const captureResultId = useAppSelector(
+    (state) => state.party.lastCaptureResult?.attemptId,
+  );
+  const seenCaptureResult = useRef(captureResultId);
   useEffect(() => {
-    if (paidCaptureId) setManageOpen(false);
-  }, [paidCaptureId]);
+    if (paidCaptureId || captureResultId !== seenCaptureResult.current)
+      setManageOpen(false);
+    seenCaptureResult.current = captureResultId;
+  }, [paidCaptureId, captureResultId]);
   const batch = useAppSelector((state) => state.party.lastEmeraldBatch);
   const batchRef = useRef(batch);
   batchRef.current = batch;

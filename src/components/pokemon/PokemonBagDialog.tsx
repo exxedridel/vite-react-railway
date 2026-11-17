@@ -85,6 +85,51 @@ export default function PokemonBagDialog({ open, onOpenChange }: Props) {
             <h3 id="bag-items-heading" className="text-sm font-semibold">
               Objetos del Poké Mart
             </h3>
+            {shop.localItemPendingCount > 0 && (
+              <p
+                role="status"
+                data-testid="bag-local-pending"
+                className="text-xs text-muted-foreground"
+              >
+                {shop.localItemPendingCount}{" "}
+                {shop.localItemPendingCount === 1
+                  ? "consumo guardado"
+                  : "consumos guardados"}{" "}
+                en este navegador. Se sincronizarán en segundo plano.
+              </p>
+            )}
+            {shop.localItemSyncError && (
+              <p
+                role="status"
+                data-testid="bag-local-sync-error"
+                className="text-xs text-muted-foreground"
+              >
+                {shop.localItemSyncError} Puedes continuar jugando; el envío se
+                reintentará al conectar.
+              </p>
+            )}
+            {shop.localItemConflicts.length > 0 && (
+              <div
+                role="status"
+                data-testid="bag-local-conflicts"
+                className="space-y-2 rounded-xl border p-3 text-sm"
+              >
+                <p>
+                  Se actualizaron las existencias desde el inventario central
+                  porque algunos objetos ya se habían utilizado en otro
+                  dispositivo. Tus acciones y capturas locales se conservan.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    void shop.dismissLocalItemConflicts().catch(() => {})
+                  }
+                >
+                  Entendido
+                </Button>
+              </div>
+            )}
             {items.length ? (
               <ul className="space-y-2">
                 {items.map((item) => (

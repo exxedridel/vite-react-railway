@@ -149,6 +149,9 @@ export type PartyState = {
   centerHealingRevision?: number;
   centerLock?: CenterLock;
   captureAttempt?: CaptureAttempt;
+  localItemOutbox?: import("@/lib/shop/types").LocalItemOutbox;
+  localItemConflicts?: import("@/lib/shop/types").LocalConsumptionConflict[];
+  captureSettings?: import("@/lib/shop/types").CaptureSettings;
   lastCaptureResult?: CaptureAttemptResult;
   shopLock?: {
     requestId: string;
@@ -1534,7 +1537,13 @@ export default function partyReducer(
           ("resetLock" in saved && saved.resetLock) ||
           ("itemUseLock" in saved && saved.itemUseLock) ||
           ("centerLock" in saved && saved.centerLock) ||
-          ("captureAttempt" in saved && saved.captureAttempt))
+          ("captureAttempt" in saved && saved.captureAttempt) ||
+          ("localItemOutbox" in saved &&
+            saved.localItemOutbox &&
+            typeof saved.localItemOutbox === "object" &&
+            "operations" in saved.localItemOutbox &&
+            Array.isArray(saved.localItemOutbox.operations) &&
+            saved.localItemOutbox.operations.length))
       )
         return { ...initialState, ...saved } as PartyState;
       if (

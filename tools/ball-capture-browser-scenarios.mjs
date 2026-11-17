@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
-import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
+import {
+  prepareLegacyBrowserItem,
+  startLegacyBrowserItem,
+  waitLocalItemFlush,
+} from "./legacy-item-browser-fixture.mjs";
 
 /** Real player/admin UI and checked local storage, against isolated local Nest. */
 export async function runBallCaptureBrowserScenario({
@@ -195,123 +197,159 @@ export async function runBallCaptureBrowserScenario({
       "success cannot be registered before spending a ball",
     );
   };
-  const chooseBall = async (ballId, difficulty = 0) => {
-    await evalArgs(
+  const waitFlush = () => waitLocalItemFlush({ playerA, waitArgs });
+  const forceD20 = (roll) =>
+    evalArgs(
       playerA,
-      (id) => {
-        const b = document.querySelector(`[data-testid="capture-ball-${id}"]`);
-        if (!b || b.disabled)
-          throw new Error("Selected ball has no available stock");
-        b.click();
-      },
-      ballId,
-    );
-    await waitArgs(
-      playerA,
-      () => !!document.querySelector('[data-testid="capture-ball-quote"]'),
-      "selected ball and physical D20 minimum quoted before debit",
-    );
-    const quote = await evalArgs(
-      playerA,
-      async (id, modifier) => {
-        const [{ store }, rates] = await Promise.all([
-          import("/src/store/store.ts"),
-          import("/src/lib/captureRates.ts"),
-        ]);
-        const p = store.getState().party;
-        const code = {
-          "poke-ball": "poke",
-          "great-ball": "great",
-          "ultra-ball": "ultra",
-        }[id];
-        return {
-          minimum: rates
-            .captureRequirements(
-              p.opponent.pokemon,
-              p.opponent.statuses,
-              modifier,
-            )
-            .balls.find((b) => b.id === code).minimum,
-          text: document.querySelector('[data-testid="capture-ball-quote"]')
-            .textContent,
+      (roll) => {
+        const original = crypto.getRandomValues.bind(crypto);
+        crypto.getRandomValues = (values) => {
+          if (values instanceof Uint32Array && values.length === 1) {
+            values[0] = roll - 1;
+            return values;
+          }
+          return original(values);
         };
       },
-      ballId,
-      difficulty,
+      roll,
     );
-    assert.ok(quote.text.includes(`${quote.minimum} o más`));
-    return quote.minimum;
-  };
-  const confirmThrow = async () => {
-    await waitArgs(
+  const blockWrite = async (requestId, stage) =>
+    evalArgs(
       playerA,
-      () => {
-        const b = document.querySelector(
-          '[data-testid="capture-throw-confirm"]',
-        );
-        return b && !b.disabled;
+      (requestId, stage) => {
+        const original = Storage.prototype.setItem;
+        window.__restoreLegacyCaptureStorage = () => {
+          Storage.prototype.setItem = original;
+        };
+        Storage.prototype.setItem = function (key, value) {
+          if (key === "persist:root:user:2") {
+            const party = JSON.parse(JSON.parse(value).party);
+            const blocked =
+              stage === "outcome"
+                ? party.lastCaptureResult?.attemptId === requestId &&
+                  !party.captureAttempt
+                : party.itemUseLock?.requestId === requestId &&
+                  party.itemUseLock.appliedWalletRevision !== undefined;
+            if (blocked) {
+              window.__legacyCaptureWriteFailed = true;
+              throw new Error("QA interrupted legacy capture " + stage);
+            }
+          }
+          return original.call(this, key, value);
+        };
       },
-      "throw ready to consume inventory",
+      requestId,
+      stage,
     );
-    await evalArgs(playerA, () => {
-      const b = document.querySelector('[data-testid="capture-throw-confirm"]');
-      b.click();
-      b.click();
+  const paidLegacy = async (ballId, stage, roll) => {
+    await waitFlush();
+    await forceD20(roll);
+    const catalog = await shopService.catalog.snapshot();
+    const prepared = await prepareLegacyBrowserItem({
+      playerA,
+      evalArgs,
+      shopService,
+      itemId: ballId,
+      settings: {
+        captureDifficulty: catalog.captureDifficulty ?? 0,
+        captureRevision: catalog.revision,
+      },
     });
-  };
-  const waitPaidRoll = async (ballId) => {
+    const originalAttempt = (await state()).itemUseLock.prepared.captureAttempt;
+    const before = await shopRepository.get(2);
+    await blockWrite(prepared.payload.requestId, stage);
+    await startLegacyBrowserItem({ prepared, shopService, shopGateway });
     await waitArgs(
       playerA,
-      async (id) => {
-        const p = (await import("/src/store/store.ts")).store.getState().party;
-        return (
-          !p.itemUseLock &&
-          p.captureAttempt?.ballId === id &&
-          !!document.querySelector('[data-testid="capture-roll-pending"]')
-        );
-      },
-      "paid throw awaiting physical die result",
-      ballId,
+      () => window.__legacyCaptureWriteFailed === true,
+      "legacy capture checked write is interrupted deliberately",
     );
-    return (await state()).captureAttempt;
-  };
-  const outcome = async (result) => {
-    await evalArgs(
-      playerA,
-      (result) => {
-        const b = document.querySelector(
-          `[data-testid="capture-result-${result}"]`,
-        );
-        if (!b || b.disabled)
-          throw new Error("Physical capture result is not ready");
-        b.click();
-        b.click();
-      },
-      result,
+    if (stage === "outcome") {
+      await waitArgs(
+        playerA,
+        async (requestId) => {
+          const party = (await import("/src/store/store.ts")).store.getState()
+            .party;
+          return (
+            !party.itemUseLock &&
+            party.captureAttempt?.attemptId === requestId &&
+            party.captureAttempt.autoRoll !== undefined &&
+            !!document.querySelector('[data-testid="capture-recover-result"]')
+          );
+        },
+        "paid legacy die is persisted before its outcome and can be retried",
+        prepared.payload.requestId,
+      );
+    } else {
+      await waitArgs(
+        playerA,
+        async (requestId) =>
+          (await import("/src/store/store.ts")).store.getState().party
+            .itemUseLock?.requestId === requestId,
+        "original legacy item reservation survives failed inventory save",
+        prepared.payload.requestId,
+      );
+    }
+    await backendWait(
+      async () =>
+        (await shopRepository.get(2)).uses.some(
+          (entry) => entry.requestId === prepared.payload.requestId,
+        ),
+      "legacy payment is durable before recovery assertions",
     );
+    const paid = await shopRepository.get(2);
+    assert.equal(paid.items[ballId], before.items[ballId] - 1);
+    assert.equal(
+      paid.uses.filter(
+        (entry) => entry.requestId === prepared.payload.requestId,
+      ).length,
+      1,
+    );
+    return { prepared, originalAttempt, before, paid };
   };
-  const waitOutcome = async (attempt, result) => {
-    await waitArgs(
+  const waitOutcome = (requestId) =>
+    waitArgs(
       playerA,
-      async (attemptId, result) => {
-        const p = (await import("/src/store/store.ts")).store.getState().party;
+      async (requestId) => {
+        const [{ store }, storage] = await Promise.all([
+          import("/src/store/store.ts"),
+          import("/src/store/accountStorage.ts"),
+        ]);
+        const party = store.getState().party;
         return (
-          !p.captureAttempt &&
-          !p.itemUseLock &&
-          p.lastCaptureResult?.attemptId === attemptId &&
-          p.lastCaptureResult.outcome === result &&
-          !document.querySelector('[data-testid="capture-roll-pending"]')
+          storage.getActiveAccountId() === 2 &&
+          !party.itemUseLock &&
+          !party.captureAttempt &&
+          party.lastCaptureResult?.attemptId === requestId
         );
       },
-      `capture outcome ${result} persisted once`,
-      attempt.attemptId,
-      result,
+      "one automatic outcome finishes the already-paid legacy throw",
+      requestId,
+    );
+  const replayLegacy = async (prepared, paid) => {
+    const actor = [...shopService.actors.values()]
+      .filter((entry) => entry.user.id === 2)
+      .at(-1);
+    await shopService.use(actor, prepared.payload);
+    await shopGateway.publish();
+    const replayed = await shopRepository.get(2);
+    assert.equal(
+      replayed.revision,
+      paid.revision,
+      "a paid legacy replay never charges again",
+    );
+    assert.deepEqual(replayed.items, paid.items);
+    assert.equal(
+      replayed.uses.filter(
+        (entry) => entry.requestId === prepared.payload.requestId,
+      ).length,
+      1,
     );
   };
   const purchaseBalls = async () => {
     await routeDashboard(admin);
     await clickButton(admin, "Tienda");
-    for (const [itemId, itemName] of [
+    for (const [id, name] of [
       ["poke-ball", "Poké Ball"],
       ["great-ball", "Great Ball"],
       ["ultra-ball", "Ultra Ball"],
@@ -324,7 +362,7 @@ export async function runBallCaptureBrowserScenario({
           );
           return b && !b.disabled;
         },
-        "player available to buy capture stock",
+        "capture stock buyer is ready",
       );
       await evalArgs(admin, () =>
         document
@@ -335,48 +373,107 @@ export async function runBallCaptureBrowserScenario({
         admin,
         (name) =>
           document
-            .querySelector(`button[aria-label="Comprar ${name}"]`)
+            .querySelector('button[aria-label="Comprar ' + name + '"]')
             .click(),
-        itemName,
+        name,
       );
       await waitArgs(
         admin,
         () =>
           !!document.querySelector('input[aria-label="Cantidad de objetos"]'),
-        "ball purchase amount dialog",
+        "ball purchase dialog",
       );
       await field(admin, 'input[aria-label="Cantidad de objetos"]', "2");
       await clickButton(admin, "Aceptar compra", "[role=dialog]");
       await waitArgs(
         admin,
         () =>
-          document
-            .querySelector("[role=dialog]")
-            ?.textContent.includes("El jugador guardó"),
-        "purchased capture balls delivered",
-      );
-      await waitArgs(
-        admin,
-        () =>
-          [...document.querySelectorAll("[role=dialog] button")].some(
-            (b) => b.textContent.trim() === "Listo" && !b.disabled,
+          [...document.querySelectorAll("[role=dialog]")].some(
+            (d) =>
+              d.textContent.includes("El jugador guardó") &&
+              [...d.querySelectorAll("button")].some(
+                (b) => b.textContent.trim() === "Listo" && !b.disabled,
+              ),
           ),
-        "ball purchase completion is ready to close",
+        "purchased balls are saved",
       );
       await clickButton(admin, "Listo", "[role=dialog]");
       await waitArgs(
         admin,
         () => !document.querySelector("[role=dialog]"),
-        "ball purchase dialog closes before next purchase",
+        "purchase portal finished closing",
       );
-      assert.equal((await shopRepository.get(2)).items[itemId], 2);
+      assert.equal((await shopRepository.get(2)).items[id], 2);
     }
   };
+  const routeBackOffice = async () => {
+    const origin = await evalArgs(admin, () => location.origin);
+    await cdp.request("Page.navigate", { url: origin + "/back-office" }, admin);
+    await waitArgs(
+      admin,
+      () =>
+        !!document.querySelector(
+          'input[aria-label="Dificultad global de captura"]',
+        ),
+      "capture difficulty editor mounted",
+    );
+  };
+  const saveDifficulty = async (modifier) => {
+    await field(
+      admin,
+      'input[aria-label="Dificultad global de captura"]',
+      String(modifier),
+    );
+    await waitArgs(
+      admin,
+      () => {
+        const b = document.querySelector(
+          '[data-testid="capture-difficulty-save"]',
+        );
+        return b && !b.disabled;
+      },
+      "capture rules can be saved",
+    );
+    await evalArgs(admin, () =>
+      document.querySelector('[data-testid="capture-difficulty-save"]').click(),
+    );
+    await waitArgs(
+      admin,
+      () =>
+        !!document.querySelector('[data-testid="capture-difficulty-saved"]'),
+      "capture rules were saved by the administrator",
+    );
+    await backendWait(
+      async () =>
+        (await shopService.catalog.snapshot()).captureDifficulty === modifier,
+      "canonical capture difficulty changed",
+    );
+  };
+  const assertMinima = async (modifier, base) =>
+    waitArgs(
+      playerA,
+      (expected) =>
+        ["poke-ball", "great-ball", "ultra-ball"].every((id, index) => {
+          const button = document.querySelector(
+            '[data-testid="capture-ball-' + id + '"]',
+          );
+          return (
+            button &&
+            new RegExp("mínimo\\s+" + expected[index] + "\\+", "i").test(
+              button.textContent,
+            )
+          );
+        }),
+      "every ball displays the live difficulty-adjusted minimum",
+      base.map((n) => n + modifier),
+    );
 
+  // Real purchases remain the source of inventory for old and new item flows.
   await routeDashboard(playerA);
+  await waitFlush();
   await seedPvpTeam(playerA, 1, 45, 1.3);
-  const initial = await state();
-  const prices = (await shopService.catalog.snapshot()).prices;
+  const initial = await state(),
+    prices = (await shopService.catalog.snapshot()).prices;
   await fixtureWallet({
     balance: 5000 + 2 * balls.reduce((sum, id) => sum + prices[id], 0),
     items: {
@@ -387,444 +484,149 @@ export async function runBallCaptureBrowserScenario({
     },
   });
   await purchaseBalls();
-  await fixtureEncounter("ball-browser-first");
+  await fixtureEncounter("legacy-capture-cancel");
   await openThrow();
-  const beforeCancel = await state(),
-    serverBeforeCancel = await shopRepository.get(2);
-  await chooseBall("poke-ball");
-  await evalArgs(playerA, () => {
-    const dialog = document
-      .querySelector('[data-testid="capture-ball-quote"]')
-      .closest("[role=dialog]");
-    [...dialog.querySelectorAll("button")]
-      .find((b) => b.textContent.trim() === "Cancelar")
-      .click();
-  });
-  assert.deepEqual((await state()).bag, beforeCancel.bag);
-  assert.equal(
-    (await shopRepository.get(2)).uses?.length ?? 0,
-    serverBeforeCancel.uses?.length ?? 0,
-  );
+  const cancelParty = await state(),
+    cancelWallet = await shopRepository.get(2);
+  await clickButton(playerA, "Cancelar", "[role=dialog]");
+  assert.deepEqual((await state()).bag, cancelParty.bag);
+  assert.deepEqual((await shopRepository.get(2)).items, cancelWallet.items);
 
-  await openThrow();
-  const minimum = await chooseBall("poke-ball"),
-    beforeMiss = await state();
-  const usesBefore = (await shopRepository.get(2)).uses?.length ?? 0;
-  await confirmThrow();
-  const first = await waitPaidRoll("poke-ball");
-  // Allow the consumed ball chooser/encounter-manager closing animation to finish.
-  await new Promise((resolve) => setTimeout(resolve, 350));
-  for (const [label, width, height] of [
-    ["desktop", 1280, 960],
-    ["narrow", 375, 844],
-  ]) {
-    await cdp.request(
-      "Emulation.setDeviceMetricsOverride",
-      { width, height, deviceScaleFactor: 1, mobile: false },
-      playerA,
-    );
-    await cdp.request("Page.getLayoutMetrics", {}, playerA);
-    const shot = await cdp.request(
-      "Page.captureScreenshot",
-      { format: "png", captureBeyondViewport: false },
-      playerA,
-    );
-    const path = join(tmpdir(), `pokemon-capture-${label}.png`);
-    await writeFile(path, Buffer.from(shot.data, "base64"));
-    console.log(`Capture visual QA ${label}: ${path}`);
-    assert.ok(
-      await evalArgs(
-        playerA,
-        () => document.documentElement.scrollWidth <= innerWidth,
-      ),
-      `${label} capture roll has no horizontal overflow`,
-    );
-  }
-  await cdp.request(
-    "Emulation.setDeviceMetricsOverride",
-    { width: 1280, height: 960, deviceScaleFactor: 1, mobile: false },
-    playerA,
-  );
-  if (process.argv.includes("--capture-visual-only")) return;
-  const paid = await state();
-  assert.equal(first.minimum, minimum);
-  assert.equal(
-    paid.bag.items["poke-ball"],
-    beforeMiss.bag.items["poke-ball"] - 1,
-  );
-  assert.equal((await shopRepository.get(2)).uses.length, usesBefore + 1);
-  assert.deepEqual(
-    paid.pokemons,
-    beforeMiss.pokemons,
-    "no capture or attack occurs before the external result",
-  );
-  assert.deepEqual(paid.opponent, beforeMiss.opponent);
+  // Existing paid v1 plans retain their original hash/seed/ID. Only after their
+  // original receipt is APPLIED does the new UI persist the automatic D20.
+  await fixtureEncounter("legacy-capture-paid-success", false, true);
+  const beforeCapture = await state();
+  const success = await paidLegacy("great-ball", "outcome", 20);
+  const frozen = (await state()).captureAttempt;
+  assert.equal(frozen.autoRoll, 20);
+  for (const key of [
+    "attemptId",
+    "minimum",
+    "seed",
+    "resultCaptureId",
+    "expectedCombatHash",
+  ])
+    assert.deepEqual(frozen[key], success.originalAttempt[key]);
   await evalArgs(playerA, async () => {
     const [{ store }, actions] = await Promise.all([
       import("/src/store/store.ts"),
       import("/src/slices/partySlice.ts"),
     ]);
-    const before = JSON.stringify(store.getState().party.pokemons);
+    const count = store.getState().party.pokemons.length;
     store.dispatch(
       actions.captureWildOpponent(store.getState().party.opponent.encounterId),
     );
-    store.dispatch(
-      actions.changePokemonHp({
-        captureId: store.getState().party.pokemons[0].captureId,
-        amount: -1,
-      }),
-    );
-    if (JSON.stringify(store.getState().party.pokemons) !== before)
-      throw new Error(
-        "Unpaid direct capture or a party action bypassed the pending roll",
-      );
+    if (store.getState().party.pokemons.length !== count)
+      throw new Error("Raw free capture bypassed its guard");
   });
-  await outcome("escaped");
-  await waitOutcome(first, "escaped");
-  const missed = await state();
-  assert.equal(missed.pokemons.length, beforeMiss.pokemons.length);
-  assert.equal(
-    missed.pokemons[0].moves[0].currentPp,
-    beforeMiss.pokemons[0].moves[0].currentPp,
-  );
-  assert.equal(
-    missed.opponent.moves[0].currentPp,
-    beforeMiss.opponent.moves[0].currentPp - 1,
-  );
-  assert.equal(
-    missed.battleField.turn,
-    (beforeMiss.battleField?.turn ?? 1) + 1,
-  );
-  assert.deepEqual(
-    missed.bag,
-    paid.bag,
-    "external failure spends no second ball or money",
-  );
-  console.log(
-    "PASS: real Poké/Great/Ultra purchases, quote/cancel before debit, no free-capture bypass, one paid ball before physical outcome, miss consumes turn and wild PP but no player move PP.",
-  );
-
-  await openThrow();
-  await chooseBall("great-ball");
-  const beforeCaught = await state();
-  await confirmThrow();
-  const savedAttempt = await waitPaidRoll("great-ball");
-  const capturedWallet = await shopRepository.get(2);
+  await routeBackOffice();
+  await saveDifficulty(2);
+  assert.equal((await state()).captureAttempt.minimum, frozen.minimum);
+  assert.deepEqual((await state()).captureAttempt.seed, frozen.seed);
   await cdp.request("Page.reload", {}, playerA);
-  const recoveredAttempt = await waitPaidRoll("great-ball");
-  assert.deepEqual(
-    recoveredAttempt,
-    savedAttempt,
-    "reload preserves original paid ball, minimum, seed and target",
-  );
-  await outcome("caught");
-  await waitOutcome(savedAttempt, "caught");
-  const caught = await state();
-  assert.equal(caught.pokemons.length, beforeCaught.pokemons.length + 1);
+  await waitOutcome(success.prepared.payload.requestId);
+  let completed = await state();
+  assert.equal(completed.lastCaptureResult.roll, 20);
+  assert.equal(completed.lastCaptureResult.minimum, frozen.minimum);
   assert.equal(
-    caught.pokemons.filter((p) => p.captureId === savedAttempt.resultCaptureId)
-      .length,
+    completed.pokemons.filter(
+      (entry) => entry.captureId === frozen.resultCaptureId,
+    ).length,
     1,
   );
-  const capture = caught.pokemons.find(
-    (p) => p.captureId === savedAttempt.resultCaptureId,
+  const capture = completed.pokemons.find(
+    (entry) => entry.captureId === frozen.resultCaptureId,
   );
-  assert.deepEqual(capture.pokemon.stats, beforeCaught.opponent.pokemon.stats);
-  assert.deepEqual(
-    capture.moves.map((m) => [m.id, m.currentPp]),
-    beforeCaught.opponent.moves.map((m) => [m.id, m.currentPp]),
+  assert.deepEqual(capture.pokemon.stats, beforeCapture.opponent.pokemon.stats);
+  assert.deepEqual(capture.statuses, ["poisoned"]);
+  assert.equal(
+    capture.moves[0].currentPp,
+    beforeCapture.opponent.moves[0].currentPp,
   );
-  assert.equal(caught.opponent, null);
-  assert.deepEqual((await shopRepository.get(2)).items, capturedWallet.items);
-  assert.equal((await shopRepository.get(2)).revision, capturedWallet.revision);
+  await replayLegacy(success.prepared, success.paid);
   await cdp.request("Page.reload", {}, playerA);
-  await waitArgs(
-    playerA,
-    async (count) => {
-      const p = (await import("/src/store/store.ts")).store.getState().party;
-      return p.pokemons.length === count && !p.captureAttempt;
-    },
-    "successful capture stays singular after reload",
-    caught.pokemons.length,
+  await waitOutcome(success.prepared.payload.requestId);
+  assert.equal(
+    (await state()).pokemons.filter(
+      (entry) => entry.captureId === frozen.resultCaptureId,
+    ).length,
+    1,
   );
+  await saveDifficulty(0);
   console.log(
-    "PASS: a paid Great Ball external roll survives reload; captured current HP/PP are kept and neither double-click nor another reload duplicates capture or payment.",
+    "PASS: all three balls buy normally; cancel spends nothing; an already-paid legacy plan automatically rolls once, keeps its old minimum/seed/ID through rule changes and reload, and captures with original HP/status/PP without another debit.",
   );
 
-  await fixtureEncounter("ball-storage-debit", false, true);
-  await openThrow();
-  await chooseBall("ultra-ball");
-  const beforeFailedDebit = await state();
-  await evalArgs(playerA, () => {
-    const original = Storage.prototype.setItem;
-    Storage.prototype.setItem = function (key, value) {
-      if (key === "persist:root:user:2") {
-        const p = JSON.parse(JSON.parse(value).party);
-        if (
-          p.captureAttempt &&
-          p.itemUseLock?.appliedWalletRevision !== undefined
-        )
-          throw new Error("QA interrupted checked save of paid ball");
-      }
-      return original.call(this, key, value);
-    };
-  });
-  await confirmThrow();
-  await waitArgs(
-    playerA,
-    () => !!document.querySelector('[data-testid="item-use-lock"]'),
-    "paid ball inventory save failure remains recoverably locked",
-  );
-  const interruptedRequestId = (await state()).itemUseLock.requestId;
-  await backendWait(
-    async () =>
-      (await shopRepository.get(2)).uses?.some(
-        (use) =>
-          use.requestId === interruptedRequestId &&
-          use.itemId === "ultra-ball" &&
-          use.status === "pending",
-      ),
-    "interrupted Ultra Ball receipt is durably committed before checking stock",
-  );
-  const failedRow = await shopRepository.get(2);
-  assert.equal(
-    failedRow.items["ultra-ball"],
-    beforeFailedDebit.bag.items["ultra-ball"] - 1,
-  );
-  assert.equal(failedRow.uses.at(-1).status, "pending");
-  await cdp.request("Page.reload", {}, playerA);
-  const debitRecovered = await waitPaidRoll("ultra-ball");
-  assert.equal(
-    (await shopRepository.get(2)).uses.length,
-    failedRow.uses.length,
-  );
-  assert.equal((await shopRepository.get(2)).revision, failedRow.revision);
-  await outcome("caught");
-  await waitOutcome(debitRecovered, "caught");
-  const poisonCapture = (await state()).pokemons.find(
-    (p) => p.captureId === debitRecovered.resultCaptureId,
-  );
-  assert.deepEqual(
-    poisonCapture.statuses,
-    ["poisoned"],
-    "capture retains primary status and clears secondary combat effects",
-  );
-  assert.equal(
-    poisonCapture.pokemon.stats.find((s) => s.name === "hp").value,
-    22,
-  );
-  console.log(
-    "PASS: interrupted post-debit inventory save recovers one original Ultra Ball receipt after reload and captures without healing HP/primary status.",
-  );
-
-  await fixtureEncounter("ball-storage-outcome", true);
-  await openThrow();
-  await chooseBall("poke-ball");
-  await confirmThrow();
-  const retryAttempt = await waitPaidRoll("poke-ball");
-  const beforeFailedResult = await state(),
-    resultRow = await shopRepository.get(2);
+  await fixtureEncounter("legacy-capture-paid-miss", true);
+  const beforeMiss = await state();
+  const miss = await paidLegacy("poke-ball", "outcome", 1);
+  const missedAttempt = (await state()).captureAttempt;
+  assert.equal(missedAttempt.autoRoll, 1);
   const expected = await evalArgs(playerA, async () => {
     const [{ store }, turn] = await Promise.all([
       import("/src/store/store.ts"),
       import("/src/lib/captureTurn.ts"),
     ]);
-    const p = JSON.parse(JSON.stringify(store.getState().party)),
-      a = p.captureAttempt;
-    p.captureAttempt = undefined;
-    const result = turn.runFailedCaptureTurn(
-      p,
-      a.captureId,
-      a.seed,
-      `ball-miss:${a.attemptId}`,
+    const party = JSON.parse(JSON.stringify(store.getState().party));
+    const attempt = party.captureAttempt;
+    party.captureAttempt = undefined;
+    const next = turn.runFailedCaptureTurn(
+      party,
+      attempt.captureId,
+      attempt.seed,
+      "ball-miss:" + attempt.attemptId,
     );
-    return JSON.parse(
-      JSON.stringify({
-        pokemons: result.pokemons,
-        opponent: result.opponent,
-        battleField: result.battleField,
-        emerald: result.emerald,
-      }),
-    );
+    return {
+      pokemons: next.pokemons,
+      opponent: next.opponent,
+      battleField: next.battleField,
+      emerald: next.emerald,
+    };
   });
-  await evalArgs(
-    playerA,
-    (attemptId) => {
-      const original = Storage.prototype.setItem;
-      window.__restoreCaptureStorage = () => {
-        Storage.prototype.setItem = original;
-      };
-      Storage.prototype.setItem = function (key, value) {
-        if (key === "persist:root:user:2") {
-          const p = JSON.parse(JSON.parse(value).party);
-          if (p.lastCaptureResult?.attemptId === attemptId && !p.captureAttempt)
-            throw new Error("QA interrupted physical die outcome save");
-        }
-        return original.call(this, key, value);
-      };
-    },
-    retryAttempt.attemptId,
-  );
-  await outcome("escaped");
-  await waitArgs(
-    playerA,
-    () =>
-      document
-        .querySelector('[data-testid="capture-roll-pending"] [role=alert]')
-        ?.textContent.includes("guardar"),
-    "failed outcome save offers retry on same physical throw",
-  );
-  assert.deepEqual(
-    (await state()).captureAttempt,
-    beforeFailedResult.captureAttempt,
-  );
   assert.deepEqual(
     (await state()).pokemons,
-    beforeFailedResult.pokemons,
-    "failed checked save does not apply a partial enemy turn",
+    beforeMiss.pokemons,
+    "failed result write cannot partially apply the rival attack",
   );
-  await evalArgs(playerA, () => window.__restoreCaptureStorage());
-  await outcome("escaped");
-  await waitOutcome(retryAttempt, "escaped");
-  const retrySaved = await state();
+  await cdp.request("Page.reload", {}, playerA);
+  await waitOutcome(miss.prepared.payload.requestId);
+  completed = await state();
   for (const key of ["pokemons", "opponent", "battleField", "emerald"])
     assert.deepEqual(
-      retrySaved[key],
+      completed[key],
       expected[key],
-      `saved outcome retry keeps deterministic ${key}`,
+      "retry preserves native seed and a single wild response: " + key,
     );
-  assert.equal((await shopRepository.get(2)).revision, resultRow.revision);
+  assert.equal(completed.lastCaptureResult.roll, 1);
+  assert.equal(completed.lastCaptureResult.outcome, "escaped");
   assert.equal(
-    (await shopRepository.get(2)).uses.length,
-    resultRow.uses.length,
+    completed.pokemons[0].moves[0].currentPp,
+    beforeMiss.pokemons[0].moves[0].currentPp,
   );
+  await replayLegacy(miss.prepared, miss.paid);
   console.log(
-    "PASS: failed external-outcome persistence preserves the pending throw and retries the identical seeded wild response without a second turn, capture or inventory debit.",
+    "PASS: a paid legacy miss persists its D20 before effects; failed outcome storage and reload reuse the native seed for one response/turn without charging or spending own PP again.",
   );
 
-  await fixtureWallet({
-    items: {
-      ...retrySaved.bag.items,
-      "poke-ball": 0,
-      "great-ball": 1,
-      "ultra-ball": 0,
-    },
-  });
-  await fixtureEncounter("ball-last-one");
-  await openThrow();
-  for (const id of ["poke-ball", "ultra-ball"])
-    assert.equal(
-      await evalArgs(
-        playerA,
-        (id) =>
-          document.querySelector(`[data-testid="capture-ball-${id}"]`).disabled,
-        id,
-      ),
-      true,
-    );
-  await chooseBall("great-ball");
-  await confirmThrow();
-  const last = await waitPaidRoll("great-ball");
-  const depleted = await shopRepository.get(2);
-  assert.ok(balls.every((id) => (depleted.items[id] ?? 0) === 0));
-  await outcome("escaped");
-  await waitOutcome(last, "escaped");
-  await openManagement();
-  assert.equal(
-    await evalArgs(
-      playerA,
-      () => document.querySelector('[data-testid="capture-open"]').disabled,
-    ),
-    true,
-    "no ball left means no further throw",
+  await fixtureEncounter("legacy-capture-wallet-recovery");
+  const interrupted = await paidLegacy("ultra-ball", "wallet", 20);
+  assert(
+    (await state()).itemUseLock,
+    "post-debit storage failure retains the original legacy reservation",
   );
+  await cdp.request("Page.reload", {}, playerA);
+  await waitOutcome(interrupted.prepared.payload.requestId);
+  completed = await state();
   assert.ok(
-    await evalArgs(playerA, () =>
-      document.body.textContent.includes("No tienes pokebolas en tu Bag"),
-    ),
+    completed.lastCaptureResult.roll >= 1 &&
+      completed.lastCaptureResult.roll <= 20,
   );
-  assert.deepEqual(
-    cdp.exceptions,
-    [],
-    "Unexpected Chrome JavaScript exception",
-  );
+  await replayLegacy(interrupted.prepared, interrupted.paid);
   console.log(
-    "PASS: depleted ball types stay disabled and the final failed physical throw leaves no further attempt available with an empty Bag.",
+    "PASS: interrupted legacy inventory/effect save recovers its paid receipt and finishes automatically after reload, without a new item payment.",
   );
 
-  // Back office capture rules are shared live, but a paid physical throw keeps
-  // the exact quote that was accepted before inventory was consumed.
-  const difficultySelector = 'input[aria-label="Dificultad global de captura"]';
-  const routeBackOffice = async () => {
-    const origin = await evalArgs(admin, () => location.origin);
-    await cdp.request("Page.stopLoading", {}, admin);
-    await cdp.request("Page.navigate", { url: origin + "/back-office" }, admin);
-    await waitArgs(
-      admin,
-      (selector) =>
-        location.pathname === "/back-office" &&
-        !!document.querySelector(selector),
-      "admin capture difficulty editor ready",
-      difficultySelector,
-    );
-  };
-  const saveDifficulty = async (modifier) => {
-    await waitArgs(
-      admin,
-      (selector) => {
-        const input = document.querySelector(selector);
-        return input && !input.disabled;
-      },
-      "capture difficulty input available",
-      difficultySelector,
-    );
-    await field(admin, difficultySelector, String(modifier));
-    await waitArgs(
-      admin,
-      () => {
-        const button = document.querySelector(
-          '[data-testid="capture-difficulty-save"]',
-        );
-        return button && !button.disabled;
-      },
-      "capture difficulty is valid and ready to save",
-    );
-    await evalArgs(admin, () =>
-      document.querySelector('[data-testid="capture-difficulty-save"]').click(),
-    );
-    await backendWait(
-      async () =>
-        (await shopService.catalog.snapshot()).captureDifficulty === modifier,
-      "capture difficulty persisted in canonical catalog",
-    );
-    await waitArgs(
-      admin,
-      () =>
-        !!document.querySelector('[data-testid="capture-difficulty-saved"]'),
-      "admin sees saved capture difficulty",
-    );
-    return shopService.catalog.snapshot();
-  };
-  const assertMinima = async (modifier, baseMinima) => {
-    await waitArgs(
-      playerA,
-      (expected) => {
-        return ["poke-ball", "great-ball", "ultra-ball"].every((id, index) => {
-          const button = document.querySelector(
-            `[data-testid="capture-ball-${id}"]`,
-          );
-          return (
-            button &&
-            new RegExp(`mínimo\\s+${expected[index]}\\+`, "i").test(
-              button.textContent,
-            )
-          );
-        });
-      },
-      "live capture difficulty updates every ball minimum",
-      baseMinima.map((minimum) => minimum + modifier),
-    );
-  };
+  await waitFlush();
   await fixtureWallet({
     items: {
       ...(await state()).bag.items,
@@ -833,43 +635,28 @@ export async function runBallCaptureBrowserScenario({
       "ultra-ball": 3,
     },
   });
-  await fixtureEncounter("capture-global-difficulty");
-  const baseMinima = await evalArgs(playerA, async () => {
+  await fixtureEncounter("capture-global-rules");
+  const base = await evalArgs(playerA, async () => {
     const [{ store }, rates] = await Promise.all([
       import("/src/store/store.ts"),
       import("/src/lib/captureRates.ts"),
     ]);
-    const p = store.getState().party;
+    const party = store.getState().party;
     return rates
-      .captureRequirements(p.opponent.pokemon, p.opponent.statuses, 0)
-      .balls.filter((ball) => ball.id !== "master")
-      .map((ball) => ball.minimum);
+      .captureRequirements(party.opponent.pokemon, party.opponent.statuses, 0)
+      .balls.filter((entry) => entry.id !== "master")
+      .map((entry) => entry.minimum);
   });
-  await routeBackOffice();
-  const difficultyStart = await shopService.catalog.snapshot();
-  assert.equal(
-    difficultyStart.captureDifficulty,
-    0,
-    "legacy rules default to normal difficulty",
-  );
-  const walletBeforeRules = await shopRepository.get(2);
-  await saveDifficulty(2);
   await openThrow();
-  await assertMinima(2, baseMinima);
-  await chooseBall("poke-ball", 2);
-  assert.equal(
-    (await shopRepository.get(2)).revision,
-    walletBeforeRules.revision,
-  );
-  assert.deepEqual(
-    (await shopRepository.get(2)).items,
-    walletBeforeRules.items,
-  );
-
-  // Invalid values cannot send a settings mutation from the real admin form.
-  const rulesBeforeInvalid = await shopService.catalog.snapshot();
+  await assertMinima(0, base);
+  await saveDifficulty(2);
+  await assertMinima(2, base);
   for (const invalid of [-1, 1.5, 21]) {
-    await field(admin, difficultySelector, String(invalid));
+    await field(
+      admin,
+      'input[aria-label="Dificultad global de captura"]',
+      String(invalid),
+    );
     assert.equal(
       await evalArgs(
         admin,
@@ -879,140 +666,65 @@ export async function runBallCaptureBrowserScenario({
       ),
       true,
     );
-    assert.equal(
-      (await shopService.catalog.snapshot()).revision,
-      rulesBeforeInvalid.revision,
-    );
+    assert.equal((await shopService.catalog.snapshot()).captureDifficulty, 2);
   }
-  await routeBackOffice();
+  await cdp.request("Page.reload", {}, admin);
   await waitArgs(
     admin,
-    (selector) => document.querySelector(selector)?.value === "2",
-    "capture difficulty survives admin reload",
-    difficultySelector,
+    () =>
+      document.querySelector('input[aria-label="Dificultad global de captura"]')
+        ?.value === "2",
+    "capture difficulty persists after administrator reload",
   );
-  await cdp.request("Page.reload", {}, playerA);
+  await routeDashboard(playerA);
   await openThrow();
-  await assertMinima(2, baseMinima);
-  await chooseBall("great-ball", 2);
-
-  // A quote that has not been paid follows the new global minimum live.
-  await saveDifficulty(0);
-  await assertMinima(0, baseMinima);
-  await chooseBall("poke-ball", 0);
-  await saveDifficulty(1);
-  await assertMinima(1, baseMinima);
-  await chooseBall("poke-ball", 1);
-  assert.equal(
-    (await shopRepository.get(2)).uses.length,
-    walletBeforeRules.uses.length,
-  );
-  await saveDifficulty(2);
-  await assertMinima(2, baseMinima);
-  const frozenMinimum = await chooseBall("poke-ball", 2);
-  const acceptedRules = await shopService.catalog.snapshot();
-  await confirmThrow();
-  const difficultyAttempt = await waitPaidRoll("poke-ball");
-  assert.equal(difficultyAttempt.minimum, frozenMinimum);
-  const paidRulesWallet = await shopRepository.get(2);
-  const rulesUse = paidRulesWallet.uses.find(
-    (use) => use.requestId === difficultyAttempt.attemptId,
-  );
-  assert.equal(
-    rulesUse.captureRevision,
-    acceptedRules.revision,
-    "the debit receipt binds the accepted rules revision",
-  );
-  await saveDifficulty(0);
-  assert.deepEqual(
-    (await state()).captureAttempt,
-    difficultyAttempt,
-    "changing global rules does not rewrite a paid attempt",
-  );
-  await cdp.request("Page.reload", {}, playerA);
-  assert.deepEqual(
-    await waitPaidRoll("poke-ball"),
-    difficultyAttempt,
-    "paid difficulty remains frozen after reload",
-  );
-  await outcome("escaped");
-  await waitOutcome(difficultyAttempt, "escaped");
-  assert.equal(
-    (await shopRepository.get(2)).revision,
-    paidRulesWallet.revision,
-  );
-  assert.equal(
-    (await shopRepository.get(2)).uses.length,
-    paidRulesWallet.uses.length,
-  );
-  console.log(
-    "PASS: Back office capture difficulty defaults0, persists+2, updates all three ball quotes live and after reload, rejects invalid inputs and keeps a paid throw's minimum/revision frozen across later rule edits.",
-  );
-
-  await fixtureEncounter("capture-difficulty-impossible");
+  await assertMinima(2, base);
   await saveDifficulty(20);
-  await openThrow();
-  await assertMinima(20, baseMinima);
-  const impossibleWallet = await shopRepository.get(2);
-  assert.ok(baseMinima.every((minimum) => minimum + 20 > 20));
-  for (const ballId of balls)
+  await assertMinima(20, base);
+  const impossible = await shopRepository.get(2),
+    localImpossible = await state();
+  for (const id of balls)
     assert.equal(
       await evalArgs(
         playerA,
         (id) =>
-          document.querySelector(`[data-testid="capture-ball-${id}"]`).disabled,
-        ballId,
+          document.querySelector('[data-testid="capture-ball-' + id + '"]')
+            .disabled,
+        id,
       ),
       true,
     );
   assert.equal(
     await evalArgs(
       playerA,
-      () =>
-        document.querySelector('[data-testid="capture-throw-confirm"]')
-          .disabled,
+      () => !!document.querySelector('[data-testid="capture-throw-confirm"]'),
     ),
-    true,
+    false,
+    "new capture UI has no separate confirmation or manual outcome controls",
   );
-  assert.ok(
-    await evalArgs(playerA, () =>
-      /imposible/i.test(
-        document.querySelector('[data-testid="capture-ball-poke-ball"]')
-          .textContent,
-      ),
-    ),
-  );
-  await evalArgs(playerA, () =>
-    document.querySelector('[data-testid="capture-throw-confirm"]').click(),
-  );
-  assert.equal((await state()).captureAttempt, undefined);
-  assert.equal(
-    (await shopRepository.get(2)).revision,
-    impossibleWallet.revision,
-  );
-  assert.equal(
-    (await shopRepository.get(2)).uses.length,
-    impossibleWallet.uses.length,
-  );
-  assert.deepEqual((await shopRepository.get(2)).items, impossibleWallet.items);
+  assert.deepEqual((await state()).bag.items, localImpossible.bag.items);
+  assert.deepEqual((await shopRepository.get(2)).items, impossible.items);
   await saveDifficulty(0);
-  await assertMinima(0, baseMinima);
-  await chooseBall("poke-ball", 0);
+  await assertMinima(0, base);
+  await clickButton(playerA, "Cancelar", "[role=dialog]");
+  await fixtureWallet({
+    items: {
+      ...(await state()).bag.items,
+      "poke-ball": 0,
+      "great-ball": 0,
+      "ultra-ball": 0,
+    },
+  });
+  await openManagement();
   assert.equal(
     await evalArgs(
       playerA,
-      () =>
-        document.querySelector('[data-testid="capture-throw-confirm"]')
-          .disabled,
+      () => document.querySelector('[data-testid="capture-open"]').disabled,
     ),
-    false,
+    true,
   );
-  assert.deepEqual(
-    cdp.exceptions,
-    [],
-    "Unexpected Chrome JavaScript exception",
-  );
+  assert.deepEqual(cdp.exceptions, [], "Unexpected browser exception");
   console.log(
-    "PASS: a minimum above20 is shown as impossible, blocks all otherwise-stocked balls without charging, and restoring difficulty0 re-enables the normal quote.",
+    "PASS: global capture difficulty updates all ball minima, persists through reload, rejects invalid inputs, blocks impossible rolls before any charge and disables capture with no balls.",
   );
 }

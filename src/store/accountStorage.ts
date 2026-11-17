@@ -2,6 +2,10 @@ import type { PartyState } from "@/slices/partySlice";
 import { stablePvpJson } from "@/lib/pvp/types";
 import { getMaxMovePp } from "@/lib/movePp";
 import {
+  validConsumptionAck,
+  validLocalItemOutbox,
+} from "@/lib/shop/localItems";
+import {
   BALL_ITEM_IDS,
   USABLE_ITEM_IDS,
   SHOP_ITEM_IDS,
@@ -169,6 +173,17 @@ export function decodeAccountParty(
     )
       throw new Error();
     if (isRecord(party.opponent)) validateStoredMovePp(party.opponent.moves);
+    if (
+      party.localItemOutbox !== undefined &&
+      !validLocalItemOutbox(party.localItemOutbox)
+    )
+      throw new Error();
+    if (
+      isRecord(party.bag) &&
+      party.bag.consumptionAck !== undefined &&
+      !validConsumptionAck(party.bag.consumptionAck)
+    )
+      throw new Error();
     if (
       party.pvpRevision !== undefined &&
       (!Number.isSafeInteger(party.pvpRevision) ||
@@ -477,6 +492,13 @@ function writeNormalAccountRoot(userId: number, raw: string): void {
         previous.captureAttempt) &&
       pvpPartyRevision(previous) === pvpPartyRevision(incoming) &&
       stablePvpJson(previous) !== stablePvpJson(incoming)
+    )
+      return;
+    if (
+      previous.localItemOutbox?.operations.length &&
+      pvpPartyRevision(previous) === pvpPartyRevision(incoming) &&
+      stablePvpJson(previous.localItemOutbox) !==
+        stablePvpJson(incoming.localItemOutbox)
     )
       return;
   }

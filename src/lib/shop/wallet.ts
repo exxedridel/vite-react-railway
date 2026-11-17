@@ -2,6 +2,7 @@ import partyReducer, { resetGame, type PartyState } from "@/slices/partySlice";
 import { transactPvpParty } from "@/store/store";
 import { getCurrentHp } from "@/lib/pokemonStats";
 import { pvpPartyRevision } from "@/store/accountStorage";
+import { pendingLocalItemOperations, validConsumptionAck } from "./localItems";
 import {
   SHOP_ITEM_IDS,
   type BalanceAdjustment,
@@ -24,6 +25,11 @@ export function validWallet(value: unknown): value is Wallet {
     !integer(value.balance) ||
     !integer(value.revision) ||
     !record(value.items)
+  )
+    return false;
+  if (
+    value.consumptionAck !== undefined &&
+    !validConsumptionAck(value.consumptionAck)
   )
     return false;
   return Object.entries(value.items).every(
@@ -167,28 +173,93 @@ export function partyWithWallet(party: PartyState, wallet: Wallet): PartyState {
   const current = party.bag;
   const sameOwner =
     current?.walletUserId === wallet.userId && current.currencyVersion === 1;
+  if (
+    sameOwner &&
+    current?.consumptionAck &&
+    wallet.consumptionAck?.clientId === current.consumptionAck.clientId &&
+    wallet.consumptionAck.throughSequence <
+      current.consumptionAck.throughSequence
+  )
+    return party;
+  if (
+    pendingLocalItemOperations(party).length &&
+    wallet.consumptionAck === undefined
+  )
+    return party;
+  if (
+    sameOwner &&
+    typeof current.walletRevision === "number" &&
+    current.walletRevision > wallet.revision
+  )
+    return party;
+  const ack = wallet.consumptionAck ?? current?.consumptionAck;
+  const outbox = party.localItemOutbox;
+  if (outbox?.operations.length && (!ack || ack.clientId !== outbox.clientId))
+    throw new Error(
+      "El inventario pendiente pertenece a otro navegador. Conserva esta partida para recuperarlo.",
+    );
+  const remaining =
+    outbox?.operations.filter(
+      (operation) => operation.sequence > (ack?.throughSequence ?? 0),
+    ) ?? [];
+  const items = { ...wallet.items };
+  for (const operation of remaining) {
+    const available = items[operation.itemId] ?? 0;
+    items[operation.itemId] = Math.max(0, available - operation.quantity);
+  }
+  const nextOutbox = outbox
+    ? {
+        ...outbox,
+        operations: remaining,
+        nextSequence: Math.max(
+          outbox.nextSequence,
+          (ack?.throughSequence ?? 0) + 1,
+        ),
+      }
+    : undefined;
+  const priorThrough =
+    current?.consumptionAck?.clientId === ack?.clientId
+      ? (current?.consumptionAck?.throughSequence ?? 0)
+      : 0;
+  const newlyRejected = (ack?.rejected ?? []).filter(
+    (entry) => entry.sequence > priorThrough,
+  );
+  const conflicts = newlyRejected.length
+    ? [...(party.localItemConflicts ?? []), ...newlyRejected].slice(-50)
+    : party.localItemConflicts;
+  const advancedAck =
+    !!ack &&
+    ack.throughSequence > (current?.consumptionAck?.throughSequence ?? -1);
   if (sameOwner && typeof current.walletRevision === "number") {
     if (current.walletRevision > wallet.revision) return party;
     if (current.walletRevision === wallet.revision) {
       if (
         current.money !== wallet.balance ||
-        !SHOP_ITEM_IDS.every(
-          (id) => (current.items?.[id] ?? 0) === (wallet.items[id] ?? 0),
-        )
+        (!advancedAck &&
+          !SHOP_ITEM_IDS.every(
+            (id) => (current.items?.[id] ?? 0) === (items[id] ?? 0),
+          ))
       )
         throw new Error(
           "El saldo confirmado no coincide. Actualiza la conexión de Tienda.",
         );
-      return party;
+      if (
+        JSON.stringify(current.consumptionAck) === JSON.stringify(ack) &&
+        JSON.stringify(outbox) === JSON.stringify(nextOutbox)
+      )
+        return party;
     }
   }
   return {
     ...party,
     pvpRevision: pvpPartyRevision(party) + 1,
+    ...(nextOutbox ? { localItemOutbox: nextOutbox } : {}),
+    ...(conflicts ? { localItemConflicts: conflicts } : {}),
     bag: {
       money: wallet.balance,
       badges: [...(party.bag?.badges ?? [])],
-      items: { ...wallet.items },
+      items,
+      ...(ack ? { consumptionAck: ack } : {}),
       currencyVersion: 1,
       walletRevision: wallet.revision,
       walletUserId: wallet.userId,
@@ -284,6 +355,10 @@ export function prepareShopParty(
   )
     return Promise.reject(new Error("La preparación del regalo no es válida."));
   return transactPvpParty(userId, async (party) => {
+    if (pendingLocalItemOperations(party).length)
+      throw new Error(
+        "Espera a que se sincronicen los objetos utilizados antes de recibir una compra o regalo.",
+      );
     if (
       party.resetLock ||
       party.itemUseLock ||
@@ -542,6 +617,10 @@ export function prepareGameReset(
   expectedWalletRevision: number,
 ): Promise<void> {
   return transactPvpParty(userId, async (party) => {
+    if (pendingLocalItemOperations(party).length)
+      throw new Error(
+        "Sincroniza los objetos utilizados antes de reiniciar la partida.",
+      );
     if (localBattleActive(party))
       throw new Error("Termina la batalla antes de reiniciar la partida.");
     if (
@@ -652,7 +731,20 @@ export function applyGameReset(
       // The public Redux reset dispatch is guarded; only this checked transaction
       // calls the pure reducer after receiving the server's exact receipt.
       next = partyWithWallet(
-        partyReducer({ ...party, resetLock: undefined }, resetGame()),
+        {
+          ...partyReducer({ ...party, resetLock: undefined }, resetGame()),
+          ...(party.bag?.consumptionAck
+            ? {
+                bag: {
+                  ...partyReducer(undefined, { type: "init" }).bag!,
+                  consumptionAck: party.bag.consumptionAck,
+                },
+              }
+            : {}),
+          ...(party.localItemOutbox
+            ? { localItemOutbox: party.localItemOutbox }
+            : {}),
+        },
         wallet,
       );
       next = {

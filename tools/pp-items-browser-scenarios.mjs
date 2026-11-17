@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { waitLocalItemFlush } from "./legacy-item-browser-fixture.mjs";
 
 /** Local Chrome/Nest fixtures only: exercises the same UI and receipts as play. */
 export async function ppItemsBrowserScenario({
@@ -389,6 +390,7 @@ export async function ppItemsBrowserScenario({
     ),
     true,
   );
+  await waitLocalItemFlush({ playerA, waitArgs });
   const afterWild = await shopRepository.get(2);
   assert.equal(afterWild.balance, 900);
   assert.equal(afterWild.items["max-ether"], 0);

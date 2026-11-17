@@ -87,6 +87,7 @@ export async function runAccountStorageTests() {
   } = await import("../src/store/store");
   const {
     reservePvpParty,
+    holdPvpParty,
     applyPvpResult,
     releasePvpParty,
     recoverPvpPartyLock,
@@ -349,6 +350,65 @@ export async function runAccountStorageTests() {
   assert.equal(store.getState().party.pvpLock!.conflict, undefined);
   passed.push(
     "an unresolved older battle keeps its original snapshot hash without a PP migration before recovery",
+  );
+  const queuedUser = 2007;
+  const queued = fixture();
+  const queuedClient = "collecting-local-client";
+  queued.bag = {
+    money: 500,
+    badges: ["boulder"],
+    items: { "full-restore": 1 },
+    walletUserId: queuedUser,
+    walletRevision: 0,
+    currencyVersion: 1,
+    consumptionAck: { clientId: queuedClient, throughSequence: 0 },
+  };
+  queued.localItemOutbox = {
+    version: 1,
+    clientId: queuedClient,
+    nextSequence: 2,
+    operations: [
+      {
+        operationId: "queued-before-collection",
+        sequence: 1,
+        itemId: "full-restore",
+        quantity: 1,
+        captureId: queued.pokemons[0].captureId,
+        context: "party",
+      },
+    ],
+  };
+  testStorage.seed(accountStorageKey(queuedUser), encodeAccountParty(queued));
+  await activateAccountStore(queuedUser);
+  const reservation = {
+    battleId: "collection-during-local-sync",
+    userId: queuedUser,
+    clientId: queuedClient,
+  };
+  await holdPvpParty(reservation);
+  await assert.rejects(reservePvpParty(reservation), /Sincroniza/);
+  assert.equal(saved(queuedUser).pvpLock!.phase, "held");
+  assert.equal(saved(queuedUser).pvpLock!.snapshot, undefined);
+  const { applyShopWallet } = await import("../src/lib/shop/wallet");
+  await applyShopWallet({
+    userId: queuedUser,
+    balance: 500,
+    revision: 1,
+    currencyVersion: 1,
+    items: { "full-restore": 1 },
+    consumptionAck: { clientId: queuedClient, throughSequence: 1 },
+  });
+  assert.equal(saved(queuedUser).localItemOutbox!.operations.length, 0);
+  assert.equal(saved(queuedUser).pvpLock!.battleId, reservation.battleId);
+  const afterSettlement = await reservePvpParty(reservation);
+  assert.deepEqual(afterSettlement.consumptionBarrier, {
+    clientId: queuedClient,
+    throughSequence: 1,
+  });
+  assert.equal(saved(queuedUser).pvpLock!.phase, "reserved");
+  assert.deepEqual(afterSettlement.pokemons, store.getState().party.pokemons);
+  passed.push(
+    "a collecting battle keeps its held reservation while the local outbox settles, then submits the same party with its confirmed inventory barrier",
   );
   return passed;
 }

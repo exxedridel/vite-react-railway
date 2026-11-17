@@ -236,7 +236,21 @@ export function applyItemUse(
         throw new Error(
           "La partida o el inventario no coincide con el objeto. Recupera la operación original.",
         );
-      next = partyWithWallet(clone(lock.prepared), wallet);
+      next = partyWithWallet(
+        {
+          ...clone(lock.prepared),
+          ...(party.localItemOutbox
+            ? { localItemOutbox: party.localItemOutbox }
+            : {}),
+          ...(party.localItemConflicts
+            ? { localItemConflicts: party.localItemConflicts }
+            : {}),
+          ...(party.captureSettings
+            ? { captureSettings: party.captureSettings }
+            : {}),
+        },
+        wallet,
+      );
       next = {
         ...next,
         pvpRevision:

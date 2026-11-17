@@ -24,6 +24,10 @@ export type PvpChoice =
   | { kind: "cancel" }
   | { kind: "forfeit" };
 export type PvpSnapshot = {
+  consumptionBarrier?: Pick<
+    import("@/lib/shop/types").ConsumptionAck,
+    "clientId" | "throughSequence"
+  >;
   version: 1;
   battleId: string;
   snapshotId: string;

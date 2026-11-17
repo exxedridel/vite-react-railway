@@ -157,7 +157,9 @@ export default function PokemonOpponentPanel({
     ? captureRequirements(
         opponent.pokemon,
         opponent.statuses,
-        shop.catalog?.captureDifficulty ?? 0,
+        shop.catalog?.captureDifficulty ??
+          party.captureSettings?.captureDifficulty ??
+          0,
       )
     : null;
   const canCapture =
@@ -177,8 +179,7 @@ export default function PokemonOpponentPanel({
   const canThrowNow =
     canCapture &&
     hasBalls &&
-    shop.connected &&
-    shop.synced &&
+    shop.localItemsReady &&
     !shop.usingItem &&
     !isLocalPartyMutationBlocked(party) &&
     !party.emerald?.pending.player &&
@@ -503,9 +504,9 @@ export default function PokemonOpponentPanel({
                       ? "Primero debes elegir tu Pokémon inicial."
                       : !hasBalls
                         ? "No tienes pokebolas en tu Bag. Compra más en el Poké Mart."
-                        : !shop.connected || !shop.synced
-                          ? "Conecta y sincroniza tu Bag para lanzar una pokebola."
-                          : "Elige una pokebola de tu Bag y confirma su lanzamiento antes de tirar el D20."}
+                        : !shop.localItemsReady
+                          ? "Sincroniza la Bag una primera vez para habilitar los lanzamientos."
+                          : "Toca una pokebola: se gastará una unidad y el D20 resolverá la captura automáticamente."}
               </p>
             </div>
           )}

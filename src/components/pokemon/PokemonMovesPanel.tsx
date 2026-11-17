@@ -162,8 +162,7 @@ function MovePicker({
   const tmUnavailable =
     learning ||
     shop.usingItem ||
-    !shop.connected ||
-    !shop.synced ||
+    !shop.localItemsReady ||
     stock < 1 ||
     learningBlocked;
   const targetStillValid =
@@ -404,8 +403,7 @@ export default function PokemonMovesPanel({
   const tmStock = party.bag?.items?.tm ?? 0;
   const tmUnavailable =
     shop.usingItem ||
-    !shop.connected ||
-    !shop.synced ||
+    !shop.localItemsReady ||
     tmStock < 1 ||
     localBattleActive(party) ||
     isLocalPartyMutationBlocked(party);

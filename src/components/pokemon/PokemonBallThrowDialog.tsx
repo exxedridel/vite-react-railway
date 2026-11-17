@@ -1,4 +1,6 @@
 import { useRef, useState } from "react";
+import { toast } from "sonner";
+import { store } from "@/store/store";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -34,44 +36,67 @@ export default function PokemonBallThrowDialog({
 }) {
   const shop = useShopContext();
   const party = useAppSelector((state) => state.party);
-  const [selected, setSelected] = useState<BallItemId | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const inFlight = useRef(false);
-  const difficulty = shop.catalog?.captureDifficulty ?? 0;
+  const settings = shop.catalog
+    ? {
+        captureDifficulty: shop.catalog.captureDifficulty ?? 0,
+        captureRevision: shop.catalog.revision,
+      }
+    : party.captureSettings;
+  const difficulty = settings?.captureDifficulty ?? 0;
   const info = opponent
     ? captureRequirements(opponent.pokemon, opponent.statuses, difficulty)
     : null;
-  const item = SHOP_ITEMS.find((item) => item.id === selected);
-  const target = info?.balls.find(
-    (ball) => selected && ball.id === captureBallId[selected],
-  );
-  const stock = selected ? (party.bag?.items?.[selected] ?? 0) : 0;
-  const canThrow =
-    !!selected &&
-    !!target &&
-    target.minimum !== null &&
-    target.minimum <= 20 &&
-    !!shop.catalog &&
-    stock > 0 &&
+  const canUse =
     !busy &&
     !shop.usingItem &&
-    shop.connected &&
-    shop.synced &&
+    shop.localItemsReady &&
     !isLocalPartyMutationBlocked(party);
-  async function launch() {
-    if (!canThrow || !selected || inFlight.current) return;
+  async function launch(ballId: BallItemId) {
+    const target = info?.balls.find(
+      (ball) => ball.id === captureBallId[ballId],
+    );
+    if (
+      !canUse ||
+      inFlight.current ||
+      !target ||
+      target.minimum === null ||
+      target.minimum > 20 ||
+      (party.bag?.items?.[ballId] ?? 0) < 1
+    )
+      return;
     inFlight.current = true;
     setBusy(true);
     setError("");
     try {
       if (!target || !opponent?.encounterId) return;
-      await shop.throwBall(selected, {
+      await shop.throwBall(ballId, {
         minimum: target.minimum!,
         encounterId: opponent.encounterId,
         captureDifficulty: difficulty,
-        captureRevision: shop.catalog!.revision,
+        captureRevision: settings?.captureRevision ?? 0,
       });
+      const result = store.getState().party.lastCaptureResult;
+      if (result?.roll !== undefined && result.minimum !== undefined) {
+        toast(
+          result.outcome === "caught"
+            ? `${result.pokemonName} se unió a tu equipo.`
+            : `${result.pokemonName} escapó de la pokebola.`,
+          {
+            id: `capture:${result.attemptId}`,
+            description: (
+              <span data-testid="capture-auto-result">
+                D20: {result.roll} · mínimo: {result.minimum}.{" "}
+                {result.outcome === "caught"
+                  ? "Captura conseguida."
+                  : "El salvaje respondió al lanzamiento."}
+              </span>
+            ),
+          },
+        );
+      }
       onOpenChange(false);
     } catch (reason) {
       setError(
@@ -90,7 +115,6 @@ export default function PokemonBallThrowDialog({
       onOpenChange={(value) => {
         if (busy) return;
         if (value) {
-          setSelected(null);
           setError("");
         }
         onOpenChange(value);
@@ -109,7 +133,8 @@ export default function PokemonBallThrowDialog({
           <DialogTitle>Lanzar pokebola</DialogTitle>
           <DialogDescription>
             Elige una bola de tu Bag para atrapar a {opponent?.pokemon.name}.
-            Primero confirma el lanzamiento; después tira tu D20 físico.
+            Toca la pokebola que quieras lanzar. El D20 y el resultado se
+            calculan automáticamente al gastar una unidad.
           </DialogDescription>
         </DialogHeader>
         <p
@@ -129,22 +154,19 @@ export default function PokemonBallThrowDialog({
               <Button
                 key={id}
                 type="button"
-                variant={selected === id ? "default" : "outline"}
+                variant="outline"
                 className="h-auto min-h-14 w-full justify-between gap-3 px-3 py-2"
                 data-testid={`capture-ball-${id}`}
-                aria-pressed={selected === id}
+                aria-label={`Lanzar ${entry.name}`}
                 disabled={
                   !quantity ||
                   !info ||
-                  busy ||
+                  !canUse ||
                   minimum === undefined ||
                   minimum === null ||
                   minimum > 20
                 }
-                onClick={() => {
-                  setSelected(id);
-                  setError("");
-                }}
+                onClick={() => void launch(id)}
               >
                 <span className="flex items-center gap-2">
                   <img
@@ -167,33 +189,15 @@ export default function PokemonBallThrowDialog({
                     </span>
                   </span>
                 </span>
-                {selected === id && <span aria-hidden="true">✓</span>}
               </Button>
             );
           })}
         </div>
-        {target && item && (
-          <div
-            className="space-y-2 rounded-xl border p-3 text-sm"
-            data-testid="capture-ball-quote"
-          >
-            <p>
-              Lanzarás <strong>1 {item.name}</strong>. Necesitas{" "}
-              <strong>{target.minimum} o más</strong> en tu D20 físico.
-            </p>
-            {target.minimum !== null && target.minimum > 20 && (
-              <p role="status" className="text-destructive">
-                Imposible con esta bola: el mínimo supera el máximo de tu D20.
-                No se gastará ninguna bola.
-              </p>
-            )}
-            <p className="text-muted-foreground">
-              La bola se gastará al confirmar, tanto si capturas al Pokémon como
-              si escapa. Si falla, el salvaje responderá y se resolverá el
-              turno.
-            </p>
-          </div>
-        )}
+        <p className="text-sm text-muted-foreground">
+          Cada lanzamiento consume una bola y tu acción, tanto si captura como
+          si falla. El D20 debe igualar o superar el mínimo indicado. Si falla,
+          el salvaje responderá. Un mínimo superior a 20 impide lanzar esa bola.
+        </p>
         {opponent && (
           <details className="rounded-xl border p-3 text-xs text-muted-foreground">
             <summary className="cursor-pointer font-medium">
@@ -213,9 +217,9 @@ export default function PokemonBallThrowDialog({
             captura.
           </p>
         )}
-        {!shop.connected && (
+        {!shop.localItemsReady && (
           <p role="status" className="text-sm text-muted-foreground">
-            Conecta tu Bag para confirmar el consumo de una pokebola.
+            Sincroniza la Bag una primera vez para habilitar los lanzamientos.
           </p>
         )}
         {error && (
@@ -231,17 +235,11 @@ export default function PokemonBallThrowDialog({
           >
             Cancelar
           </Button>
-          <Button
-            data-testid="capture-throw-confirm"
-            disabled={!canThrow}
-            onClick={() => void launch()}
-          >
-            {busy
-              ? "Confirmando lanzamiento…"
-              : item
-                ? `Lanzar ${item.name}`
-                : "Elige una pokebola"}
-          </Button>
+          {busy && (
+            <p role="status" className="text-sm">
+              Guardando lanzamiento…
+            </p>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

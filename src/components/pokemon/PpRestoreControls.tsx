@@ -41,8 +41,7 @@ export default function PpRestoreControls({
     disabled ||
     !!using ||
     shop.usingItem ||
-    !shop.connected ||
-    !shop.synced ||
+    !shop.localItemsReady ||
     isLocalPartyMutationBlocked(party) ||
     !!pending ||
     !!request?.waiting ||

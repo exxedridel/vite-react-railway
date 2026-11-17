@@ -51,6 +51,7 @@ export const KANTO_BADGES = [
 
 export type GymBadgeId = (typeof KANTO_BADGES)[number]["id"];
 export type TrainerBag = {
+  consumptionAck?: import("./shop/types").ConsumptionAck;
   money: number;
   badges: GymBadgeId[];
   items?: Partial<Record<import("./shop/types").ShopItemId, number>>;
