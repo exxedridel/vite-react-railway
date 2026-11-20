@@ -57,7 +57,17 @@ export default function PokemonBattleHpDialog({
               maxHp={getMaxHp(pokemon)}
               onChangeHp={(amount) => {
                 if (side === "player")
-                  dispatch(changePokemonHp({ captureId, amount }));
+                  void dispatch(
+                    submitLegacyBattleAction(
+                      changePokemonHp({ captureId, amount }),
+                    ),
+                  ).catch((error: unknown) =>
+                    toast.error(
+                      error instanceof Error
+                        ? error.message
+                        : "No se pudo guardar el HP.",
+                    ),
+                  );
                 else if (opponent)
                   void dispatch(
                     submitLegacyBattleAction(

@@ -391,6 +391,10 @@ export function prepareShopParty(
   )
     return Promise.reject(new Error("La preparación del regalo no es válida."));
   return transactPvpParty(userId, async (party) => {
+    if (party.localRewardOutbox?.length)
+      throw new Error(
+        "Espera a que se sincronicen los Pokedollars del combate antes de comprar o ajustar el saldo.",
+      );
     if (pendingLocalItemOperations(party).length)
       throw new Error(
         "Espera a que se sincronicen los objetos utilizados antes de recibir una compra o regalo.",

@@ -184,6 +184,13 @@ export function decodeAccountParty(
       if (
         !isRecord(reward) ||
         reward.version !== 1 ||
+        (reward.outcome !== undefined &&
+          (reward.lossPenaltyVersion !== 1 ||
+            !["win", "lose", "draw", "escape"].includes(
+              String(reward.outcome),
+            ))) ||
+        (reward.lossPenaltyVersion !== undefined &&
+          reward.lossPenaltyVersion !== 1) ||
         !validLocalRewardClaim({
           encounterId: party.opponent.encounterId,
           epoch: reward.epoch,

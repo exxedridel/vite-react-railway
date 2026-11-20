@@ -74,7 +74,11 @@ import {
   neutralBattleStages,
 } from "../src/lib/pokemonStats";
 import { combatKey } from "../src/lib/emerald/types";
-import { queueLocalTrainerReward } from "../src/lib/shop/combatRewards";
+import {
+  matchingLocalReward,
+  queueLocalTrainerReward,
+  type CombatReward,
+} from "../src/lib/shop/combatRewards";
 import { submitLegacyBattleAction } from "../src/lib/legacyBattleAction";
 declare const testStorage: {
   getItem(key: string): string | null;
@@ -3004,6 +3008,175 @@ export async function runAccountStorageTests() {
   );
   passed.push(
     "Legacy manual KOs use checked persistence before subscribers can claim money: quota failure reveals no KO, level or claim; retry saves all three once, preserving PP through reload and action replay",
+  );
+  await clearAccountStore();
+  const lossUser = 644;
+  const lossClient = "vm-loss-client";
+  const lossWallet = (revision = 0, balance = 500): Wallet => ({
+    ...wallet(lossUser, revision, balance, { "full-restore": 1 }),
+    rewardEpoch: 0,
+    consumptionAck: { clientId: lossClient, throughSequence: 0 },
+  });
+  await activateAccountStore(lossUser);
+  await applyShopWallet(lossWallet());
+  await transactPvpParty(lossUser, async (current) => {
+    const actor = clone(legacyTeam[0]);
+    if (!isLeveled(actor.pokemon))
+      throw new Error("Loss fixture needs a leveled Pokémon");
+    const lossPokemon = changeLevel(actor.pokemon, 20);
+    actor.pokemon = lossPokemon;
+    actor.pokemon.stats.find((stat) => stat.name === "hp")!.value = 15;
+    actor.moves = [{ ...clone(trainerMoves.find((move) => move.id === 33)!), currentPp: 0 }];
+    actor.statuses = ["poisoned"];
+    const foe = changeLevel(clone(lossPokemon), 21);
+    foe.stats.find((stat) => stat.name === "hp")!.value = 30;
+    return {
+      party: {
+        ...current,
+        pokemons: [actor],
+        gameSettings: clone(legacySettings),
+        starterClaimed: true,
+        emerald: undefined,
+        opponent: {
+          encounterId: "vm-manual-loss", kind: "trainer", pokemon: foe,
+          stages: neutralBattleStages(), statuses: [], statusTurns: {},
+          rewards: { version: 1, lossPenaltyVersion: 1, color: "blue", epoch: 0 },
+        },
+        battleField: {
+          version: 1, turn: 1, activeCaptureId: actor.captureId,
+          weather: null, waterSport: null, mudSport: null,
+        },
+      },
+      value: undefined,
+    };
+  });
+  const lossBefore = clone(saved(lossUser));
+  const finalPlayerKo = changePokemonHp({
+    captureId: lossBefore.pokemons[0].captureId, amount: -15,
+  });
+  let visibleUnpersistedLoss = 0;
+  const unsubscribeLoss = store.subscribe(() => {
+    if (store.getState().party.localRewardOutbox?.length) visibleUnpersistedLoss++;
+  });
+  testStorage.failWritesFor.add(accountStorageKey(lossUser));
+  await assert.rejects(store.dispatch(submitLegacyBattleAction(finalPlayerKo)), /guardar/);
+  testStorage.failWritesFor.clear();
+  assert.deepEqual(saved(lossUser), lossBefore);
+  assert.deepEqual(store.getState().party, lossBefore);
+  assert.equal(visibleUnpersistedLoss, 0,
+    "background subscribers never see a loss or debit claim that failed checked persistence");
+  await store.dispatch(submitLegacyBattleAction(finalPlayerKo));
+  unsubscribeLoss();
+  const lossAfter = clone(saved(lossUser));
+  assert.equal(getCurrentHp(lossAfter.pokemons[0].pokemon), 0);
+  assert.equal(lossAfter.opponent.rewards.outcome, "lose");
+  assert.deepEqual(lossAfter.localRewardOutbox, [{
+    encounterId: "vm-manual-loss", epoch: 0, color: "blue", penaltyVersion: 1,
+  }]);
+  assert.equal(lossAfter.bag.money, 500, "the local result never guesses or deducts central money");
+  assert.equal(lossAfter.pokemons[0].pokemon.level, 20);
+  assert.deepEqual(lossAfter.pokemons[0].moves, lossBefore.pokemons[0].moves);
+  assert.deepEqual(lossAfter.pokemons[0].statuses, ["poisoned"]);
+  assert.equal(isLocalPartyMutationBlocked(store.getState().party), false);
+  await assert.rejects(prepareShopParty(lossUser, lossClient, "buy-before-loss-sync", 0), /Pokedollars del combate/);
+  await clearAccountStore();
+  await activateAccountStore(lossUser);
+  assert.deepEqual(saved(lossUser).localRewardOutbox, lossAfter.localRewardOutbox);
+  assert.equal(saved(lossUser).opponent.rewards.outcome, "lose");
+  await store.dispatch(submitLegacyBattleAction(finalPlayerKo));
+  assert.deepEqual(saved(lossUser).localRewardOutbox, lossAfter.localRewardOutbox,
+    "replaying the manual HP action after reload cannot enqueue a second loss");
+  passed.push(
+    "A manual final Party KO saves the terminal loss and penalty intent together; quota failure publishes neither, retry/reload preserve one claim with HP/PP/status and unchanged central money, and purchases wait for settlement",
+  );
+  const lossReceipt: CombatReward = {
+    rewardId: "local:vm-manual-loss", userId: lossUser, source: "local-trainer",
+    encounterId: "vm-manual-loss", epoch: 0, color: "blue", penaltyVersion: 1,
+    nominalAmount: 200, amount: 200, walletRevision: 1, status: "debited",
+    balanceBefore: 500, balanceAfter: 300,
+  };
+  await applyShopWallet(lossWallet(1, 300));
+  assert.equal(saved(lossUser).bag.money, 300);
+  assert.deepEqual(saved(lossUser).localRewardOutbox, lossAfter.localRewardOutbox,
+    "a debited wallet snapshot by itself cannot acknowledge a particular loss");
+  await applyShopWallet(lossWallet(2, 900));
+  const acknowledgeLoss = () => transactPvpParty(lossUser, async (current) => {
+    const projected = partyWithWallet(current, lossWallet(1, 300));
+    return {
+      party: {
+        ...projected,
+        pvpRevision: (projected.pvpRevision ?? 0) + 1,
+        localRewardOutbox: (projected.localRewardOutbox ?? []).filter(
+          (claim) => !matchingLocalReward(claim, lossReceipt, lossUser),
+        ),
+      },
+      value: undefined,
+    };
+  });
+  const beforeLossAck = clone(saved(lossUser));
+  testStorage.failWritesFor.add(accountStorageKey(lossUser));
+  await assert.rejects(acknowledgeLoss(), /guardar/);
+  testStorage.failWritesFor.clear();
+  assert.deepEqual(saved(lossUser), beforeLossAck);
+  assert.deepEqual(store.getState().party, beforeLossAck);
+  await acknowledgeLoss();
+  assert.equal(saved(lossUser).bag.money, 900,
+    "a late loss receipt clears its exact intent without regressing a newer canonical balance");
+  assert.equal(saved(lossUser).localRewardOutbox.length, 0);
+  assert.equal(saved(lossUser).opponent.rewards.outcome, "lose");
+  await clearAccountStore();
+  await activateAccountStore(lossUser);
+  await store.dispatch(submitLegacyBattleAction(setBattleOpponent(null)));
+  assert.equal(saved(lossUser).opponent, null);
+  assert.equal(saved(lossUser).localRewardOutbox.length, 0,
+    "removing a completed trainer after ACK and reload cannot charge the same loss again");
+  assert.equal(saved(lossUser).bag.money, 900);
+  assert.deepEqual(saved(lossUser).pokemons, lossAfter.pokemons);
+  passed.push(
+    "Only the exact terminal loss receipt clears its queue through checked persistence; stale debit snapshots cannot replace newer money, and removing the defeated player's trainer after ACK/reload never requeues a penalty",
+  );
+  await clearAccountStore();
+  const forfeitUser = 645;
+  const forfeitClient = "vm-forfeit-client";
+  await activateAccountStore(forfeitUser);
+  await applyShopWallet({
+    ...wallet(forfeitUser, 0, 500, { "full-restore": 1 }), rewardEpoch: 0,
+    consumptionAck: { clientId: forfeitClient, throughSequence: 0 },
+  });
+  await transactPvpParty(forfeitUser, async (current) => ({
+    party: {
+      ...current, gameSettings: clone(legacySettings), starterClaimed: true,
+      pokemons: clone(lossBefore.pokemons),
+      opponent: {
+        ...clone(lossBefore.opponent), encounterId: "vm-forfeit-loss",
+        rewards: { version: 1, lossPenaltyVersion: 1, color: "red", epoch: 0 },
+      },
+      battleField: clone(lossBefore.battleField),
+    },
+    value: undefined,
+  }));
+  await store.dispatch(submitLegacyBattleAction(setBattleOpponent(null)));
+  const forfeited = clone(saved(forfeitUser));
+  assert.deepEqual(forfeited.localRewardOutbox, [{
+    encounterId: "vm-forfeit-loss", epoch: 0, color: "red", penaltyVersion: 1,
+  }]);
+  await assert.rejects(prepareShopParty(forfeitUser, forfeitClient, "gift-before-forfeit-sync", 0, "gift", {
+    adminUserId: 1, itemId: "tm", quantity: 1,
+  }), /Pokedollars del combate/);
+  await commitLocalItemUse({
+    userId: forfeitUser, clientId: forfeitClient, operationId: "restore-with-loss-pending",
+    itemId: "full-restore", captureId: forfeited.pokemons[0].captureId,
+    plan: (party) => preparePartyItem(party, forfeited.pokemons[0].captureId, "full-restore"),
+  });
+  assert.equal(getCurrentHp(saved(forfeitUser).pokemons[0].pokemon), getMaxHp(saved(forfeitUser).pokemons[0].pokemon));
+  assert.deepEqual(saved(forfeitUser).pokemons[0].statuses, []);
+  assert.equal(saved(forfeitUser).bag.items["full-restore"], 0);
+  assert.equal(saved(forfeitUser).localItemOutbox.operations.length, 1);
+  assert.deepEqual(saved(forfeitUser).localRewardOutbox, forfeited.localRewardOutbox);
+  assert.equal(saved(forfeitUser).bag.money, 500);
+  assert.equal(isLocalPartyMutationBlocked(store.getState().party), false);
+  passed.push(
+    "A trainer forfeit queues its penalty durably but remains playable: pending money prevents new purchases or gifts while a locally owned Full Restore heals and spends one inventory item immediately without waiting for either network acknowledgement",
   );
   await clearAccountStore();
   const gymRewardUser = 643;

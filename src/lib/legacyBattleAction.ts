@@ -21,6 +21,11 @@ export function submitLegacyBattleAction(action: UnknownAction) {
         "party/executePokemonMove",
         "party/finishBattleTurn",
         "party/changeOpponentHp",
+        "party/changePokemonHp",
+        "party/updatePokemonStats",
+        ...(action.type === "party/setBattleOpponent" && action.payload === null
+          ? ["party/setBattleOpponent"]
+          : []),
       ].includes(action.type)
     )
       throw new Error("La acción de combate manual no es válida.");

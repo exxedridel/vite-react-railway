@@ -29,6 +29,10 @@ export type BattleOpponent = {
   /** Reward rules are frozen when the encounter is prepared. */
   rewards?: {
     version: 1;
+    /** Only newly prepared encounters opt into defeat charges. */
+    lossPenaltyVersion?: 1;
+    /** Durable local terminal outcome; prevents re-queueing after its ACK. */
+    outcome?: import("@/lib/battleRewards").LocalBattleOutcome;
     color: import("@/lib/captureRates").CatchTierColor;
     epoch: number;
   };

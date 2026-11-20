@@ -74,14 +74,14 @@ export default function PokemonBagDialog({ open, onOpenChange }: Props) {
                 data-testid="bag-reward-pending"
                 className="text-xs text-muted-foreground"
               >
-                {shop.rewardPendingCount} recompensa(s) guardada(s). Los
-                Pokedollars se acreditarán al sincronizar.
+                {shop.rewardPendingCount} resultado(s) de combate guardado(s).
+                Los Pokedollars se actualizarán al sincronizar.
               </p>
             )}
             {shop.rewardSyncError && shop.rewardPendingCount > 0 && (
               <p role="status" className="text-xs text-muted-foreground">
-                {shop.rewardSyncError} Puedes continuar jugando; la recompensa
-                se reintentará en segundo plano.
+                {shop.rewardSyncError} Puedes continuar jugando; el ajuste de
+                Pokedollars se reintentará en segundo plano.
               </p>
             )}
             {shop.connected && !shop.synced && (

@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button";
 import { store } from "@/store/store";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { setBattleOpponent } from "@/slices/partySlice";
+import { submitLegacyBattleAction } from "@/lib/legacyBattleAction";
+import { TRAINER_PENALTY_AMOUNTS } from "@/lib/shop/combatRewards";
 import {
   Dialog,
   DialogContent,
@@ -107,6 +109,17 @@ function DraggableOpponent({
   const fainted = isPokemonFainted(pokemon);
   const dispatch = useAppDispatch();
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const party = useAppSelector((state) => state.party);
+  const opponent = party.opponent;
+  const forfeitPenalty =
+    opponent?.kind === "trainer" &&
+    opponent.rewards?.lossPenaltyVersion === 1 &&
+    !opponent.rewards.outcome &&
+    !fainted &&
+    !party.emerald?.ended
+      ? TRAINER_PENALTY_AMOUNTS[opponent.rewards.color]
+      : undefined;
   const cancelRemoveRef = useRef<HTMLButtonElement>(null);
   const [corner] = useState<Corner>(readCorner);
   const [position, setPosition] = useState<Point | null>(null);
@@ -306,7 +319,7 @@ function DraggableOpponent({
           type="button"
           aria-label={`Quitar a ${pokemon.name} como oponente`}
           aria-haspopup="dialog"
-          title="Quitar oponente"
+          title={forfeitPenalty === undefined ? "Quitar oponente" : "Rendirse"}
           className="absolute -left-2 -top-4 z-10 flex h-7 w-7 items-center justify-center rounded-full border border-brand bg-card text-card-foreground shadow-sm hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           onClick={() => setRemoveDialogOpen(true)}
         >
@@ -327,8 +340,14 @@ function DraggableOpponent({
           }}
         >
           <DialogHeader>
-            <DialogTitle>¿Quitar oponente?</DialogTitle>
+            <DialogTitle>
+              {forfeitPenalty === undefined
+                ? "¿Quitar oponente?"
+                : "¿Rendirse?"}
+            </DialogTitle>
             <DialogDescription>
+              {forfeitPenalty !== undefined &&
+                `Rendirse descontará hasta ${forfeitPenalty} Pokedollars, sin dejar el saldo por debajo de cero. `}
               Se quitará a{" "}
               <span className="font-semibold capitalize">{pokemon.name}</span> y
               se descartarán su nivel y sus modificadores guardados. Se
@@ -348,12 +367,30 @@ function DraggableOpponent({
             <Button
               type="button"
               variant="destructive"
-              onClick={() => {
-                setRemoveDialogOpen(false);
-                dispatch(setBattleOpponent(null));
+              disabled={removing}
+              onClick={async () => {
+                setRemoving(true);
+                try {
+                  await dispatch(
+                    submitLegacyBattleAction(setBattleOpponent(null)),
+                  );
+                  setRemoveDialogOpen(false);
+                } catch (error) {
+                  toast.error(
+                    error instanceof Error
+                      ? error.message
+                      : "No se pudo guardar el final del encuentro.",
+                  );
+                } finally {
+                  setRemoving(false);
+                }
               }}
             >
-              Quitar oponente
+              {removing
+                ? "Guardando…"
+                : forfeitPenalty === undefined
+                  ? "Quitar oponente"
+                  : "Rendirse"}
             </Button>
           </DialogFooter>
         </DialogContent>

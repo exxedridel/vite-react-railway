@@ -11,7 +11,7 @@ import { emptyBattleField } from "../src/lib/battleField";
 import { prepareAutomaticBallCaptureParty } from "../src/lib/shop/ballCapture";
 import { combatKey } from "../src/lib/emerald/types";
 import { victoryLevels, rewardedLevel, recordLocalDefeats, finishLocalBattleRewards, validLocalBattleRewards, validCombatRewardLedger } from "../src/lib/battleRewards";
-import reducer, { commitEmeraldAction, executePokemonMove, type PartyState } from "../src/slices/partySlice";
+import reducer, { changePokemonHp, commitEmeraldAction, executePokemonMove, setBattleOpponent, type PartyState } from "../src/slices/partySlice";
 import { battleContextKey } from "../src/lib/battleEngine";
 import type { CapturedPokemon } from "../src/types/pokemon";
 import type { TrainerBattleSession, TrainerChoice } from "../src/lib/trainerBattle/types";
@@ -65,6 +65,78 @@ function resolve(party: PartyState, id = "reward-turn") {
   const update = runPlayerActionWithAutomaticOpponent(party, "own", { kind: "move", moveId: 94 }, seed, id);
   return { update, party: reducer(party, commitEmeraldAction({ expected: combatKey(party), update, id })) };
 }
+
+function penaltyEncounter(automatic = true, wild = false): PartyState {
+  const party = local(5, 50, wild);
+  party.pokemons = [member("own", 5, 35, [150])];
+  const rival = member("opponent", 50, 65, [94]);
+  party.opponent!.pokemon = rival.pokemon;
+  party.opponent!.moves = rival.moves;
+  party.opponent!.automation!.enabled = automatic;
+  party.opponent!.rewards = { version: 1, lossPenaltyVersion: 1, color: "green", epoch: 3 };
+  hurt(party.pokemons[0], 1);
+  return party;
+}
+
+test("native trainer loss saves a single penalty with the final turn, preserving Bag and progression", () => {
+  const before = penaltyEncounter();
+  const bag = clone(before.bag);
+  const update = runPlayerActionWithAutomaticOpponent(before, "own", { kind: "move", moveId: 150 }, seed, "lost-turn");
+  assert.equal(update.battleOutcome, "lose");
+  Object.freeze(update.opponent!.rewards);
+  const action = commitEmeraldAction({ expected: combatKey(before), update, id: "lost-turn" });
+  const after = reducer(before, action);
+  assert.equal(getCurrentHp(after.pokemons[0].pokemon), 0);
+  assert.equal(after.pokemons[0].pokemon.level, 5);
+  assert.deepEqual(after.bag, bag, "currency remains central; no optimistic debit or item change");
+  assert.equal(before.opponent!.rewards!.outcome, undefined);
+  assert.equal(update.opponent!.rewards!.outcome, undefined, "the terminal marker must not mutate the engine payload");
+  assert.deepEqual(after.localRewardOutbox, [{ encounterId: before.opponent!.encounterId, color: "green", epoch: 3, penaltyVersion: 1 }]);
+  assert.deepEqual(reducer(after, action), after, "the same checked turn cannot repeat");
+  const acknowledged = { ...clone(after), localRewardOutbox: [] };
+  assert.deepEqual(reducer(acknowledged, setBattleOpponent(null)).localRewardOutbox, [], "leaving a finished loss does not queue another debit");
+});
+
+test("a manual trainer loss requires the entire Party to faint, not just its active Pokemon", () => {
+  const before = penaltyEncounter(false);
+  before.pokemons.push(member("reserve", 5, 35, [150]));
+  const first = reducer(before, changePokemonHp({ captureId: "own", amount: -999 }));
+  assert.equal(first.localRewardOutbox, undefined);
+  const second = reducer(first, changePokemonHp({ captureId: "reserve", amount: -999 }));
+  assert.equal(second.localRewardOutbox!.length, 1);
+  assert.equal(second.localRewardOutbox![0].penaltyVersion, 1);
+  assert.equal(second.opponent!.rewards!.outcome, "lose");
+  assert.deepEqual(reducer(second, changePokemonHp({ captureId: "reserve", amount: -1 })).localRewardOutbox, second.localRewardOutbox);
+  const acknowledged = { ...clone(second), localRewardOutbox: [] };
+  assert.deepEqual(reducer(acknowledged, setBattleOpponent(null)).localRewardOutbox, [], "leaving a saved manual loss cannot replay its already-acknowledged charge");
+});
+
+test("removing or replacing a live opted-in trainer persists its forfeit using the old identity", () => {
+  const before = penaltyEncounter();
+  const removed = reducer(before, setBattleOpponent(null));
+  assert.equal(removed.opponent, null);
+  assert.equal(removed.localRewardOutbox![0].penaltyVersion, 1);
+  assert.equal(removed.localRewardOutbox![0].encounterId, before.opponent!.encounterId);
+  const replacement = { ...clone(before.opponent!), encounterId: "next-encounter" };
+  const replaced = reducer(before, setBattleOpponent(replacement));
+  assert.equal(replaced.opponent!.encounterId, "next-encounter");
+  assert.deepEqual(replaced.localRewardOutbox, removed.localRewardOutbox);
+  const edited = reducer(before, setBattleOpponent({ ...clone(before.opponent!), stages: neutralBattleStages() }));
+  assert.equal(edited.localRewardOutbox, undefined, "editing the same encounter is not a forfeit");
+});
+
+test("wild, legacy and drawn encounters never acquire a penalty from HP edits or leaving", () => {
+  const wild = penaltyEncounter(false, true);
+  const legacy = penaltyEncounter(false);
+  delete legacy.opponent!.rewards!.lossPenaltyVersion;
+  const drawn = penaltyEncounter(false);
+  drawn.opponent!.pokemon.stats.find((stat) => stat.name === "hp")!.value = 0;
+  for (const before of [wild, legacy, drawn]) {
+    const after = reducer(before, changePokemonHp({ captureId: "own", amount: -999 }));
+    assert.equal(after.localRewardOutbox, undefined);
+    assert.equal(reducer(after, setBattleOpponent(null)).localRewardOutbox, undefined);
+  }
+});
 
 test("victory rewards compare levels and cap the result at 100", () => {
   assert.equal(victoryLevels(20, 19), 1);

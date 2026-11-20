@@ -1,5 +1,18 @@
 # Contexto de la trilogia Pokemon
 
+Etapa vigente2026-11-20 React2.17.0/Nest: penalizacionesTrainerporloss/forfeit,
+clamp0 yGiovanni500confirmados. Casillaspink0green100blue200yellow300red400;
+Brock50Misty100Surge200Erika300Koga/Sabrina400Blaine/Giovanni/Elite/Champion500
+RivalLab50. Wild/draw/JcJexentos. Optinnuevosrewards.lossPenaltyVersion1 yadmin
+create.lossPenaltyVersion1, oldsinflagnocharge. Checkedturn/selfHP/removalguarda
+outcome+penaltyVersion1outbox antesreveal; quitar/reemplazarlivetrainerforfeit con
+aviso. MarkerterminalimpiderequeueACK/reload. LedgercentralmismoIDwin/loss/first
+terminal, CASminsaldo+receiptdurableincl0/hashintentonominal/recovery/epochstale0.
+Objetos/juegolocalsigueBG, compras/ajustes esperanflush. Nest260Shop68PvP/build;
+React41rewards47wallet11Party7cuentas/TS/build/audit175; ChromePenalties5+Rewards5PASS.
+NoShopCOMPLETOnuevo. VerPunto/protocolo. Nest→Reactrecargar2.17.0sinvars/MySQL/
+seed/reset/borrados/commit/push/deploy, no producciónverificada.
+
 Etapa vigente2026-11-20 React2.16.0 RESORTERA: pullatrás/soltar, impulsoopuesto×3
 desdeorigin(.5,.70), no clampsalióaescena. Gripoffsetreal, bolasecarga yvuelo
 saledeahí; círculomenor minradius.125W/.105H, spriteigual, sinpreviewlanding.

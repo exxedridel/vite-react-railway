@@ -4,7 +4,7 @@ Frontend del juego con React, TypeScript y Vite. `mysql-restapi` autentica y
 administra usuarios; `nest-mongo-pokedex` comunica jugadores y conserva las
 batallas PvP, las carteras y los recibos del Poké Mart. El motor de combate se
 ejecuta en el panel administrador y, para encuentros individuales, en el frontend
-del jugador. Versión de la aplicación: **2.16.0**.
+del jugador. Versión de la aplicación: **2.17.0**.
 
 ## Recompensas automáticas de combate
 
@@ -22,6 +22,14 @@ el encuentro, incluso personalizado. Dorada es sólo para captura. Los presets
 Kanto tienen los premios acordados para gimnasios, Alto Mando y rival. JcJ no
 paga dinero ni incorpora apuestas. Huida, rendición y empate no pagan.
 
+Perder o rendirse contra un entrenador descuenta hasta el saldo disponible,
+sin deuda: rosa0, verde100, azul200, amarilla300 y roja400PD. Los presets cobran
+Brock50, Misty100, Lt. Surge200, Erika300, Koga/Sabrina400 y Blaine/Giovanni/
+Elite Four/rival campeón500; rival laboratorio50. No se penalizan salvajes,
+empates ni JcJ. Quitar o reemplazar un entrenador vivo cuenta como rendirse y
+lo advierte antes de confirmar. Las batallas guardadas anteriores no reciben
+cargos nuevos. Se conservan los niveles ganados, Bag, estados y PP resultantes.
+
 Cada líder de gimnasio vencido entrega también su medalla y una TM. La medalla
 es única; cada nueva victoria entrega otra TM. Dinero, TM y medalla se guardan
 juntos en Nest y se muestran automáticamente en Bag. Se conservan las medallas
@@ -37,10 +45,11 @@ evitan cobros duplicados al recargar. Reiniciar cambia la generación de premios
 y descarta reclamaciones de partidas anteriores. Ver reglas, compatibilidad y
 validación en [BATTLE_REWARDS_PROTOCOL.md](../BATTLE_REWARDS_PROTOCOL.md).
 
-La base de recompensas2.14 requiere Nest antes de React; la animación2.15 sólo
-añade cambios al frontend, igual que la resortera2.16. Recargar a2.16.0. Sin variables nuevas,
+Las penalizaciones2.17 requieren Nest antes de React y recargar ambos frontends
+a2.17.0. Sin variables nuevas,
 cambios MySQL, seed ni borrar partidas. `npm run test:rewards` comprueba niveles,
-dinero y guardado; `npm run test:rewards:browser` valida el flujo en Chrome local.
+dinero y guardado; `npm run test:rewards:browser` valida premios y JcJ en Chrome
+local, y `npm run test:penalties:browser` comprueba derrotas, rendición y reconexión.
 
 ## Desarrollo y comprobaciones
 

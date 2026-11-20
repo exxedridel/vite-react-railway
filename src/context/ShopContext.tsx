@@ -570,6 +570,7 @@ export default function ShopProvider({
         !party.centerLock &&
         !party.captureAttempt &&
         !pendingLocalItemOperations(party).length &&
+        !party.localRewardOutbox?.length &&
         !latestResets.some((reset) => reset.status === "pending") &&
         !latestUses.some((use) => use.status === "pending") &&
         !latestAdjustments.some((entry) => entry.status === "pending") &&
@@ -645,9 +646,19 @@ export default function ShopProvider({
           0,
         );
         if (amount) toast.success(`Recompensa: +${amount} Pokedollars`);
+        const penalties = confirmed.filter(
+          (entry) => entry.status === "debited",
+        );
+        if (penalties.length) {
+          const charged = penalties.reduce(
+            (total, entry) => total + entry.amount,
+            0,
+          );
+          toast.info(`Penalización por derrota: −${charged} Pokedollars`);
+        }
         if (confirmed.some((entry) => entry.status === "rejected"))
           toast.info(
-            "Se descartó una recompensa de una partida anterior al reinicio.",
+            "Se descartó un resultado de una partida anterior al reinicio.",
           );
       }
       if (next.centerHeals || next.centerHeal) {
@@ -1183,7 +1194,9 @@ export default function ShopProvider({
                 (entry) => entry.encounterId === claims[0].encounterId,
               )
           )
-            throw new Error("El servidor no confirmó la recompensa pendiente.");
+            throw new Error(
+              "El servidor no confirmó los Pokedollars del combate pendiente.",
+            );
         }
       })();
       rewardFlush = operation;

@@ -17,6 +17,7 @@ import { runItemGiftBrowserScenario } from "./item-gift-browser-scenarios.mjs";
 import { runLocalItemsBrowserScenario } from "./local-items-browser-scenarios.mjs";
 import { runBattleRewardsBrowserScenario } from "./battle-rewards-browser-scenarios.mjs";
 import { runCaptureThrowBrowserScenario } from "./capture-throw-browser-scenarios.mjs";
+import { runTrainerPenaltiesBrowserScenario } from "./trainer-penalties-browser-scenarios.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const nestRoot = resolve(root, "../nest-mongo-pokedex");
@@ -125,7 +126,9 @@ class ChromeConnection {
         awaitPromise: true,
       },
       sessionId,
-    );
+    ).catch((error) => {
+      throw new Error(`${error.message}; expression: ${expression.slice(0, 500)}`, { cause: error });
+    });
     if (result.exceptionDetails)
       throw new Error(
         (result.exceptionDetails.exception?.description ??
@@ -855,7 +858,14 @@ try {
   const admin = await openAccount(ADMIN_EMAIL, frontendUrl);
   const playerA = await openAccount(PLAYER_EMAIL, frontendUrl);
   const playerB = await openAccount(OTHER_EMAIL, frontendUrl);
-  if (process.argv.includes("--capture-throw-only")) {
+  if (process.argv.includes("--penalties-only")) {
+    await runTrainerPenaltiesBrowserScenario({
+      admin, playerA, playerB, cdp, evalArgs, waitArgs, field, clickButton,
+      seedPvpTeam, partyState, frontendUrl, backendUrl, shopRepository,
+      shopService: app.get(ShopService), shopGateway: app.get(ShopGateway),
+      pvpRepository, pvpService: app.get(PvpService), pvpGateway: app.get(PvpGateway),
+    });
+  } else if (process.argv.includes("--capture-throw-only")) {
     await runCaptureThrowBrowserScenario({
       playerA, cdp, evalArgs, waitArgs, clickButton, seedPvpTeam, partyState,
       frontendUrl, backendUrl, shopRepository, shopGateway: app.get(ShopGateway),
@@ -1751,7 +1761,7 @@ try {
     );
   }
 } catch (error) {
-  console.error("FAIL: " + error.message);
+  console.error("FAIL: " + (error.stack ?? error.message));
   if (cdp?.exceptions.length)
     console.error("Browser exceptions:", cdp.exceptions);
   process.exitCode = 1;

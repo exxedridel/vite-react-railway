@@ -14,7 +14,12 @@ import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { store } from "@/store/store";
 import { useShopContext } from "@/context/ShopContext";
 import { BALL_ITEM_IDS } from "@/lib/shop/types";
-import { TRAINER_REWARD_AMOUNTS } from "@/lib/shop/combatRewards";
+import {
+  TRAINER_REWARD_AMOUNTS,
+  TRAINER_PENALTY_AMOUNTS,
+} from "@/lib/shop/combatRewards";
+import { submitLegacyBattleAction } from "@/lib/legacyBattleAction";
+import { setBattleOpponent } from "@/slices/partySlice";
 import { isLocalPartyMutationBlocked } from "@/store/accountStorage";
 import { canChooseStarter } from "@/lib/starterPokemon";
 import { generateWildEncounter } from "@/lib/wildEncounter";
@@ -148,6 +153,7 @@ export default function PokemonOpponentPanel({
   const captureButtonRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const cancelRemoveRef = useRef<HTMLButtonElement>(null);
   const removeButtonRef = useRef<HTMLButtonElement>(null);
   const [search, setSearch] = useState("");
@@ -158,6 +164,14 @@ export default function PokemonOpponentPanel({
   const searchingRef = useRef(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const opponentFainted = isPokemonFainted(opponent?.pokemon);
+  const forfeitPenalty =
+    opponent?.kind === "trainer" &&
+    opponent.rewards?.lossPenaltyVersion === 1 &&
+    !opponent.rewards.outcome &&
+    !opponentFainted &&
+    !party.emerald?.ended
+      ? TRAINER_PENALTY_AMOUNTS[opponent.rewards.color]
+      : undefined;
   const captureInfo = opponent
     ? captureRequirements(
         opponent.pokemon,
@@ -360,6 +374,7 @@ export default function PokemonOpponentPanel({
         kind: rivalKind,
         rewards: {
           version: 1,
+          lossPenaltyVersion: 1,
           color: tierColor,
           epoch: store.getState().party.bag?.rewardEpoch ?? 0,
         },
@@ -528,7 +543,8 @@ export default function PokemonOpponentPanel({
             ref={removeButtonRef}
             onClick={() => setRemoveDialogOpen(true)}
           >
-            <X className="h-4 w-4" /> Quitar oponente
+            <X className="h-4 w-4" />{" "}
+            {forfeitPenalty === undefined ? "Quitar oponente" : "Rendirse"}
           </Button>
         </>
       ) : (
@@ -565,8 +581,14 @@ export default function PokemonOpponentPanel({
           }}
         >
           <DialogHeader>
-            <DialogTitle>¿Quitar oponente?</DialogTitle>
+            <DialogTitle>
+              {forfeitPenalty === undefined
+                ? "¿Quitar oponente?"
+                : "¿Rendirse?"}
+            </DialogTitle>
             <DialogDescription>
+              {forfeitPenalty !== undefined &&
+                `Rendirse descontará hasta ${forfeitPenalty} Pokedollars, sin dejar el saldo por debajo de cero. `}
               Se quitará a{" "}
               <span className="font-semibold capitalize">
                 {opponent?.pokemon.name}
@@ -588,12 +610,30 @@ export default function PokemonOpponentPanel({
             <Button
               type="button"
               variant="destructive"
-              onClick={() => {
-                onChange(null);
-                setRemoveDialogOpen(false);
+              disabled={removing}
+              onClick={async () => {
+                setRemoving(true);
+                try {
+                  await dispatch(
+                    submitLegacyBattleAction(setBattleOpponent(null)),
+                  );
+                  setRemoveDialogOpen(false);
+                } catch (error) {
+                  toast.error(
+                    error instanceof Error
+                      ? error.message
+                      : "No se pudo guardar el final del encuentro.",
+                  );
+                } finally {
+                  setRemoving(false);
+                }
               }}
             >
-              Quitar oponente
+              {removing
+                ? "Guardando…"
+                : forfeitPenalty === undefined
+                  ? "Quitar oponente"
+                  : "Rendirse"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -720,7 +760,8 @@ export default function PokemonOpponentPanel({
             >
               Victoria de casilla {CATCH_TIERS[tierColor].name}:{" "}
               {TRAINER_REWARD_AMOUNTS[tierColor]} Pokedollars. El premio se
-              conserva al iniciar el encuentro.
+              conserva al iniciar el encuentro. Derrota o rendición: hasta{" "}
+              {TRAINER_PENALTY_AMOUNTS[tierColor]} Pokedollars.
             </p>
           )}
           {encounterKind === "random" ? (
@@ -881,6 +922,8 @@ export default function PokemonOpponentPanel({
               </dl>
               {opponent && (
                 <p className="text-xs text-muted-foreground">
+                  {forfeitPenalty !== undefined &&
+                    `Reemplazar al entrenador actual cuenta como rendirse y descontará hasta ${forfeitPenalty} Pokedollars. `}
                   Al confirmar se reemplazará el rival actual y se limpiarán los
                   estados secundarios y modificadores de combate del equipo.
                 </p>
