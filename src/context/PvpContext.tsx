@@ -110,7 +110,8 @@ function validState(value: unknown): value is PvpBattleView {
     Number.isSafeInteger(state.revision) &&
     (state.levelRewards === undefined || state.levelRewards === "immediate") &&
     (state.rewardBundleVersion === undefined ||
-      state.rewardBundleVersion === 1) &&
+      state.rewardBundleVersion === 1 ||
+      state.rewardBundleVersion === 2) &&
     (state.lossPenaltyVersion === undefined ||
       (state.lossPenaltyVersion === 1 && state.mode === "trainer")) &&
     (state.leads === undefined ||
@@ -683,7 +684,7 @@ export default function PvpProvider({
       playerAId,
       trainerPresetId,
       levelRewards: "immediate",
-      rewardBundleVersion: 1,
+      rewardBundleVersion: 2,
       lossPenaltyVersion: 1,
     });
   const claimBattle = () =>

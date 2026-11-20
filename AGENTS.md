@@ -1,5 +1,14 @@
 # Contexto de la trilogia Pokemon
 
+Etapa vigente2026-11-20 React2.19/Nest: primerRivalLab250PD+1GreatBall(3variantes).
+NuevoTrainercreate rewardBundleVersion2; receiptv2labamount250/itemsGB1exactos,
+gymTMbadge/Champion6660/penaltyLab50intactos. Legacyv1/ausente500sinobjeto yhash/
+pendingoriginalnoreescribir. Bagactualizacanónico/replaynoregalaotra.269Shop71PvP/
+buildNest y15money47wallet/TS/build/audit175ReactPASS; ChromeRewards6PASSsinJSerrors/
+cleanup. QALabdebeelegirPLAYERantesSTARTER/preset(elseUIlimpialaselección).
+VerPunto/BATTLE_REWARDS_PROTOCOL; Nest→Reactrecargarambos2.19sinvars/MySQL/seed/
+reset/borrados/commit/push/deploy, producciónnoverificada.
+
 Etapa vigente2026-11-20 React2.18.0: capturaexitosaStrongCap y2pasosContinuar,
 éxito→fichareal porcaptureId(nivel/tipos/HPstats/movesPP)→cerrar/stopcapturamusic.
 holdCapture>holdEncounter, 1ctx/fuenteactiva, stopbattleantescapture/cacheportrack,

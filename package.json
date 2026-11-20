@@ -1,6 +1,6 @@
 {
   "name": "pokemon-master-trainer",
-  "version": "2.18.0",
+  "version": "2.19.0",
   "type": "module",
   "scripts": {
     "test:capture-throw": "node --import tsx --test tests/aimed-capture.test.ts tests/automatic-capture.test.ts tests/capture-turn.test.ts",

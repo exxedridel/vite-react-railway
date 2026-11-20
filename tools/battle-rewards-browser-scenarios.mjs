@@ -473,6 +473,8 @@ export async function runBattleRewardsBrowserScenario({
       "reward Trainer snapshot and preset ready",
     );
     const adminBattleId = (await pvpRepository.locked())[0].battleId;
+    assert.equal((await pvpRepository.get(adminBattleId)).rewardBundleVersion, 2,
+      "new Trainer battles opt into the current reward bundle while preserving gym rewards");
     await waitArgs(admin, () => !!document.querySelector('select[aria-label="Pokémon inicial A"]'),
       "admin may choose the initial human Pokémon from the received party");
     await field(admin, 'select[aria-label="Pokémon inicial A"]', selectedLeadId);
@@ -683,6 +685,101 @@ export async function runBattleRewardsBrowserScenario({
     assert.deepEqual((await partyState(playerB)).pokemons.map((mon) => mon.pokemon.level),
       pvpOriginalB.pokemons.map((mon) => mon.pokemon.level));
     console.log("PASS: PvP selects second-slot leads for both real users without changing snapshots, freezes selection at start and finalizes a forfeit without money, TM, badge or invented KO levels.");
+
+    // The first rival encounter has its own versioned money/item bundle.
+    // Use the real preset and normal admin UI so a central receipt must reach
+    // the player's existing Bag together with the saved result.
+    await route(playerA);
+    await waitArgs(playerA, async () => {
+      const party = (await import("/src/store/store.ts")).store.getState().party;
+      return party.pokemons.length >= 2 && !party.pvpLock;
+    }, "rival reward test rehydrates the released player Party");
+    const labPartyBefore = await state();
+    const labWalletBefore = await shopRepository.get(2);
+    const labPreset = "kanto-rival-lab-grass";
+    await clickButton(admin, "Trainer Battle");
+    await waitArgs(admin, () => !!document.querySelector('select[aria-label="Jugador Trainer A"] option[value="2"]'),
+      "rival reward test sees the connected human player");
+    // Changing the human clears the starter choice, so choose the account first.
+    await field(admin, 'select[aria-label="Jugador Trainer A"]', "2");
+    await field(admin, 'select[aria-label="Categoría Trainer"]', "rival");
+    await field(admin, 'select[aria-label="Inicial del jugador"]', "grass");
+    await waitArgs(admin, () => !!document.querySelector('select[aria-label="Preset Trainer"] option[value="kanto-rival-lab-grass"]'),
+      "the rival's first encounter matches the selected starter variant");
+    await field(admin, 'select[aria-label="Preset Trainer"]', labPreset);
+    await clickButton(admin, "Solicitar equipo y preparar Trainer");
+    await waitArgs(admin, () => [...document.querySelectorAll("button")].some(
+      (button) => button.textContent.trim() === "Iniciar Trainer Battle" && !button.disabled,
+    ), "rival first encounter receives the current player snapshot");
+    const labBattleId = (await pvpRepository.locked())[0].battleId;
+    const labPrepared = await pvpRepository.get(labBattleId);
+    assert.equal(labPrepared.trainer.presetId, labPreset);
+    assert.equal(labPrepared.rewardBundleVersion, 2);
+    await field(admin, 'select[aria-label="Pokémon inicial A"]', labPartyBefore.pokemons[0].captureId);
+    await until(async () => (await pvpRepository.get(labBattleId)).leads?.a === labPartyBefore.pokemons[0].captureId,
+      "the rival encounter starts with the selected human lead");
+    await clickButton(admin, "Iniciar Trainer Battle");
+    await waitArgs(admin, () => {
+      const move = document.querySelector('button[data-move-id="57"]');
+      return move && !move.disabled;
+    }, "the human can use Surf in the actual rival encounter");
+    await evalArgs(admin, () => document.querySelector('button[data-move-id="57"]').click());
+    await until(async () => (await pvpRepository.get(labBattleId)).phase === "finished",
+      "the first rival is defeated in a native, checkpointed battle");
+    const labFinished = await pvpRepository.get(labBattleId);
+    assert.equal(labFinished.session.runtime.winner, "a");
+    assert.equal((await shopRepository.get(2)).balance, labWalletBefore.balance,
+      "the rival does not pay before the admin saves the result");
+    assert.deepEqual((await shopRepository.get(2)).items, labWalletBefore.items);
+    await waitArgs(admin, () => [...document.querySelectorAll("button")].some(
+      (button) => button.textContent.trim() === "Volver al combate",
+    ), "rival victory summary is ready");
+    await dismissHighlights(admin);
+    await clickButton(admin, "Salir y actualizar Party");
+    await waitArgs(playerA, async (labBattleId, balance, greatBalls) => {
+      const party = (await import("/src/store/store.ts")).store.getState().party;
+      return !party.pvpLock && party.pvpReceipts?.some((receipt) => receipt.battleId === labBattleId) &&
+        party.bag.money === balance + 250 && (party.bag.items["great-ball"] ?? 0) === greatBalls + 1;
+    }, "rival victory saves Party and adds 250 PD plus one Great Ball to the player's Bag once",
+    labBattleId, labWalletBefore.balance, labWalletBefore.items["great-ball"] ?? 0);
+    const labWalletAfter = await shopRepository.get(2);
+    const labPartyAfter = await state();
+    const labReceipt = labWalletAfter.rewards.find((receipt) => receipt.rewardId === `admin:${labBattleId}`);
+    assert.equal(labWalletAfter.balance, labWalletBefore.balance + 250);
+    assert.deepEqual(labWalletAfter.items, {
+      ...labWalletBefore.items,
+      "great-ball": (labWalletBefore.items["great-ball"] ?? 0) + 1,
+    });
+    assert.deepEqual(labWalletAfter.badges, labWalletBefore.badges,
+      "the rival grants no gym badge");
+    assert.equal(labPartyAfter.bag.items.tm ?? 0, labPartyBefore.bag.items.tm ?? 0,
+      "the rival grants a Great Ball rather than a gym TM");
+    assert.equal(labReceipt.status, "credited");
+    assert.equal(labReceipt.rewardBundleVersion, 2);
+    assert.equal(labReceipt.amount, 250);
+    assert.deepEqual(labReceipt.items, { "great-ball": 1 });
+    assert.equal(labReceipt.badgeId, undefined);
+    assert.equal(labPartyAfter.pokemons[0].pokemon.level,
+      labPartyBefore.pokemons[0].pokemon.level + 1, "the ordinary KO level is conserved independently of the new reward bundle");
+    const repeated = await shopService.creditBattleReward(2, labBattleId, labPreset, labReceipt.epoch, 2);
+    const { requestHash: _labRequestHash, ...visibleLabReceipt } = labReceipt;
+    assert.deepEqual(repeated, visibleLabReceipt,
+      "replaying the same completed rival reward returns its original receipt");
+    await pvpGateway.publish();
+    await shopGateway.publish();
+    await route(playerA);
+    await waitArgs(playerA, async (balance, greatBalls) => {
+      const party = (await import("/src/store/store.ts")).store.getState().party;
+      return party.bag.money === balance && party.bag.items["great-ball"] === greatBalls;
+    }, "reloaded player retains exactly the confirmed rival money and ball",
+    labWalletAfter.balance, labWalletAfter.items["great-ball"]);
+    assert.deepEqual((await state()).pokemons, labPartyAfter.pokemons);
+    const labReplayed = await shopRepository.get(2);
+    assert.equal(labReplayed.revision, labWalletAfter.revision);
+    assert.equal(labReplayed.balance, labWalletAfter.balance);
+    assert.deepEqual(labReplayed.items, labWalletAfter.items);
+    assert.equal(labReplayed.rewards.filter((receipt) => receipt.rewardId === `admin:${labBattleId}`).length, 1);
+    console.log("PASS: defeating the real first rival with reward bundle 2 grants exactly 250 PD and one Great Ball at exit, preserves KO progression, grants no gym extras and never repeats money or stock on receipt replay, publish or player reload.");
   } finally {
     shopService.rewardClaim = originalClaim;
     await cdp

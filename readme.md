@@ -4,7 +4,7 @@ Frontend del juego con React, TypeScript y Vite. `mysql-restapi` autentica y
 administra usuarios; `nest-mongo-pokedex` comunica jugadores y conserva las
 batallas PvP, las carteras y los recibos del Poké Mart. El motor de combate se
 ejecuta en el panel administrador y, para encuentros individuales, en el frontend
-del jugador. Versión de la aplicación: **2.18.0**.
+del jugador. Versión de la aplicación: **2.19.0**.
 
 ## Recompensas automáticas de combate
 
@@ -21,6 +21,13 @@ en casillas rosa/verde/azul/amarilla/roja. Se elige y conserva el color al crear
 el encuentro, incluso personalizado. Dorada es sólo para captura. Los presets
 Kanto tienen los premios acordados para gimnasios, Alto Mando y rival. JcJ no
 paga dinero ni incorpora apuestas. Huida, rendición y empate no pagan.
+
+Desde2.19, vencer al rival en su primer encuentro del laboratorio entrega
+**250 Pokedollars y una Great Ball** para cualquiera de las tres variantes de
+inicial. Dinero y objeto se guardan juntos en Nest y aparecen en Bag al guardar
+el resultado y salir. Reintentos/recargas no duplican la entrega. El campeón
+conserva 6660 PD; no se concede TM ni medalla al rival. Batallas ya guardadas con
+reglas anteriores mantienen sus 500 PD sin objeto.
 
 Perder o rendirse contra un entrenador descuenta hasta el saldo disponible,
 sin deuda: rosa0, verde100, azul200, amarilla300 y roja400PD. Los presets cobran
@@ -45,8 +52,8 @@ evitan cobros duplicados al recargar. Reiniciar cambia la generación de premios
 y descarta reclamaciones de partidas anteriores. Ver reglas, compatibilidad y
 validación en [BATTLE_REWARDS_PROTOCOL.md](../BATTLE_REWARDS_PROTOCOL.md).
 
-Las penalizaciones introducidas en2.17 requieren Nest antes de React. Si esa
-base ya está desplegada,2.18 sólo actualiza React; recargar a2.18.0. Sin variables nuevas,
+La recompensa del rival2.19 requiere Nest antes de React y recargar ambos
+frontends a2.19.0. Sin variables nuevas,
 cambios MySQL, seed ni borrar partidas. `npm run test:rewards` comprueba niveles,
 dinero y guardado; `npm run test:rewards:browser` valida premios y JcJ en Chrome
 local, y `npm run test:penalties:browser` comprueba derrotas, rendición y reconexión.

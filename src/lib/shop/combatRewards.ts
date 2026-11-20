@@ -32,9 +32,9 @@ export type CombatReward = {
   nominalAmount?: number;
   balanceBefore?: number;
   balanceAfter?: number;
-  rewardBundleVersion?: 1;
+  rewardBundleVersion?: 1 | 2;
   badgeId?: GymBadgeId;
-  items?: { tm: 1 };
+  items?: { tm: 1 } | { "great-ball": 1 };
   rewardId: string;
   userId: number;
   source: "local-trainer" | "admin-trainer";
@@ -182,7 +182,8 @@ export function validCombatReward(value: unknown): value is CombatReward {
     return false;
   if (
     value.rewardBundleVersion !== undefined &&
-    value.rewardBundleVersion !== 1
+    value.rewardBundleVersion !== 1 &&
+    value.rewardBundleVersion !== 2
   )
     return false;
   if (
@@ -190,7 +191,7 @@ export function validCombatReward(value: unknown): value is CombatReward {
     (value.badgeId !== undefined || value.items !== undefined)
   )
     return false;
-  if (value.rewardBundleVersion === 1) {
+  if (value.rewardBundleVersion === 1 || value.rewardBundleVersion === 2) {
     if (value.source !== "admin-trainer") return false;
     const expected =
       typeof value.presetId === "string"
@@ -202,6 +203,20 @@ export function validCombatReward(value: unknown): value is CombatReward {
         !record(value.items) ||
         Object.keys(value.items).length !== 1 ||
         value.items.tm !== 1
+      )
+        return false;
+    } else if (
+      value.status === "credited" &&
+      value.rewardBundleVersion === 2 &&
+      typeof value.presetId === "string" &&
+      /^kanto-rival-lab-(grass|fire|water)$/.test(value.presetId)
+    ) {
+      if (
+        value.amount !== 250 ||
+        value.badgeId !== undefined ||
+        !record(value.items) ||
+        Object.keys(value.items).length !== 1 ||
+        value.items["great-ball"] !== 1
       )
         return false;
     } else if (value.badgeId !== undefined || value.items !== undefined)

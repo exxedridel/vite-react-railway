@@ -209,6 +209,10 @@ test("gym reward bundles validate a single typed TM and the matching badge witho
     items: { tm: 1 },
   };
   assert.equal(validCombatReward(modernGym), true);
+  assert.equal(
+    validCombatReward({ ...modernGym, rewardBundleVersion: 2 }),
+    true,
+  );
   for (const bad of [
     { ...modernGym, badgeId: "cascade" },
     { ...modernGym, badgeId: undefined },
@@ -216,7 +220,7 @@ test("gym reward bundles validate a single typed TM and the matching badge witho
     { ...modernGym, items: { tm: 0 } },
     { ...modernGym, items: { tm: 2 } },
     { ...modernGym, items: { tm: 1, "poke-ball": 1 } },
-    { ...modernGym, rewardBundleVersion: 2 },
+    { ...modernGym, rewardBundleVersion: 3 },
     { ...modernGym, rewardBundleVersion: undefined },
   ])
     assert.equal(validCombatReward(bad), false);
@@ -279,6 +283,87 @@ test("rejected gym bundles and non-gym receipts cannot grant a badge or a TM", (
     false,
     "a local colored trainer reward cannot claim a gym bundle",
   );
+});
+
+test("bundle two grants 250 Pokedollars and exactly one Great Ball for each first-rival variant while legacy receipts remain valid", () => {
+  for (const starter of ["grass", "fire", "water"]) {
+    const legacy: CombatReward = {
+      rewardId: `admin:first-rival-${starter}`,
+      userId: 2,
+      source: "admin-trainer",
+      battleId: `first-rival-${starter}`,
+      presetId: `kanto-rival-lab-${starter}`,
+      epoch: 0,
+      amount: 500,
+      walletRevision: 1,
+      status: "credited",
+    };
+    const original = structuredClone(legacy);
+    assert(validCombatReward(legacy));
+    assert(validCombatReward({ ...legacy, rewardBundleVersion: 1 }));
+    const modern: CombatReward = {
+      ...legacy,
+      rewardBundleVersion: 2,
+      amount: 250,
+      items: { "great-ball": 1 },
+    };
+    assert(validCombatReward(modern));
+    for (const bad of [
+      { ...modern, amount: 500 },
+      { ...modern, amount: 249 },
+      { ...modern, items: undefined },
+      { ...modern, items: { "great-ball": 0 } },
+      { ...modern, items: { "great-ball": 2 } },
+      { ...modern, items: { tm: 1 } },
+      { ...modern, items: { "great-ball": 1, tm: 1 } },
+      { ...modern, badgeId: "boulder" },
+      { ...modern, rewardBundleVersion: 1 },
+      { ...modern, rewardBundleVersion: undefined },
+    ])
+      assert.equal(validCombatReward(bad), false);
+    assert.deepEqual(
+      legacy,
+      original,
+      "validation never upgrades an old paid result",
+    );
+  }
+});
+
+test("stale first-rival bundles grant neither cash nor items, and champions keep their cash-only reward", () => {
+  const stale: CombatReward = {
+    rewardId: "admin:stale-first-rival",
+    userId: 2,
+    source: "admin-trainer",
+    battleId: "stale-first-rival",
+    presetId: "kanto-rival-lab-fire",
+    epoch: 0,
+    rewardBundleVersion: 2,
+    amount: 0,
+    walletRevision: 3,
+    status: "rejected",
+    reason: "STALE_GAME",
+  };
+  assert(validCombatReward(stale));
+  assert.equal(
+    validCombatReward({ ...stale, items: { "great-ball": 1 } }),
+    false,
+  );
+  for (const starter of ["grass", "fire", "water"]) {
+    const champion: CombatReward = {
+      ...stale,
+      rewardId: "admin:champion",
+      battleId: "champion",
+      presetId: `kanto-rival-champion-${starter}`,
+      status: "credited",
+      reason: undefined,
+      amount: 6660,
+    };
+    assert(validCombatReward(champion));
+    assert.equal(
+      validCombatReward({ ...champion, items: { "great-ball": 1 } }),
+      false,
+    );
+  }
 });
 
 const debited = (overrides: Partial<CombatReward> = {}): CombatReward => ({
