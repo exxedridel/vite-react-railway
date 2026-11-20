@@ -1,5 +1,17 @@
 # Contexto de la trilogia Pokemon
 
+Etapa vigente2026-11-20 React2.18.0: capturaexitosaStrongCap y2pasosContinuar,
+éxito→fichareal porcaptureId(nivel/tipos/HPstats/movesPP)→cerrar/stopcapturamusic.
+holdCapture>holdEncounter, 1ctx/fuenteactiva, stopbattleantescapture/cacheportrack,
+fuentecaptureestableentrepasos/finalstop sinrestart; mute/gesture/latefenceintactos.
+WildPokemonCaptured=FireRedMUS_CAUGHT322(noMUS_VICTORY_WILD), interpretación
+sintetizada sinROM/SoundFont, WAV13.928571s/introloop.2142857/MIDI+NodeRenderer/
+public/audioREADME fuenteshashes. Failure1Continue/battlemusic ytodosloscontratos
+Bag/turno/Party/PP/levels/reloadintactos.29captura6audio8arena/TS/build/audit175,
+Chromeaim4+legacydificultad4PASSsinJSerrors/cleanup. VerPunto/POKEBALL_PROTOCOL.
+SóloReactrecargar2.18.0sinNest/MySQL/env/seed/reset/borrados/commit/push/deploy;
+producciónnoverificada.
+
 Etapa vigente2026-11-20 React2.17.0/Nest: penalizacionesTrainerporloss/forfeit,
 clamp0 yGiovanni500confirmados. Casillaspink0green100blue200yellow300red400;
 Brock50Misty100Surge200Erika300Koga/Sabrina400Blaine/Giovanni/Elite/Champion500

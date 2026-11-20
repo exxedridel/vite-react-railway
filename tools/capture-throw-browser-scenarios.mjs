@@ -45,7 +45,9 @@ export async function runCaptureThrowBrowserScenario({
       const { BattleMusic } = await import("/src/lib/battleMusic.ts");
       const arena = document.querySelector(".battle-scene");
       const saved = window.__qaCaptureAudio = { arena, unlock: BattleMusic.prototype.unlock,
-        stop: AudioBufferSourceNode.prototype.stop, close: AudioContext.prototype.close, stops: 0, closes: 0 };
+        stop: AudioBufferSourceNode.prototype.stop, start: AudioBufferSourceNode.prototype.start,
+        close: AudioContext.prototype.close, fetch: window.fetch, stops: 0, captureStops: 0, closes: 0,
+        starts: [], audioUrls: [] };
       saved.pointerEvents = [];
       document.addEventListener("pointerdown", (event) => saved.pointerEvents.push({
         target: event.target.closest("[data-testid]")?.getAttribute("data-testid") ?? event.target.tagName,
@@ -54,7 +56,17 @@ export async function runCaptureThrowBrowserScenario({
       BattleMusic.prototype.unlock = function (...args) { saved.engine = this; return saved.unlock.apply(this, args); };
       AudioBufferSourceNode.prototype.stop = function (...args) {
         if (this === saved.source) saved.stops++;
+        if (this === saved.captureSource) saved.captureStops++;
         return saved.stop.apply(this, args);
+      };
+      AudioBufferSourceNode.prototype.start = function (...args) {
+        saved.starts.push(this);
+        return saved.start.apply(this, args);
+      };
+      window.fetch = function (input, ...args) {
+        const url = typeof input === "string" ? input : input instanceof Request ? input.url : String(input);
+        if (url.includes("/audio/")) saved.audioUrls.push(url);
+        return saved.fetch.call(this, input, ...args);
       };
       AudioContext.prototype.close = function (...args) {
         if (this === saved.context) saved.closes++;
@@ -97,6 +109,55 @@ export async function runCaptureThrowBrowserScenario({
       stops: saved.stops, closes: saved.closes };
   }), { arena: true, source: true, context: true, running: true, advancing: true, stops: 0, closes: 0 },
   "capture presentation preserves the arena and battle source/context without stopping its music");
+  const captureAudioStarted = async () => {
+    await waitArgs(playerA, () => {
+      const saved = window.__qaCaptureAudio;
+      return saved.engine.track === "capture" && saved.engine.source &&
+        saved.engine.source !== saved.source && saved.engine.context.state === "running";
+    }, "the success dialog replaces battle music with the captured Pokémon track");
+    const snapshot = await evalArgs(playerA, () => {
+      const saved = window.__qaCaptureAudio;
+      saved.captureSource = saved.engine.source;
+      saved.captureClock = saved.context.currentTime;
+      return {
+        arena: saved.arena.isConnected && document.querySelector(".battle-scene") === saved.arena,
+        context: saved.engine.context === saved.context, track: saved.engine.track,
+        sameBuffer: saved.captureSource.buffer === saved.source.buffer,
+        running: saved.context.state === "running", stops: saved.stops,
+        captureStops: saved.captureStops, closes: saved.closes,
+        fetched: saved.audioUrls.some((url) => url.endsWith("/audio/wild-pokemon-captured.wav")),
+        looping: saved.captureSource.loop,
+      };
+    });
+    assert.deepEqual(snapshot, { arena: true, context: true, track: "capture", sameBuffer: false,
+      running: true, stops: 1, captureStops: 0, closes: 0, fetched: true, looping: true },
+    "capture success stops the battle once and starts its own loop in the existing audio context");
+  };
+  const captureAudioContinues = async () => {
+    await waitArgs(playerA, () => {
+      const saved = window.__qaCaptureAudio;
+      return saved.context.currentTime > saved.captureClock;
+    }, "capture music clock advances while reading the Pokémon details");
+    assert.deepEqual(await evalArgs(playerA, () => {
+      const saved = window.__qaCaptureAudio;
+      return { arena: saved.arena.isConnected, source: saved.engine.source === saved.captureSource,
+        context: saved.engine.context === saved.context, running: saved.context.state === "running",
+        track: saved.engine.track, stops: saved.stops, captureStops: saved.captureStops,
+        closes: saved.closes, starts: saved.starts.length };
+    }), { arena: true, source: true, context: true, running: true, track: "capture",
+      stops: 1, captureStops: 0, closes: 0, starts: 2 },
+    "the first Continue keeps the same capture source running and never restarts battle music");
+  };
+  const captureAudioStopped = async () => {
+    await waitArgs(playerA, () => !window.__qaCaptureAudio.engine.source,
+      "the final Continue stops captured Pokémon music");
+    assert.deepEqual(await evalArgs(playerA, () => {
+      const saved = window.__qaCaptureAudio;
+      return { source: !!saved.engine.source, stops: saved.stops, captureStops: saved.captureStops,
+        closes: saved.closes, starts: saved.starts.length, arena: saved.arena.isConnected };
+    }), { source: false, stops: 1, captureStops: 1, closes: 0, starts: 2, arena: true },
+    "closing capture details stops capture music once without restarting battle music or unmounting its arena");
+  };
   const openBalls = async (touch = false) => {
     await route();
     await waitArgs(playerA, () => !!document.querySelector('button[aria-label="Abrir combate de clefairy"]'),
@@ -114,8 +175,29 @@ export async function runCaptureThrowBrowserScenario({
   };
   const watchPhases = async () => evalArgs(playerA, () => {
     const scene = document.querySelector('[data-testid="capture-throw-scene"]');
+    window.__qaCaptureObserver?.disconnect();
+    const previous = window.__qaCaptureDiagnosticListeners;
+    if (previous) {
+      document.removeEventListener("keydown", previous.keydown);
+      document.removeEventListener("pointerdown", previous.pointerdown, { capture: true });
+    }
     window.__qaCaptureScene = scene;
     window.__qaCapturePhases = [scene.getAttribute("data-phase")];
+    window.__qaCaptureDismissal = [];
+    const keydown = (event) => {
+      if (event.key !== "Escape") return;
+      const entry = { kind: "escape", phase: scene.getAttribute("data-phase"),
+        target: event.target.tagName, prevented: event.defaultPrevented };
+      window.__qaCaptureDismissal.push(entry);
+      queueMicrotask(() => { entry.prevented = event.defaultPrevented; });
+    };
+    const pointerdown = (event) => {
+      window.__qaCaptureDismissal.push({ kind: "pointer", phase: scene.getAttribute("data-phase"),
+        target: event.target.tagName, x: event.clientX, y: event.clientY });
+    };
+    window.__qaCaptureDiagnosticListeners = { keydown, pointerdown };
+    document.addEventListener("keydown", keydown);
+    document.addEventListener("pointerdown", pointerdown, { capture: true });
     window.__qaCaptureObserver = new MutationObserver(() => {
       const phase = scene.getAttribute("data-phase");
       if (window.__qaCapturePhases.at(-1) !== phase) window.__qaCapturePhases.push(phase);
@@ -161,13 +243,40 @@ export async function runCaptureThrowBrowserScenario({
     "enemy turn highlights do not cover the capture animation");
   };
   const finish = async (expectedRoll, expectedPhases) => {
-    await waitArgs(playerA, () => !!document.querySelector('[data-testid="capture-throw-result"]'),
-      "capture animation presents its result");
+    try {
+      await waitArgs(playerA, () => !!document.querySelector('[data-testid="capture-throw-result"]'),
+        "capture animation presents its result");
+    } catch (reason) {
+      console.error("Capture presentation diagnostics:", await evalArgs(playerA, async () => {
+        const party = (await import("/src/store/store.ts")).store.getState().party;
+        return {
+          phases: window.__qaCapturePhases, dismissal: window.__qaCaptureDismissal,
+          dialogs: [...document.querySelectorAll('[role="dialog"],[role="alertdialog"]')].map((dialog) => ({
+            title: dialog.querySelector("h2")?.textContent, state: dialog.getAttribute("data-state") })),
+          captures: party.pokemons.map((capture) => ({ captureId: capture.captureId,
+            level: capture.pokemon.level, hp: capture.pokemon.stats.find((stat) => stat.name === "hp")?.value })),
+          opponent: party.opponent?.encounterId, result: party.lastCaptureResult,
+        };
+      }));
+      throw reason;
+    }
     const phases = await evalArgs(playerA, () => window.__qaCapturePhases);
     for (const phase of expectedPhases) assert(phases.includes(phase), `capture animation presents ${phase}`);
     await blockDismissal();
-    await audioIntact();
-    return finishCapturePresentation({ page: playerA, evalArgs, waitArgs, expectedRoll });
+    const caught = (await state()).lastCaptureResult.outcome === "caught";
+    if (caught) await captureAudioStarted();
+    else await audioIntact();
+    return finishCapturePresentation({ page: playerA, evalArgs, waitArgs, expectedRoll,
+      onDetails: async () => {
+        await captureAudioContinues();
+        await cdp.request("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, playerA);
+        await cdp.request("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, playerA);
+        assert.equal(await evalArgs(playerA, () => !!document.querySelector('[data-testid="capture-pokemon-details"]')?.closest('[role="alertdialog"]')), true,
+          "Escape does not skip the captured Pokémon details");
+        await screenshot("captured-details-mobile");
+      },
+      onClosed: caught ? captureAudioStopped : undefined,
+    });
   };
 
   await route();
@@ -290,7 +399,7 @@ export async function runCaptureThrowBrowserScenario({
     assert.equal(afterReload.pokemons.filter((mon) => mon.captureId === caught.lastCaptureResult.captureId).length, 1);
     assert.equal(afterReload.bag.items["great-ball"], 0);
     assert.equal(afterReload.bag.items["poke-ball"], 0);
-    console.log("PASS: a real mobile slingshot pull in the opposite direction hits the smaller target, captures on favorable D20, keeps audio until Continue and never duplicates inventory or levels on reload.");
+    console.log("PASS: a real mobile slingshot captures once; success names it in bold with an uppercase initial, replaces battle music with captured Pokémon music, opens its saved stats/types/moves/level on the first Continue and closes/stops music only on the second Continue without duplicate inventory or levels on reload.");
   } finally {
     await cdp.request("Emulation.setTouchEmulationEnabled", { enabled: false }, playerA).catch(() => {});
     await cdp.request("Emulation.clearDeviceMetricsOverride", {}, playerA).catch(() => {});
@@ -301,9 +410,16 @@ export async function runCaptureThrowBrowserScenario({
         const { BattleMusic } = await import("/src/lib/battleMusic.ts");
         BattleMusic.prototype.unlock = saved.unlock;
         AudioBufferSourceNode.prototype.stop = saved.stop;
+        AudioBufferSourceNode.prototype.start = saved.start;
         AudioContext.prototype.close = saved.close;
+        window.fetch = saved.fetch;
       }
       window.__qaCaptureObserver?.disconnect();
+      const listeners = window.__qaCaptureDiagnosticListeners;
+      if (listeners) {
+        document.removeEventListener("keydown", listeners.keydown);
+        document.removeEventListener("pointerdown", listeners.pointerdown, { capture: true });
+      }
     }).catch(() => {});
   }
   assert.deepEqual(cdp.exceptions, [], "Unexpected browser exception during capture throwing");

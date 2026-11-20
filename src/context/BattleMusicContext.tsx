@@ -17,6 +17,7 @@ const MusicContext = createContext<{
   phase: MusicPhase;
   toggle: () => void;
   holdEncounter: () => () => void;
+  holdCapture: () => () => void;
 } | null>(null);
 
 export function BattleMusicProvider({ children }: { children: ReactNode }) {
@@ -27,8 +28,12 @@ export function BattleMusicProvider({ children }: { children: ReactNode }) {
     active: boolean;
   } | null>(null);
   const holdToken = useRef<symbol | null>(null);
-  const playbackKey = held ? held.key : key;
-  const playbackActive = held?.active ?? active;
+  const captureToken = useRef<symbol | null>(null);
+  const captureSequence = useRef(0);
+  const [captureKey, setCaptureKey] = useState<string | null>(null);
+  const playbackKey = captureKey ?? (held ? held.key : key);
+  const playbackActive = captureKey !== null || (held?.active ?? active);
+  const playbackTrack = captureKey === null ? "battle" : "capture";
   const holdEncounter = () => {
     const token = Symbol("capture-presentation");
     holdToken.current = token;
@@ -37,6 +42,16 @@ export function BattleMusicProvider({ children }: { children: ReactNode }) {
       if (holdToken.current !== token) return;
       holdToken.current = null;
       setHeld(null);
+    };
+  };
+  const holdCapture = () => {
+    const token = Symbol("capture-success");
+    captureToken.current = token;
+    setCaptureKey(`captured:${++captureSequence.current}`);
+    return () => {
+      if (captureToken.current !== token) return;
+      captureToken.current = null;
+      setCaptureKey(null);
     };
   };
   const [enabled, setEnabled] = useState(() => {
@@ -52,9 +67,9 @@ export function BattleMusicProvider({ children }: { children: ReactNode }) {
     const player = new BattleMusic(
       setPhase,
       () => new AudioContext(),
-      async (context, signal) => {
+      async (context, signal, track) => {
         const response = await fetch(
-          `${import.meta.env.BASE_URL}audio/trainer-battle.wav`,
+          `${import.meta.env.BASE_URL}audio/${track === "capture" ? "wild-pokemon-captured" : "trainer-battle"}.wav`,
           { signal },
         );
         if (!response.ok) throw new Error("Audio no disponible");
@@ -79,8 +94,8 @@ export function BattleMusicProvider({ children }: { children: ReactNode }) {
     };
   }, []);
   useEffect(() => {
-    engine.current?.setEncounter(playbackKey, enabled);
-  }, [playbackKey, enabled]);
+    engine.current?.setEncounter(playbackKey, enabled, playbackTrack);
+  }, [playbackKey, enabled, playbackTrack]);
   const toggle = () => {
     if (enabled && (phase === "blocked" || phase === "error")) {
       engine.current?.unlock();
@@ -93,12 +108,19 @@ export function BattleMusicProvider({ children }: { children: ReactNode }) {
     } catch {
       /* Preferencia solo en memoria. */
     }
-    engine.current?.setEncounter(playbackKey, next);
+    engine.current?.setEncounter(playbackKey, next, playbackTrack);
     if (next) engine.current?.unlock();
   };
   return (
     <MusicContext.Provider
-      value={{ active: playbackActive, enabled, phase, toggle, holdEncounter }}
+      value={{
+        active: playbackActive,
+        enabled,
+        phase,
+        toggle,
+        holdEncounter,
+        holdCapture,
+      }}
     >
       {children}
     </MusicContext.Provider>

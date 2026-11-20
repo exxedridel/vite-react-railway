@@ -4,7 +4,7 @@ Frontend del juego con React, TypeScript y Vite. `mysql-restapi` autentica y
 administra usuarios; `nest-mongo-pokedex` comunica jugadores y conserva las
 batallas PvP, las carteras y los recibos del Poké Mart. El motor de combate se
 ejecuta en el panel administrador y, para encuentros individuales, en el frontend
-del jugador. Versión de la aplicación: **2.17.0**.
+del jugador. Versión de la aplicación: **2.18.0**.
 
 ## Recompensas automáticas de combate
 
@@ -45,8 +45,8 @@ evitan cobros duplicados al recargar. Reiniciar cambia la generación de premios
 y descarta reclamaciones de partidas anteriores. Ver reglas, compatibilidad y
 validación en [BATTLE_REWARDS_PROTOCOL.md](../BATTLE_REWARDS_PROTOCOL.md).
 
-Las penalizaciones2.17 requieren Nest antes de React y recargar ambos frontends
-a2.17.0. Sin variables nuevas,
+Las penalizaciones introducidas en2.17 requieren Nest antes de React. Si esa
+base ya está desplegada,2.18 sólo actualiza React; recargar a2.18.0. Sin variables nuevas,
 cambios MySQL, seed ni borrar partidas. `npm run test:rewards` comprueba niveles,
 dinero y guardado; `npm run test:rewards:browser` valida premios y JcJ en Chrome
 local, y `npm run test:penalties:browser` comprueba derrotas, rendición y reconexión.
@@ -199,7 +199,13 @@ sus existencias. Elegir una abre una resortera: **tira hacia atrás y suelta**.
 La bola sale en dirección contraria con fuerza ×3; ajusta el tiro para caer
 en el círculo más pequeño. Fallar consume una bola sin D20 y el salvaje responde.
 Acertar tira el D20 y anima vuelo, sacudidas y captura o
-escapada. El éxito muestra un diálogo con Continuar. También admite flechas y
+escapada. Desde2.18.0, el éxito muestra el nombre en negritas y con inicial
+mayúscula. La música de batalla se detiene y suena **Wild Pokémon Captured**
+durante los dos pasos: el primer **Continuar** muestra la ficha guardada del
+Pokémon (nivel, tipos, estadísticas, movimientos y PP); el segundo cierra el
+diálogo y detiene la música de captura. Los fallos conservan la música de batalla.
+La preferencia de silenciar también se respeta en la pista de captura.
+También admite flechas y
 Enter con teclado. Cancelar antes de lanzar conserva la bola. El dado y su
 mínimo sólo se muestran al terminar; antes se ven instrucciones breves.
 
@@ -223,7 +229,12 @@ npm run test:capture
 npm run test:capture:browser
 npm run test:capture-throw
 npm run test:capture-throw:browser
+npm run test:music
 ```
+
+Este ajuste2.18 sólo requiere desplegar React y recargar a2.18.0; no cambia
+Nest/MySQL, variables ni guardados. Fuente y reproducción del audio en
+[public/audio/README.md](public/audio/README.md).
 
 ## Poké Center
 

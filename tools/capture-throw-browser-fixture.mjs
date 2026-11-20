@@ -167,6 +167,8 @@ export async function finishCapturePresentation({
   evalArgs,
   waitArgs,
   expectedRoll,
+  onDetails,
+  onClosed,
 }) {
   await waitArgs(
     page,
@@ -179,6 +181,23 @@ export async function finishCapturePresentation({
       document.querySelector('[data-testid="capture-throw-result"]')
         .textContent,
   );
+  const caught = await evalArgs(page, () =>
+    document.querySelector('[data-testid="capture-throw-result"]')
+      .getAttribute("data-outcome") === "caught",
+  );
+  if (caught) {
+    const summary = await evalArgs(page, async () => {
+      const party = (await import("/src/store/store.ts")).store.getState().party;
+      const capture = party.pokemons.find((mon) => mon.captureId === party.lastCaptureResult.captureId);
+      const dialog = document.querySelector('[data-testid="capture-throw-result"]').closest('[role="alertdialog"]');
+      const strong = dialog?.querySelector("strong");
+      return { name: capture?.pokemon.name, shown: strong?.textContent,
+        weight: strong ? Number(getComputedStyle(strong).fontWeight) : 0 };
+    });
+    assert.equal(summary.shown, summary.name[0].toUpperCase() + summary.name.slice(1),
+      "the successful capture names the saved Pokémon with an uppercase initial");
+    assert(summary.weight >= 600, "the caught Pokémon name is visually bold");
+  }
   if (expectedRoll !== undefined)
     assert.match(
       message,
@@ -193,11 +212,60 @@ export async function finishCapturePresentation({
       throw new Error("Capture result cannot be continued");
     button.click();
   });
+  if (caught) {
+    await waitArgs(page, () => !!document.querySelector('[data-testid="capture-pokemon-details"]'),
+      "the first Continue shows the captured Pokémon's details instead of closing the dialog");
+    const details = await evalArgs(page, async () => {
+      const party = (await import("/src/store/store.ts")).store.getState().party;
+      const capture = party.pokemons.find((mon) => mon.captureId === party.lastCaptureResult.captureId);
+      const panel = document.querySelector('[data-testid="capture-pokemon-details"]');
+      const pp = await import("/src/lib/movePp.ts");
+      return {
+        captureId: capture.captureId,
+        shownCaptureId: panel.getAttribute("data-capture-id"),
+        name: capture.pokemon.name,
+        level: capture.pokemon.level,
+        types: capture.pokemon.types,
+        moves: capture.moves.map((move) => ({ id: move.id, name: move.displayName || move.name,
+          pp: pp.getCurrentMovePp(move), maxPp: pp.getMaxMovePp(move),
+          shown: panel.querySelector(`[data-move-id="${move.id}"]`)?.textContent })),
+        stats: capture.pokemon.stats.map((stat) => ({ ...stat,
+          shown: panel.querySelector(`[data-stat="${stat.name}"] dd`)?.textContent })),
+        text: panel.textContent,
+        editable: !!panel.querySelector('input,select,textarea,[contenteditable="true"]'),
+      };
+    });
+    assert.equal(details.shownCaptureId, details.captureId,
+      "the second step identifies the exact saved capture instead of another Party member");
+    assert.match(details.text.toLowerCase(), new RegExp(details.name.toLowerCase()),
+      "the captured Pokémon's own name appears in its details");
+    assert.match(details.text, new RegExp(`(?:Lv\\.?|Nivel)\\s*${details.level}(?:[^0-9]|$)`, "i"),
+      "the second step presents the captured level, not the winner's new level");
+    for (const type of details.types)
+      assert(details.text.toLowerCase().includes(type.toLowerCase()), `captured type ${type} is shown`);
+    for (const move of details.moves) {
+      assert(move.shown?.toLowerCase().includes(move.name.toLowerCase()), `captured move ${move.name} is shown`);
+      assert(new RegExp(`PP\\s*${move.pp}\\s*/\\s*${move.maxPp}(?:[^0-9]|$)`).test(move.shown),
+        `captured move ${move.name} retains its saved PP`);
+    }
+    for (const stat of details.stats)
+      assert(new RegExp(`(?:^|[^0-9])${stat.value}(?:[^0-9]|$)`).test(stat.shown),
+        `captured ${stat.name} value ${stat.value} is shown`);
+    assert.equal(details.editable, false, "capture details do not expose editing or another game action");
+    if (onDetails) await onDetails(details);
+    await evalArgs(page, () => {
+      const button = document.querySelector('[data-testid="capture-throw-continue"]');
+      if (!button || button.disabled) throw new Error("Captured Pokémon details cannot be continued");
+      button.click();
+    });
+  }
   await waitArgs(
     page,
-    () => !document.querySelector('[data-testid="capture-throw-scene"]'),
-    "only continuing the completed capture result closes its presentation",
+    () => !document.querySelector('[data-testid="capture-throw-scene"]') &&
+      !document.querySelector('[data-testid="capture-pokemon-details"]'),
+    "only the final Continue closes the capture presentation",
   );
+  if (onClosed) await onClosed();
   return message;
 }
 

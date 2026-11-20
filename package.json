@@ -1,10 +1,11 @@
 {
   "name": "pokemon-master-trainer",
-  "version": "2.17.0",
+  "version": "2.18.0",
   "type": "module",
   "scripts": {
     "test:capture-throw": "node --import tsx --test tests/aimed-capture.test.ts tests/automatic-capture.test.ts tests/capture-turn.test.ts",
     "test:capture-throw:browser": "node tools/test-pvp-browser.mjs --capture-throw-only",
+    "test:music": "node --import tsx --test tests/battle-music.test.ts",
     "test:rewards": "node --import tsx --test tests/combat-rewards.test.ts tests/combat-reward-money.test.ts && node tools/test-account-storage.mjs --shop && node tools/test-account-storage.mjs --pvp",
     "test:rewards:browser": "node tools/test-pvp-browser.mjs --rewards-only",
     "test:penalties:browser": "node tools/test-pvp-browser.mjs --penalties-only",
