@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { Battle } from "@pkmn/sim";
 import { trainerMoves, trainerSpecies } from "../src/lib/trainerBattle/catalog";
 import { createLeveledPokemon, getCurrentHp, getMaxHp, changeLevel, neutralBattleStages } from "../src/lib/pokemonStats";
 import { createTrainerBattleSession, validTrainerBattleSession } from "../src/lib/trainerBattle/model";
@@ -34,6 +35,11 @@ function setup(a: CapturedPokemon[], b: CapturedPokemon[]): TrainerBattleSession
   const session = createTrainerBattleSession();
   session.teams.a = { name: "Player", pokemons: a, activeCaptureId: a[0].captureId };
   session.teams.b = { name: "Opponent", pokemons: b, activeCaptureId: b[0].captureId };
+  return session;
+}
+function immediateSetup(a: CapturedPokemon[], b: CapturedPokemon[], eligibleSides: ("a" | "b")[] = ["a"]) {
+  const session = setup(a, b);
+  session.rewards = { version: 1, timing: "immediate", eligibleSides, appliedCount: 0, defeats: [] };
   return session;
 }
 function turn(session: TrainerBattleSession, a: TrainerChoice = { kind: "move", moveId: 150 }, b: TrainerChoice = { kind: "move", moveId: 150 }) {
@@ -211,4 +217,137 @@ test("reviving a victim and defeating it again creates a distinct reward event",
   assert.notEqual(session.rewards!.defeats[0].id, session.rewards!.defeats[1].id);
   assert.equal(session.teams.a.pokemons[0].pokemon.level, 50);
   assert.equal(getMaxHp(session.teams.a.pokemons[0].pokemon), getMaxHp(member("own", 50).pokemon));
+});
+test("immediate human rewards change the next battle action's level and stats and are not added again at finalization", () => {
+  const own = member("own", 20);
+  hurt(own, 20);
+  const first = member("first", 21, 35, [150]); hurt(first, 1);
+  const second = member("second", 21, 35, [150]); hurt(second, 1);
+  let session = startTrainerBattle(immediateSetup([own], [first, second]), seed);
+  session = turn(session, { kind: "move", moveId: 94 });
+  assert.equal(session.phase, "battle");
+  assert.equal(session.teams.a.pokemons[0].pokemon.level, 22);
+  const expectedFirst = changeLevel(own.pokemon as ReturnType<typeof createLeveledPokemon>, 22);
+  assert.deepEqual(session.teams.a.pokemons[0].pokemon.stats, expectedFirst.stats);
+  let sim = Battle.fromJSON(session.runtime!.engine);
+  assert.equal(sim.p1.active[0].level, 22);
+  assert.equal(sim.p1.active[0].set.level, 22);
+  assert.equal(sim.p1.active[0].hp, getCurrentHp(expectedFirst));
+  assert.equal(sim.p1.active[0].maxhp, getMaxHp(expectedFirst));
+  assert.equal(sim.p1.active[0].storedStats.spa, expectedFirst.stats.find((stat) => stat.name === "special-attack")!.value);
+  assert.equal(session.rewards!.appliedCount, 1);
+  assert.equal(session.runtime!.requests.b.forceSwitch, true);
+  const saved = clone(session);
+  session = chooseTrainerAction(saved, "b", { kind: "switch", captureId: "second" });
+  assert.equal(session.teams.a.pokemons[0].pokemon.level, 22);
+  session = turn(session, { kind: "move", moveId: 94 });
+  assert.equal(session.phase, "finished");
+  assert.equal(session.rewards!.defeats[1].winnerLevel, 22);
+  assert.equal(session.rewards!.defeats[1].levels, 1, "the next reward compares with the newly earned level");
+  assert.equal(session.teams.a.pokemons[0].pokemon.level, 23);
+  assert.equal(session.teams.a.pokemons[0].moves![0].currentPp, 3);
+  const patch = pvpTeamPatches(session, "a")[0];
+  assert.equal(patch.level, 23, "final patch contains the already-earned absolute level");
+  assert.equal(patch.hp, getCurrentHp(session.teams.a.pokemons[0].pokemon));
+  sim = Battle.fromJSON(session.runtime!.engine);
+  assert.equal(sim.p1.active[0].level, 23);
+  assert(validTrainerBattleSession(session));
+  assert.deepEqual(pvpTeamPatches(clone(session), "a"), [patch]);
+});
+test("only eligible human sides progress; the NPC keeps its preset level after a real KO", () => {
+  const own = member("own", 20, 35, [150]); hurt(own, 1);
+  const reserve = member("reserve", 20, 35, [150]);
+  let session = startTrainerBattle(immediateSetup([own, reserve], [member("npc", 20)]), seed);
+  session = turn(session, { kind: "move", moveId: 150 }, { kind: "move", moveId: 94 });
+  assert.equal(session.rewards!.defeats[0].winnerSide, "b");
+  assert.equal(session.rewards!.appliedCount, 1);
+  assert.equal(session.teams.b.pokemons[0].pokemon.level, 20);
+  assert.equal(Battle.fromJSON(session.runtime!.engine).p2.active[0].level, 20);
+  assert.equal(session.teams.a.pokemons[0].pokemon.level, 20);
+  assert(validTrainerBattleSession(session));
+});
+test("immediate double KO rewards both human sides without reviving or charging PP again", () => {
+  const source = member("source", 20, 101, [153, 150]);
+  const target = member("target", 20, 35, [150]); hurt(target, 1);
+  const session = turn(startTrainerBattle(immediateSetup([source], [target], ["a", "b"]), seed), { kind: "move", moveId: 153 });
+  assert.equal(session.phase, "finished");
+  assert.equal(session.teams.a.pokemons[0].pokemon.level, 21);
+  assert.equal(session.teams.b.pokemons[0].pokemon.level, 21);
+  assert.equal(getCurrentHp(session.teams.a.pokemons[0].pokemon), 0);
+  assert.equal(getCurrentHp(session.teams.b.pokemons[0].pokemon), 0);
+  assert.equal(pvpTeamPatches(session, "a")[0].level, 21);
+  assert.equal(pvpTeamPatches(session, "b")[0].level, 21);
+  assert.equal(session.teams.a.pokemons[0].moves![0].currentPp, 4);
+  assert.equal(session.rewards!.appliedCount, 2);
+});
+test("an immediate Hyper Beam KO preserves mandatory recharge and spent PP across JSON reload", () => {
+  const source = member("source", 50, 65, [63, 150]);
+  const first = member("first", 50, 35, [150]); hurt(first, 1);
+  const second = member("second", 50, 35, [150]);
+  let session = turn(startTrainerBattle(immediateSetup([source], [first, second]), seed), { kind: "move", moveId: 63 });
+  let deferred = turn(startTrainerBattle(setup([clone(source)], [clone(first), clone(second)]), seed), { kind: "move", moveId: 63 });
+  assert.deepEqual(JSON.parse(session.runtime!.engine).prng, JSON.parse(deferred.runtime!.engine).prng,
+    "applying levels after the same native KO draws no extra randomness");
+  assert.equal(session.teams.a.pokemons[0].pokemon.level, 51);
+  assert.equal(session.teams.a.pokemons[0].moves![0].currentPp, 4);
+  let sim = Battle.fromJSON(session.runtime!.engine);
+  assert(sim.p1.active[0].volatiles.mustrecharge);
+  session = chooseTrainerAction(clone(session), "b", { kind: "switch", captureId: "second" });
+  deferred = chooseTrainerAction(clone(deferred), "b", { kind: "switch", captureId: "second" });
+  assert.equal(session.runtime!.requests.a.locked, true);
+  session = chooseTrainerAction(clone(session), "b", { kind: "move", moveId: 150 });
+  deferred = chooseTrainerAction(clone(deferred), "b", { kind: "move", moveId: 150 });
+  assert.equal(session.teams.a.pokemons[0].pokemon.level, 51);
+  assert.equal(session.teams.a.pokemons[0].moves![0].currentPp, 4);
+  assert.equal(session.rewards!.defeats.length, 1);
+  sim = Battle.fromJSON(session.runtime!.engine);
+  assert.equal(sim.p1.active[0].volatiles.mustrecharge, undefined);
+  assert.deepEqual(JSON.parse(session.runtime!.engine).prng, JSON.parse(deferred.runtime!.engine).prng);
+  assert(validTrainerBattleSession(session));
+});
+test("immediate Future Sight rewards its fainted original source, preserving the forced replacement and HP0", () => {
+  const source = member("source", 50, 65, [248, 150]); hurt(source, 1);
+  const target = member("target", 50, 35, [129, 150]); hurt(target, 1);
+  let session = startTrainerBattle(immediateSetup([source, member("reserve", 50)], [target]), seed);
+  session = turn(session, { kind: "move", moveId: 248 }, { kind: "move", moveId: 129 });
+  assert.equal(session.runtime!.requests.a.forceSwitch, true);
+  assert.equal(session.teams.b.pokemons[0].pokemon.level, 50);
+  session = chooseTrainerAction(clone(session), "a", { kind: "switch", captureId: "reserve" });
+  for (let i = 0; i < 3 && session.phase !== "finished"; i++) session = turn(clone(session));
+  assert.equal(session.teams.a.pokemons[0].pokemon.level, 51);
+  assert.equal(getCurrentHp(session.teams.a.pokemons[0].pokemon), 0);
+  assert.equal(session.teams.a.pokemons[1].pokemon.level, 50);
+  assert.equal(pvpTeamPatches(session, "a")[0].level, 51);
+  assert.equal(pvpTeamPatches(session, "a")[0].hp, 0);
+  assert(validTrainerBattleSession(session));
+});
+test("immediate metadata must have unique eligible sides and a fully applied persisted ledger", () => {
+  const setupSession = immediateSetup([member("own")], [member("target")]);
+  assert(validTrainerBattleSession(setupSession));
+  const duplicates = clone(setupSession); duplicates.rewards!.eligibleSides = ["a", "a"];
+  assert.equal(validTrainerBattleSession(duplicates), false);
+  const count = clone(setupSession); count.rewards!.appliedCount = 1;
+  assert.equal(validTrainerBattleSession(count), false);
+  const missingSide = clone(setupSession); delete missingSide.rewards!.eligibleSides;
+  assert.equal(validTrainerBattleSession(missingSide), false);
+});
+test("an immediate level-up while transformed preserves copied battle stats, moves, and their remaining PP", () => {
+  const source = member("ditto", 20, 132, [144, 150]);
+  const first = member("first", 21, 35, [94, 150]); hurt(first, 1);
+  const second = member("second", 21, 35, [150]);
+  let session = startTrainerBattle(immediateSetup([source], [first, second]), seed);
+  session = turn(session, { kind: "move", moveId: 144 });
+  const transformedBefore = Battle.fromJSON(session.runtime!.engine).p1.active[0];
+  assert.equal(transformedBefore.transformed, true);
+  const copiedStats = clone(transformedBefore.storedStats);
+  session = turn(clone(session), { kind: "move", moveId: 94 });
+  const transformedAfter = Battle.fromJSON(session.runtime!.engine).p1.active[0];
+  assert.equal(session.teams.a.pokemons[0].pokemon.level, 22);
+  assert.equal(transformedAfter.level, 22);
+  assert.equal(transformedAfter.transformed, true);
+  assert.deepEqual(transformedAfter.storedStats, copiedStats);
+  assert.equal(transformedAfter.baseStoredStats.spa, session.teams.a.pokemons[0].pokemon.stats.find((stat) => stat.name === "special-attack")!.value);
+  assert.equal(transformedAfter.moveSlots.find((move) => move.id === "psychic")!.pp, 4);
+  assert.equal(session.teams.a.pokemons[0].moves!.find((move) => move.id === 144)!.currentPp, 4);
+  assert(validTrainerBattleSession(session));
 });

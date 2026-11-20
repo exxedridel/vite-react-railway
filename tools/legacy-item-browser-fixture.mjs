@@ -82,12 +82,21 @@ export async function prepareLegacyBrowserItem({
 /** Calling this starts a protocol fixture, never a new player's UI action. The
  * real namespace snapshot lets the current frontend recover its saved intent. */
 export function startLegacyBrowserItem({ prepared, shopService, shopGateway }) {
-  const operation = shopService.use(prepared.actor, prepared.payload).then(
-    async (response) => {
-      await shopGateway.publish();
-      return response;
-    },
-  );
+  const operation = (async () => {
+    // The browser can prune an acknowledged outbox before its debounced presence
+    // clears pendingConsumption on Nest. Observe that exact registry barrier;
+    // never alter the real actor or wait on intentionally pending legacy receipts.
+    const userId = prepared.actor.user.id;
+    const deadline = Date.now() + 15000;
+    while ((await shopService.activity.busyUsers([userId], ["consumption-queue"])).includes(userId)) {
+      if (Date.now() >= deadline)
+        throw new Error(`Legacy item fixture timed out waiting for user ${userId}'s consumption-queue presence to clear`);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    const response = await shopService.use(prepared.actor, prepared.payload);
+    await shopGateway.publish();
+    return response;
+  })();
   // A held service can reject before its caller reaches an explicit await.
   void operation.catch(() => {});
   return operation;

@@ -110,6 +110,8 @@ export type CaptureAttempt = {
   expectedCombatHash: string;
 };
 export type CaptureAttemptResult = {
+  /** Absent on older automatic/paid throws. A miss never draws a capture D20. */
+  throwHit?: boolean;
   roll?: number;
   minimum?: number;
   attemptId: string;
@@ -153,6 +155,7 @@ export type LocalItemOutbox = {
   operations: LocalItemDebit[];
 };
 export type Wallet = {
+  badges?: import("@/lib/trainerBag").GymBadgeId[];
   rewardEpoch?: number;
   consumptionAck?: ConsumptionAck;
   userId: number;

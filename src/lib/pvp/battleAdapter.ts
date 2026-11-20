@@ -35,6 +35,12 @@ export function createPvpTrainerSession(
   session.networkBattleId = state.battleId;
   const trainerBattle = isTrainerBattle(state);
   const humanSides = trainerBattle ? (["a"] as const) : (["a", "b"] as const);
+  const leads = state.leads ?? {};
+  if (Object.keys(leads).some((side) => !(humanSides as readonly string[]).includes(side)))
+    throw new Error("Sólo puedes seleccionar el Pokémon inicial de los equipos de jugadores.");
+  if (state.levelRewards === "immediate") session.rewards = {
+    version: 1, timing: "immediate", eligibleSides: [...humanSides], appliedCount: 0, defeats: [],
+  };
   for (const side of humanSides) {
     const player = state.players[side];
     const snapshot = player?.snapshot;
@@ -58,7 +64,7 @@ export function createPvpTrainerSession(
         statuses: [...(capture.statuses ?? [])],
         statusTurns: { ...(capture.statusTurns ?? {}) },
       })),
-      activeCaptureId: snapshot.activeCaptureId,
+      activeCaptureId: leads[side] ?? snapshot.activeCaptureId,
     };
     if (side === "a") session.hpMultiplier = snapshot.hpMultiplier;
   }
@@ -172,8 +178,12 @@ export function pvpTeamPatches(
     );
   return clone(session.teams[side].pokemons).map((capture) => {
     const levels = levelRewardTotal(session.rewards, side, capture.captureId);
-    const rewarded = levels > 0 && isLeveled(capture.pokemon) && capture.pokemon.level < 100;
-    if (levels > 0 && isLeveled(capture.pokemon) && capture.pokemon.level < 100)
+    const immediate = session.rewards?.timing === "immediate";
+    const firstReward = session.rewards?.defeats.find((reward) => reward.winnerSide === side && reward.winnerCaptureId === capture.captureId);
+    const rewarded = immediate
+      ? !!session.rewards?.eligibleSides?.includes(side) && !!firstReward && Number(capture.pokemon.level) > firstReward.winnerLevel
+      : levels > 0 && isLeveled(capture.pokemon) && capture.pokemon.level < 100;
+    if (!immediate && levels > 0 && isLeveled(capture.pokemon) && capture.pokemon.level < 100)
       capture.pokemon = changeLevel(capture.pokemon, rewardedLevel(capture.pokemon.level!, levels));
     clearBattleConditions(capture);
     return {

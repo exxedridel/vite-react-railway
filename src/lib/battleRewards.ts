@@ -15,7 +15,14 @@ export type CombatDefeatReward = {
   defeatedLevel: number;
   levels: 1 | 2;
 };
-export type CombatRewardLedger = { version: 1; defeats: CombatDefeatReward[] };
+export type CombatRewardLedger = {
+  version: 1;
+  defeats: CombatDefeatReward[];
+  /** Missing on saved 2.13 battles: those retain their deferred rewards. */
+  timing?: "immediate";
+  eligibleSides?: RewardSide[];
+  appliedCount?: number;
+};
 export type LocalBattleRewardLedger = CombatRewardLedger & {
   encounterId: string;
   appliedCount: number;
@@ -45,6 +52,14 @@ export function validCombatRewardLedger(value: unknown): value is CombatRewardLe
   const ledger = value as CombatRewardLedger;
   if (ledger.version !== 1 || !Array.isArray(ledger.defeats) || ledger.defeats.length > 8192)
     return false;
+  if (ledger.timing !== undefined) {
+    if (ledger.timing !== "immediate" || !Array.isArray(ledger.eligibleSides) ||
+      ledger.eligibleSides.length < 1 || ledger.eligibleSides.length > 2 ||
+      ledger.eligibleSides.some((side) => !["a", "b"].includes(side)) ||
+      new Set(ledger.eligibleSides).size !== ledger.eligibleSides.length ||
+      !Number.isSafeInteger(ledger.appliedCount) || Number(ledger.appliedCount) < 0 ||
+      Number(ledger.appliedCount) > ledger.defeats.length) return false;
+  } else if (ledger.eligibleSides !== undefined) return false;
   const ids = new Set<string>();
   for (const reward of ledger.defeats) {
     if (!validCombatDefeatReward(reward) || ids.has(reward.id)) return false;
@@ -55,7 +70,7 @@ export function validCombatRewardLedger(value: unknown): value is CombatRewardLe
 export function validLocalBattleRewards(value: unknown): value is LocalBattleRewardLedger {
   if (!validCombatRewardLedger(value)) return false;
   const ledger = value as LocalBattleRewardLedger;
-  return typeof ledger.encounterId === "string" && !!ledger.encounterId && ledger.encounterId.length <= 200 &&
+  return ledger.timing === undefined && typeof ledger.encounterId === "string" && !!ledger.encounterId && ledger.encounterId.length <= 200 &&
     Number.isSafeInteger(ledger.appliedCount) && ledger.appliedCount >= 0 && ledger.appliedCount <= ledger.defeats.length;
 }
 export function levelRewardTotal(ledger: CombatRewardLedger | undefined, side: RewardSide, captureId: string): number {

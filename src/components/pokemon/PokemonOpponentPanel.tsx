@@ -56,6 +56,8 @@ type Props = {
   opponent: BattleOpponent | null;
   onChange: Dispatch<SetStateAction<BattleOpponent | null>>;
   onCreate: (opponent: BattleOpponent) => Promise<void>;
+  onCapturePresentationChange?: (active: boolean) => void;
+  onCaptureResolved?: () => void;
 };
 function OpponentSummary({
   pokemon,
@@ -111,6 +113,8 @@ export default function PokemonOpponentPanel({
   opponent,
   onChange,
   onCreate,
+  onCapturePresentationChange,
+  onCaptureResolved,
 }: Props) {
   const dispatch = useAppDispatch();
   const shop = useShopContext();
@@ -512,7 +516,7 @@ export default function PokemonOpponentPanel({
                         ? "No tienes pokebolas en tu Bag. Compra más en el Poké Mart."
                         : !shop.localItemsReady
                           ? "Sincroniza la Bag una primera vez para habilitar los lanzamientos."
-                          : "Toca una pokebola: se gastará una unidad y el D20 resolverá la captura automáticamente."}
+                          : "Elige una pokebola y lánzala hacia el Pokémon. Acertar activa la tirada D20."}
               </p>
             </div>
           )}
@@ -533,6 +537,8 @@ export default function PokemonOpponentPanel({
         </p>
       )}
       <PokemonBallThrowDialog
+        onPresentationChange={onCapturePresentationChange}
+        onResolved={onCaptureResolved}
         opponent={opponent}
         open={
           canCapture &&

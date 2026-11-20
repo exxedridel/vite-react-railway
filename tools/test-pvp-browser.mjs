@@ -16,6 +16,7 @@ import { runOpponentAutoBrowserScenario } from "./opponent-auto-browser-scenario
 import { runItemGiftBrowserScenario } from "./item-gift-browser-scenarios.mjs";
 import { runLocalItemsBrowserScenario } from "./local-items-browser-scenarios.mjs";
 import { runBattleRewardsBrowserScenario } from "./battle-rewards-browser-scenarios.mjs";
+import { runCaptureThrowBrowserScenario } from "./capture-throw-browser-scenarios.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const nestRoot = resolve(root, "../nest-mongo-pokedex");
@@ -854,7 +855,12 @@ try {
   const admin = await openAccount(ADMIN_EMAIL, frontendUrl);
   const playerA = await openAccount(PLAYER_EMAIL, frontendUrl);
   const playerB = await openAccount(OTHER_EMAIL, frontendUrl);
-  if (process.argv.includes("--rewards-only")) {
+  if (process.argv.includes("--capture-throw-only")) {
+    await runCaptureThrowBrowserScenario({
+      playerA, cdp, evalArgs, waitArgs, clickButton, seedPvpTeam, partyState,
+      frontendUrl, backendUrl, shopRepository, shopGateway: app.get(ShopGateway),
+    });
+  } else if (process.argv.includes("--rewards-only")) {
     await runBattleRewardsBrowserScenario({
       admin, playerA, playerB, cdp, evalArgs, waitArgs, field, clickButton,
       seedPvpTeam, partyState, frontendUrl, backendUrl, shopRepository,
@@ -1269,7 +1275,9 @@ try {
         import("/src/store/store.ts"),
         import("/src/slices/partySlice.ts"),
       ]);
-      store.dispatch(actions.toggleGymBadge("cascade"));
+      const capture = store.getState().party.pokemons[0];
+      const hp = capture.pokemon.stats.find((stat) => stat.name === "hp").value;
+      store.dispatch(actions.changePokemonHp({ captureId: capture.captureId, amount: hp > 0 ? -1 : 1 }));
       await persistor.flush();
       return JSON.parse(JSON.stringify(store.getState().party));
     });
@@ -1283,7 +1291,8 @@ try {
       "Finalized presence replays must not relock the party",
     );
     assert.equal(afterEnvelope.bag.money, 500);
-    assert.ok(afterEnvelope.bag.badges.includes("cascade"));
+    assert.deepEqual(afterEnvelope.pokemons, afterPlay.pokemons,
+      "a replayed finished battle cannot overwrite a new legal local HP edit");
     // A reconnect can replay the immutable finalized envelope; the receipt must
     // prevent a second application and a stale party must not restore old HP.
     await cdp.request("Page.reload", {}, playerA);

@@ -147,6 +147,7 @@ function PokemonBattleDialog({ captureId, onClose }: Props) {
 function BattleDialogContent({ captureId, onClose }: Props) {
   const dispatch = useAppDispatch();
   const [manageOpen, setManageOpen] = useState(false);
+  const [capturePresentation, setCapturePresentation] = useState(false);
   const paidCaptureId = useAppSelector(
     (state) => state.party.captureAttempt?.attemptId,
   );
@@ -155,10 +156,13 @@ function BattleDialogContent({ captureId, onClose }: Props) {
   );
   const seenCaptureResult = useRef(captureResultId);
   useEffect(() => {
-    if (paidCaptureId || captureResultId !== seenCaptureResult.current)
+    if (
+      paidCaptureId ||
+      (!capturePresentation && captureResultId !== seenCaptureResult.current)
+    )
       setManageOpen(false);
     seenCaptureResult.current = captureResultId;
-  }, [paidCaptureId, captureResultId]);
+  }, [paidCaptureId, captureResultId, capturePresentation]);
   const batch = useAppSelector((state) => state.party.lastEmeraldBatch);
   const batchRef = useRef(batch);
   batchRef.current = batch;
@@ -176,6 +180,7 @@ function BattleDialogContent({ captureId, onClose }: Props) {
   // Its immutable action ID keeps that clone from cancelling the summary.
   useEffect(() => {
     const current = batchRef.current;
+    if (capturePresentation) return;
     if (!current || seenBatch.current === current.id) return;
     seenBatch.current = current.id;
     if (!current.completed) return;
@@ -185,7 +190,7 @@ function BattleDialogContent({ captureId, onClose }: Props) {
       setTurnSummary(current);
     }, 180);
     return () => window.clearTimeout(timer);
-  }, [batch?.id]);
+  }, [batch?.id, capturePresentation]);
 
   const [hpSide, setHpSide] = useState<"player" | "opponent" | null>(null);
   const field = getBattleField(
@@ -508,6 +513,8 @@ function BattleDialogContent({ captureId, onClose }: Props) {
                   nivel.
                 </DialogDescription>
                 <PokemonOpponentPanel
+                  onCapturePresentationChange={setCapturePresentation}
+                  onCaptureResolved={() => setManageOpen(false)}
                   opponent={opponent}
                   onChange={setOpponent}
                   onCreate={async (next) => {

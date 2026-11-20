@@ -8,15 +8,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { useAppDispatch, useAppSelector } from "@/store/hooks";
-import { toggleGymBadge } from "@/slices/partySlice";
+import { useAppSelector } from "@/store/hooks";
 import { KANTO_BADGES, formatBagMoney } from "@/lib/trainerBag";
 import { SHOP_ITEMS } from "@/lib/adminShop";
 import { useShopContext } from "@/context/ShopContext";
 
 type Props = { open: boolean; onOpenChange: (open: boolean) => void };
 export default function PokemonBagDialog({ open, onOpenChange }: Props) {
-  const dispatch = useAppDispatch();
   const bag = useAppSelector((state) => state.party.bag);
   const shop = useShopContext();
   const balance = bag?.money ?? 500;
@@ -186,14 +184,14 @@ export default function PokemonBagDialog({ open, onOpenChange }: Props) {
               {KANTO_BADGES.map((badge) => {
                 const earned = badges.includes(badge.id);
                 return (
-                  <button
+                  <div
                     key={badge.id}
-                    type="button"
-                    aria-pressed={earned}
-                    aria-label={`${badge.name} · ${badge.leader} · ${earned ? "Obtenida; presiona para retirarla" : "Sin obtener; presiona para agregarla"}`}
+                    role="img"
+                    data-testid={`bag-badge-${badge.id}`}
+                    data-earned={earned}
+                    aria-label={`${badge.name} · ${badge.leader} · ${earned ? "Obtenida" : "Sin obtener"}`}
                     title={`${badge.name} · ${badge.leader}`}
-                    onClick={() => dispatch(toggleGymBadge(badge.id))}
-                    className={`relative flex min-w-0 flex-col items-center gap-1.5 rounded-xl border px-1 py-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${earned ? "border-brand bg-muted" : "border-border bg-muted/30 hover:bg-muted"}`}
+                    className={`relative flex min-w-0 flex-col items-center gap-1.5 rounded-xl border px-1 py-2 ${earned ? "border-brand bg-muted" : "border-border bg-muted/30"}`}
                   >
                     <img
                       src={badge.sprite}
@@ -210,13 +208,13 @@ export default function PokemonBagDialog({ open, onOpenChange }: Props) {
                     <span className="w-full break-words text-center text-[10px] leading-tight">
                       {badge.name.replace(" Badge", "")}
                     </span>
-                  </button>
+                  </div>
                 );
               })}
             </div>
             <p className="text-xs leading-relaxed text-muted-foreground">
-              Toca una medalla cuando la obtengas en el tablero. Vuelve a
-              tocarla para retirarla.
+              Las medallas se entregan automáticamente al vencer al líder
+              correspondiente en Trainer Battle y guardar el resultado.
             </p>
           </section>
         </div>

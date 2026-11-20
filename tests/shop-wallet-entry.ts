@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import reducer, {
   applyFullRestoreToParty,
   changeBagMoney,
+  changePokemonHp,
   changeOpponentHp,
   addPokemon,
   configureGame,
@@ -2616,9 +2617,12 @@ export async function runAccountStorageTests() {
     appliedLocal,
     "retrying a queued operation never applies its effect again",
   );
-  store.dispatch(toggleGymBadge("cascade"));
-  assert(
-    store.getState().party.bag!.badges.includes("cascade"),
+  const playablePendingHp = getCurrentHp(store.getState().party.pokemons[0].pokemon);
+  store.dispatch(changePokemonHp({
+    captureId: store.getState().party.pokemons[0].captureId, amount: -1,
+  }));
+  assert.equal(
+    getCurrentHp(store.getState().party.pokemons[0].pokemon), playablePendingHp - 1,
     "the outbox is not a global Party lock",
   );
   await assert.rejects(
@@ -2643,8 +2647,8 @@ export async function runAccountStorageTests() {
   );
   await applyShopWallet(localWallet());
   assert.equal(saved(localUser).bag.items["full-restore"], 1);
-  assert(
-    saved(localUser).bag.badges.includes("cascade"),
+  assert.equal(
+    getCurrentHp(saved(localUser).pokemons[0].pokemon), playablePendingHp - 1,
     "ordinary Party edits remain persisted while item synchronization is pending",
   );
   assert.equal(saved(localUser).bag.items["max-ether"], 1);
@@ -3000,6 +3004,78 @@ export async function runAccountStorageTests() {
   );
   passed.push(
     "Legacy manual KOs use checked persistence before subscribers can claim money: quota failure reveals no KO, level or claim; retry saves all three once, preserving PP through reload and action replay",
+  );
+  await clearAccountStore();
+  const gymRewardUser = 643;
+  await activateAccountStore(gymRewardUser);
+  await transactPvpParty(gymRewardUser, async (current) => ({
+    party: { ...current, bag: { ...current.bag!, badges: ["cascade"] } },
+    value: undefined,
+  }));
+  const gymWallet = (
+    revision: number, balance: number, tm: number, badges: Wallet["badges"],
+  ): Wallet => ({
+    ...wallet(gymRewardUser, revision, balance, tm ? { tm } : {}),
+    rewardEpoch: 0, badges,
+  });
+  await applyShopWallet(gymWallet(0, 500, 0, []));
+  assert.deepEqual(saved(gymRewardUser).bag.badges, ["cascade"],
+    "the first canonical badge snapshot preserves a manually earned legacy badge");
+  assert.deepEqual(saved(gymRewardUser).bag.rewardBadges, []);
+  assert.equal(validWallet(gymWallet(1, 1700, 1, ["boulder"])), true);
+  assert.equal(validWallet(gymWallet(1, 1700, 1, ["boulder", "boulder"])), false);
+  assert.equal(validWallet({ ...gymWallet(1, 1700, 1, []), badges: ["unknown-badge"] }), false);
+  const beforeGymBundle = clone(saved(gymRewardUser));
+  testStorage.failWritesFor.add(accountStorageKey(gymRewardUser));
+  await assert.rejects(applyShopWallet(gymWallet(1, 1700, 1, ["boulder"])), /guardar/);
+  testStorage.failWritesFor.clear();
+  assert.deepEqual(saved(gymRewardUser), beforeGymBundle,
+    "a failed checked save reveals neither the gym cash nor the TM/badge bundle");
+  await applyShopWallet(gymWallet(1, 1700, 1, ["boulder"]));
+  const gymBundleSaved = clone(saved(gymRewardUser));
+  assert.equal(gymBundleSaved.bag.money, 1700);
+  assert.equal(gymBundleSaved.bag.items.tm, 1);
+  assert.deepEqual(new Set(gymBundleSaved.bag.badges), new Set(["cascade", "boulder"]));
+  assert.deepEqual(gymBundleSaved.bag.rewardBadges, ["boulder"]);
+  await applyShopWallet(gymWallet(1, 1700, 1, ["boulder"]));
+  assert.deepEqual(saved(gymRewardUser), gymBundleSaved,
+    "a replayed gym snapshot never adds another TM or another badge");
+  await clearAccountStore();
+  await activateAccountStore(gymRewardUser);
+  const legacyGymWallet = gymWallet(2, 1700, 1, ["boulder"]);
+  delete legacyGymWallet.badges;
+  await applyShopWallet(legacyGymWallet);
+  assert.deepEqual(saved(gymRewardUser).bag.rewardBadges, ["boulder"]);
+  assert.deepEqual(new Set(saved(gymRewardUser).bag.badges), new Set(["cascade", "boulder"]),
+    "an older wallet without badge metadata cannot erase either confirmed or legacy badges");
+  await applyShopWallet(gymWallet(3, 2900, 2, ["boulder"]));
+  assert.equal(saved(gymRewardUser).bag.money, 2900);
+  assert.equal(saved(gymRewardUser).bag.items.tm, 2,
+    "a separate repeated gym victory adds its new canonical TM quantity");
+  assert.equal(saved(gymRewardUser).bag.badges.filter((badge: string) => badge === "boulder").length, 1);
+  assert(saved(gymRewardUser).bag.badges.includes("cascade"));
+  passed.push(
+    "Gym cash, one canonical TM and a unique badge share checked wallet persistence; replay and reload never add extras, repeated victories add a TM and legacy manually earned badges remain preserved",
+  );
+  await prepareGameReset(gymRewardUser, "vm-gym-client", "vm-gym-reset", 3);
+  const gymResetReceipt: GameReset = {
+    requestId: "vm-gym-reset", userId: gymRewardUser, clientId: "vm-gym-client",
+    walletRevision: 4, status: "pending",
+  };
+  const gymResetWallet: Wallet = { ...gymWallet(4, 500, 0, []), rewardEpoch: 1 };
+  await applyGameReset(gymResetWallet, gymResetReceipt, "vm-gym-client");
+  await applyGameReset(gymResetWallet, { ...gymResetReceipt, status: "applied" }, "vm-gym-client");
+  assert.equal(saved(gymRewardUser).bag.money, 500);
+  assert.deepEqual(saved(gymRewardUser).bag.items, {});
+  assert.deepEqual(saved(gymRewardUser).bag.badges, []);
+  assert.deepEqual(saved(gymRewardUser).bag.rewardBadges, []);
+  await applyShopWallet(gymWallet(3, 2900, 2, ["boulder"]));
+  await clearAccountStore();
+  await activateAccountStore(gymRewardUser);
+  assert.deepEqual(saved(gymRewardUser).bag.badges, []);
+  assert.deepEqual(saved(gymRewardUser).bag.items, {});
+  passed.push(
+    "A confirmed new game clears canonical and legacy badges plus rewarded TMs, and delayed old wallet snapshots cannot restore the gym bundle after reset/reload",
   );
   await clearAccountStore();
   persistor.pause();

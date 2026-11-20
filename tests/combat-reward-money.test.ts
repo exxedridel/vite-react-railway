@@ -182,3 +182,52 @@ test("persisted claims reject malformed identifiers, game epochs and duplicate e
   ])
     assert.equal(validLocalRewardClaim(bad), false);
 });
+
+test("gym reward bundles validate a single typed TM and the matching badge without upgrading old receipts", () => {
+  const legacyGym: CombatReward = {
+    rewardId: "admin:gym-battle", userId: 2, source: "admin-trainer",
+    battleId: "gym-battle", presetId: "kanto-brock", epoch: 0,
+    amount: 1200, walletRevision: 1, status: "credited",
+  };
+  assert.equal(validCombatReward(legacyGym), true,
+    "an old credited gym result without bundle metadata keeps its original valid shape");
+  const modernGym: CombatReward = {
+    ...legacyGym, rewardBundleVersion: 1, badgeId: "boulder", items: { tm: 1 },
+  };
+  assert.equal(validCombatReward(modernGym), true);
+  for (const bad of [
+    { ...modernGym, badgeId: "cascade" },
+    { ...modernGym, badgeId: undefined },
+    { ...modernGym, items: undefined },
+    { ...modernGym, items: { tm: 0 } },
+    { ...modernGym, items: { tm: 2 } },
+    { ...modernGym, items: { tm: 1, "poke-ball": 1 } },
+    { ...modernGym, rewardBundleVersion: 2 },
+    { ...modernGym, rewardBundleVersion: undefined },
+  ]) assert.equal(validCombatReward(bad), false);
+  assert.deepEqual(legacyGym, {
+    rewardId: "admin:gym-battle", userId: 2, source: "admin-trainer",
+    battleId: "gym-battle", presetId: "kanto-brock", epoch: 0,
+    amount: 1200, walletRevision: 1, status: "credited",
+  });
+});
+
+test("rejected gym bundles and non-gym receipts cannot grant a badge or a TM", () => {
+  const rejectedGym = {
+    rewardId: "admin:old-gym", userId: 2, source: "admin-trainer",
+    battleId: "old-gym", presetId: "kanto-brock", epoch: 0,
+    amount: 0, walletRevision: 2, status: "rejected", reason: "STALE_GAME",
+    rewardBundleVersion: 1,
+  };
+  assert.equal(validCombatReward(rejectedGym), true);
+  assert.equal(validCombatReward({ ...rejectedGym, badgeId: "boulder", items: { tm: 1 } }), false);
+  const elite = {
+    rewardId: "admin:elite-battle", userId: 2, source: "admin-trainer",
+    battleId: "elite-battle", presetId: "kanto-lorelei", epoch: 0,
+    amount: 3000, walletRevision: 3, status: "credited", rewardBundleVersion: 1,
+  };
+  assert.equal(validCombatReward(elite), true);
+  assert.equal(validCombatReward({ ...elite, badgeId: "boulder", items: { tm: 1 } }), false);
+  assert.equal(validCombatReward({ ...credited(), rewardBundleVersion: 1, badgeId: "boulder", items: { tm: 1 } }), false,
+    "a local colored trainer reward cannot claim a gym bundle");
+});

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { waitLocalItemFlush } from "./legacy-item-browser-fixture.mjs";
+import { aimAndCompleteCapture } from "./capture-throw-browser-fixture.mjs";
 
 /** A real player keeps playing while the isolated relay delays or loses batches. */
 export async function runLocalItemsBrowserScenario({
@@ -148,20 +149,14 @@ export async function runLocalItemsBrowserScenario({
   const throwBall = async (id, roll) => {
     await forceD20(roll);
     const previous = (await state()).lastCaptureResult?.attemptId;
-    await evalArgs(playerA, (id) => {
-      const b = document.querySelector(`[data-testid="capture-ball-${id}"]`);
-      if (!b || b.disabled) throw new Error("Chosen ball has no valid stock/threshold");
-      b.click(); b.click();
-    }, id);
+    await aimAndCompleteCapture({ page: playerA, cdp, evalArgs, waitArgs,
+      ballId: id, hit: true, expectedRoll: roll });
     await waitArgs(playerA, async (previous, roll) => {
       const p = (await import("/src/store/store.ts")).store.getState().party;
       return p.lastCaptureResult?.attemptId !== previous && p.lastCaptureResult?.roll === roll;
     }, "direct click stores its exact D20 outcome locally", previous ?? null, roll);
-    await waitArgs(playerA, (roll) => [...document.querySelectorAll('[data-testid="capture-auto-result"]')]
-      .some((node) => node.textContent.includes(`D20: ${roll} `)),
-    "D20 feedback is shown after the checked local commit", roll);
     assert.equal(await evalArgs(playerA, () => window.__qaD20Draws), 1,
-      "double click draws exactly one D20 and leaves battle RNG independent");
+      "one aimed throw draws exactly one D20 and leaves battle RNG independent");
     await noGate();
     return (await state()).lastCaptureResult;
   };

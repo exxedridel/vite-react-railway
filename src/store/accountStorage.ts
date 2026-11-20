@@ -1,6 +1,7 @@
 import type { PartyState } from "@/slices/partySlice";
 import { stablePvpJson } from "@/lib/pvp/types";
 import { getMaxMovePp } from "@/lib/movePp";
+import { KANTO_BADGES } from "@/lib/trainerBag";
 import { validLocalBattleRewards } from "@/lib/battleRewards";
 import {
   validLocalRewardOutbox,
@@ -209,6 +210,17 @@ export function decodeAccountParty(
     )
       throw new Error();
     if (
+      isRecord(party.bag) &&
+      party.bag.rewardBadges !== undefined &&
+      (!Array.isArray(party.bag.rewardBadges) ||
+        new Set(party.bag.rewardBadges).size !==
+          party.bag.rewardBadges.length ||
+        !party.bag.rewardBadges.every((id) =>
+          KANTO_BADGES.some((badge) => badge.id === id),
+        ))
+    )
+      throw new Error();
+    if (
       party.localItemOutbox !== undefined &&
       !validLocalItemOutbox(party.localItemOutbox)
     )
@@ -345,6 +357,20 @@ export function decodeAccountParty(
         typeof result.pokemonName !== "string" ||
         !result.pokemonName ||
         result.pokemonName.length > 128 ||
+        (result.throwHit !== undefined &&
+          (typeof result.throwHit !== "boolean" ||
+            !Number.isSafeInteger(result.minimum) ||
+            Number(result.minimum) < 1 ||
+            Number(result.minimum) > 20 ||
+            (result.throwHit === false
+              ? result.outcome !== "escaped" || result.roll !== undefined
+              : !Number.isSafeInteger(result.roll) ||
+                Number(result.roll) < 1 ||
+                Number(result.roll) > 20 ||
+                result.outcome !==
+                  (Number(result.roll) >= Number(result.minimum)
+                    ? "caught"
+                    : "escaped")))) ||
         (result.outcome === "caught"
           ? !id(result.captureId)
           : result.outcome !== "escaped" || result.captureId !== undefined)

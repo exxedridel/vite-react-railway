@@ -29,6 +29,7 @@ import {
   type NpcStarterType,
 } from "@/lib/trainerBattle/kantoPresets";
 import { chooseNpcTrainerAction } from "@/lib/trainerBattle/npcAi";
+import { getCurrentHp } from "@/lib/pokemonStats";
 
 const failureText = (error: unknown): string =>
   error instanceof Error
@@ -652,6 +653,81 @@ export default function PvpBattlePanel({
               <p role="status" className="text-sm">
                 Guardando y confirmando la transición…
               </p>
+            )}
+            {state.phase === "ready" && (
+              <div className="space-y-3 rounded-lg border p-3">
+                <p className="text-sm text-muted-foreground">
+                  Elige el Pokémon que entrará primero por cada jugador.
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {(state.mode === "trainer"
+                    ? (["a"] as const)
+                    : (["a", "b"] as const)
+                  ).map((side) => {
+                    const snapshot = state.players[side]?.snapshot;
+                    if (!snapshot) return null;
+                    return (
+                      <label key={side} className="space-y-1 text-sm">
+                        <span>Pokémon inicial {side.toUpperCase()}</span>
+                        <select
+                          aria-label={`Pokémon inicial ${side.toUpperCase()}`}
+                          className="min-h-10 w-full rounded-md border bg-background px-3 text-foreground"
+                          disabled={
+                            locked ||
+                            !readyConnection ||
+                            !ownHost ||
+                            !ownersOnline ||
+                            incompleteCheckpoint
+                          }
+                          value={
+                            state.leads?.[side] ?? snapshot.activeCaptureId
+                          }
+                          onChange={(event) => {
+                            const captureId = event.target.value;
+                            void run(async () => {
+                              if (
+                                readPvpCheckpointOutbox(
+                                  localStorage,
+                                  state.battleId,
+                                  ownerId,
+                                  pvp.clientId,
+                                )
+                              )
+                                throw new Error(
+                                  "Recupera el inicio pendiente antes de cambiar el Pokémon inicial.",
+                                );
+                              const accepted = await pvp.selectLead(
+                                side,
+                                captureId,
+                              );
+                              if (accepted)
+                                contextRef.current = {
+                                  ...contextRef.current,
+                                  state: accepted,
+                                };
+                            });
+                          }}
+                        >
+                          {snapshot.pokemons.map((capture) => (
+                            <option
+                              key={capture.captureId}
+                              value={capture.captureId}
+                              disabled={getCurrentHp(capture.pokemon) <= 0}
+                            >
+                              {capture.pokemon.name} · Nv.{" "}
+                              {capture.pokemon.level} · HP{" "}
+                              {getCurrentHp(capture.pokemon)}
+                              {getCurrentHp(capture.pokemon) <= 0
+                                ? " · Debilitado"
+                                : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
             )}
             {(state.phase === "collecting" || state.phase === "ready") && (
               <div className="flex flex-wrap gap-2">

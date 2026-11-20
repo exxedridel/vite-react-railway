@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { waitLocalItemFlush } from "./legacy-item-browser-fixture.mjs";
+import { aimAndCompleteCapture } from "./capture-throw-browser-fixture.mjs";
 
 /** Actual Redux/native-engine results and isolated Nest ledgers in real Chrome. */
 export async function runBattleRewardsBrowserScenario({
   admin,
   playerA,
+  playerB,
   cdp,
   evalArgs,
   waitArgs,
@@ -245,6 +247,13 @@ export async function runBattleRewardsBrowserScenario({
 
   await route(playerA);
   await seedPvpTeam(playerA, 1, 40, 1.3);
+  await evalArgs(playerA, async () => {
+    const { transactPvpParty } = await import("/src/store/store.ts");
+    await transactPvpParty(2, async (party) => ({
+      party: { ...party, bag: { ...party.bag, badges: [], rewardBadges: [] }, pvpRevision: party.pvpRevision + 1 },
+      value: undefined,
+    }));
+  });
   const initial = await shopRepository.get(2),
     oldRevision = initial.storageRevision;
   initial.items["great-ball"] = 1;
@@ -328,14 +337,9 @@ export async function runBattleRewardsBrowserScenario({
         }
         return window.__qaRewardRandom(array);
       };
-      const b = document.querySelector(
-        '[data-testid="capture-ball-great-ball"]',
-      );
-      if (!b || b.disabled)
-        throw new Error("Capture reward fixture has no ball/valid threshold");
-      b.click();
-      b.click();
     });
+    await aimAndCompleteCapture({ page: playerA, cdp, evalArgs, waitArgs,
+      ballId: "great-ball", hit: true, expectedRoll: 20 });
     await waitArgs(
       playerA,
       async () =>
@@ -412,21 +416,38 @@ export async function runBattleRewardsBrowserScenario({
     );
 
     // The admin imports a real player's present party and defeats the actual
-    // Brock preset. Player levels and money must wait for exit/finalization.
+    // Brock preset. Its chosen lead gains levels during battle; the player's
+    // locked browser receives the final Party and gym bundle upon exit.
     await fixture("reward-admin-setup", "wild", "pink", 1);
     await evalArgs(playerA, async () => {
-      const { transactPvpParty } = await import("/src/store/store.ts");
-      await transactPvpParty(2, async (party) => ({
-        party: {
+      const [{ transactPvpParty }, stats] = await Promise.all([
+        import("/src/store/store.ts"), import("/src/lib/pokemonStats.ts"),
+      ]);
+      await transactPvpParty(2, async (party) => {
+        const pokemons = JSON.parse(JSON.stringify(party.pokemons));
+        const selectedLead = pokemons[1];
+        selectedLead.moves = JSON.parse(JSON.stringify(pokemons[0].moves));
+        selectedLead.pokemon.learnset = JSON.parse(JSON.stringify(pokemons[0].pokemon.learnset));
+        selectedLead.pokemon.stats.forEach((stat) => {
+          stat.value = stat.name === "hp" ? stats.getMaxHp(selectedLead.pokemon) : 500;
+        });
+        selectedLead.pokemon.battleStages = stats.neutralBattleStages();
+        selectedLead.statuses = []; selectedLead.statusTurns = {};
+        return { party: {
           ...party,
+          pokemons,
           opponent: null,
           emerald: undefined,
           pvpRevision: party.pvpRevision + 1,
         },
         value: undefined,
-      }));
+      }; });
     });
     const adminBefore = await state();
+    const selectedLeadId = adminBefore.pokemons[1].captureId;
+    const selectedLeadLevel = adminBefore.pokemons[1].pokemon.level;
+    const tmBeforeGym = adminBefore.bag.items.tm ?? 0;
+    assert.equal(adminBefore.bag.badges.includes("boulder"), false);
     await route(admin);
     await clickButton(admin, "Panel batalla");
     await clickButton(admin, "Trainer Battle");
@@ -452,8 +473,16 @@ export async function runBattleRewardsBrowserScenario({
       "reward Trainer snapshot and preset ready",
     );
     const adminBattleId = (await pvpRepository.locked())[0].battleId;
+    await waitArgs(admin, () => !!document.querySelector('select[aria-label="Pokémon inicial A"]'),
+      "admin may choose the initial human Pokémon from the received party");
+    await field(admin, 'select[aria-label="Pokémon inicial A"]', selectedLeadId);
+    await until(async () => (await pvpRepository.get(adminBattleId)).leads?.a === selectedLeadId,
+      "chosen second-slot lead is durable before starting the admin battle");
     await clickButton(admin, "Iniciar Trainer Battle");
+    await until(async () => (await pvpRepository.get(adminBattleId)).session?.teams.a.activeCaptureId === selectedLeadId,
+      "admin battle actually starts with the selected second Pokémon");
     let adminBattle;
+    let checkedLiveLevel = false;
     for (let turn = 0; turn < 5; turn++) {
       await waitArgs(
         admin,
@@ -481,6 +510,15 @@ export async function runBattleRewardsBrowserScenario({
           adminBattle.session?.runtime.serial > previousSerial
         );
       }, "admin native reward turn is checkpointed");
+      const liveLead = adminBattle.session.teams.a.pokemons.find((mon) => mon.captureId === selectedLeadId);
+      if (!checkedLiveLevel && adminBattle.session.rewards?.defeats.length) {
+        assert.equal(adminBattle.session.rewards.timing, "immediate");
+        assert.equal(liveLead.pokemon.level, selectedLeadLevel + 1,
+          "the first KO raises the chosen human lead before the next Pokémon/turn");
+        assert.notEqual(adminBattle.phase, "finished",
+          "the first level is already applied while Brock still has another Pokémon");
+        checkedLiveLevel = true;
+      }
       await waitArgs(
         admin,
         () =>
@@ -495,6 +533,11 @@ export async function runBattleRewardsBrowserScenario({
     }
     assert.equal(adminBattle.phase, "finished");
     assert.equal(adminBattle.session.runtime.winner, "a");
+    assert.equal(checkedLiveLevel, true);
+    assert.equal(adminBattle.session.teams.a.pokemons.find((mon) => mon.captureId === selectedLeadId).pokemon.level,
+      selectedLeadLevel + 2, "both KO levels are already present in the live battle checkpoint");
+    assert.equal((await state()).pokemons[1].pokemon.level, selectedLeadLevel,
+      "the reserved player browser keeps its original Party until the admin exits");
     assert.equal(
       (await state()).pokemons[0].pokemon.level,
       adminBefore.pokemons[0].pokemon.level,
@@ -524,14 +567,24 @@ export async function runBattleRewardsBrowserScenario({
     const adminFinal = await state();
     assert.equal(
       adminFinal.pokemons[0].pokemon.level,
-      adminBefore.pokemons[0].pokemon.level + 2,
-      "the human winner receives one level for each of Brock's two lower-level Pokémon",
+      adminBefore.pokemons[0].pokemon.level,
+      "an unselected bench Pokémon does not receive the selected lead's KO rewards",
     );
+    assert.equal(adminFinal.pokemons[1].pokemon.level, selectedLeadLevel + 2,
+      "exit exports the already increased level without adding the KO rewards a second time");
+    await waitArgs(playerA, async (tmBeforeGym) => {
+      const bag = (await import("/src/store/store.ts")).store.getState().party.bag;
+      return bag.items.tm === tmBeforeGym + 1 && bag.badges.filter((badge) => badge === "boulder").length === 1;
+    }, "gym reward bundle reaches the player's Bag once", tmBeforeGym);
     const walletFinal = await shopRepository.get(2);
+    assert.equal(walletFinal.items.tm, tmBeforeGym + 1);
+    assert.deepEqual(walletFinal.badges, ["boulder"]);
     await pvpGateway.publish();
     await shopGateway.publish();
     await route(playerA);
     assert.deepEqual((await state()).pokemons, adminFinal.pokemons);
+    assert.equal((await state()).bag.items.tm, tmBeforeGym + 1);
+    assert.equal((await state()).bag.badges.filter((badge) => badge === "boulder").length, 1);
     assert.equal((await shopRepository.get(2)).balance, walletFinal.balance);
     assert.equal(
       walletFinal.rewards.filter((r) => r.rewardId === `admin:${adminBattleId}`)
@@ -539,8 +592,97 @@ export async function runBattleRewardsBrowserScenario({
       1,
     );
     console.log(
-      "PASS: Brock's actual preset awards both KO levels and 1200 PD only on saving/exiting; replay and reload preserve one result.",
+      "PASS: selecting the second human lead starts it against Brock, each KO raises its live level, and exit grants 1200 PD/one TM/one badge without applying levels or bundles twice on replay/reload.",
     );
+
+    // Both human selectors use the same durable lead protocol in PvP. A
+    // forfeit exercises finalization without inventing KO or gym rewards.
+    await route(playerB);
+    await seedPvpTeam(playerB, 2, 40, 1.3);
+    await evalArgs(playerB, async () => {
+      const [{ transactPvpParty }, stats] = await Promise.all([
+        import("/src/store/store.ts"), import("/src/lib/pokemonStats.ts"),
+      ]);
+      await transactPvpParty(3, async (party) => {
+        const pokemons = JSON.parse(JSON.stringify(party.pokemons));
+        pokemons.forEach((mon) => {
+          mon.pokemon.stats.find((stat) => stat.name === "hp").value = stats.getMaxHp(mon.pokemon);
+          mon.pokemon.battleStages = stats.neutralBattleStages();
+          mon.statuses = []; mon.statusTurns = {};
+        });
+        return { party: { ...party, pokemons, pvpRevision: party.pvpRevision + 1 }, value: undefined };
+      });
+    });
+    const pvpOriginalA = await state();
+    const pvpOriginalB = await partyState(playerB);
+    const pvpWalletA = await shopRepository.get(2);
+    const pvpWalletB = await shopRepository.get(3);
+    await clickButton(admin, "Jugadores conectados · PvP");
+    await waitArgs(admin, () => !!document.querySelector('select[aria-label="Jugador PvP A"] option[value="2"]') &&
+      !!document.querySelector('select[aria-label="Jugador PvP B"] option[value="3"]'),
+    "PvP lead test sees both real connected players");
+    await field(admin, 'select[aria-label="Jugador PvP A"]', "2");
+    await field(admin, 'select[aria-label="Jugador PvP B"]', "3");
+    await clickButton(admin, "Solicitar ambos equipos");
+    await waitArgs(admin, () => [...document.querySelectorAll("button")].some(
+      (button) => button.textContent.trim() === "Iniciar batalla PvP" && !button.disabled,
+    ), "both human teams are ready before lead selection");
+    const pvpBattleId = (await pvpRepository.locked())[0].battleId;
+    const beforeLeads = await pvpRepository.get(pvpBattleId);
+    await field(admin, 'select[aria-label="Pokémon inicial A"]', pvpOriginalA.pokemons[1].captureId);
+    await until(async () => (await pvpRepository.get(pvpBattleId)).leads?.a === pvpOriginalA.pokemons[1].captureId,
+      "PvP first human lead selection is durable");
+    await waitArgs(admin, () => {
+      const selector = document.querySelector('select[aria-label="Pokémon inicial B"]');
+      return selector && !selector.disabled;
+    }, "second human lead selector remains available after the first selection");
+    await field(admin, 'select[aria-label="Pokémon inicial B"]', pvpOriginalB.pokemons[1].captureId);
+    await until(async () => (await pvpRepository.get(pvpBattleId)).leads?.b === pvpOriginalB.pokemons[1].captureId,
+      "PvP second human lead selection is durable");
+    const chosenLeads = await pvpRepository.get(pvpBattleId);
+    assert.deepEqual(chosenLeads.players.a.snapshot, beforeLeads.players.a.snapshot);
+    assert.deepEqual(chosenLeads.players.b.snapshot, beforeLeads.players.b.snapshot,
+      "changing either lead never changes the player's reserved snapshot or hash");
+    await clickButton(admin, "Iniciar batalla PvP");
+    await until(async () => {
+      const battle = await pvpRepository.get(pvpBattleId);
+      return battle.session?.teams.a.activeCaptureId === pvpOriginalA.pokemons[1].captureId &&
+        battle.session?.teams.b.activeCaptureId === pvpOriginalB.pokemons[1].captureId;
+    }, "PvP starts both selected second-slot Pokémon");
+    assert.equal(await evalArgs(admin, () => !!document.querySelector('select[aria-label="Pokémon inicial A"]')),
+      false, "initial lead selection is no longer editable after the battle begins");
+    await waitArgs(admin, () => [...document.querySelectorAll('section[aria-label^="Controles de"] button')].some(
+      (button) => button.textContent.trim().startsWith("Rendirse:") && !button.disabled,
+    ), "admin can forfeit a real human turn");
+    await evalArgs(admin, () => {
+      const section = document.querySelector('section[aria-label^="Controles de"]');
+      [...section.querySelectorAll("button")].find((button) => button.textContent.trim().startsWith("Rendirse:")).click();
+    });
+    await clickButton(admin, "Confirmar rendición", '[role="dialog"]');
+    await until(async () => (await pvpRepository.get(pvpBattleId)).phase === "finished",
+      "PvP forfeit finishes without a fictitious knockout");
+    await waitArgs(admin, () => [...document.querySelectorAll("button")].some(
+      (button) => button.textContent.trim() === "Volver al combate",
+    ), "PvP forfeit result summary ready");
+    await dismissHighlights(admin);
+    await clickButton(admin, "Salir y actualizar Partys");
+    await waitArgs(playerA, async () => !(await import("/src/store/store.ts")).store.getState().party.pvpLock,
+      "PvP result releases the first player's reservation");
+    await waitArgs(playerB, async () => !(await import("/src/store/store.ts")).store.getState().party.pvpLock,
+      "PvP result releases the second player's reservation");
+    for (const [userId, before] of [[2, pvpWalletA], [3, pvpWalletB]]) {
+      const after = await shopRepository.get(userId);
+      assert.equal(after.balance, before.balance);
+      assert.deepEqual(after.items, before.items);
+      assert.deepEqual(after.badges, before.badges);
+      assert.equal(after.rewards?.length ?? 0, before.rewards?.length ?? 0,
+        "a PvP outcome never adds a money, TM or badge reward");
+    }
+    assert.deepEqual((await state()).pokemons.map((mon) => mon.pokemon.level),
+      pvpOriginalA.pokemons.map((mon) => mon.pokemon.level));
+    assert.deepEqual((await partyState(playerB)).pokemons.map((mon) => mon.pokemon.level),
+      pvpOriginalB.pokemons.map((mon) => mon.pokemon.level));
+    console.log("PASS: PvP selects second-slot leads for both real users without changing snapshots, freezes selection at start and finalizes a forfeit without money, TM, badge or invented KO levels.");
   } finally {
     shopService.rewardClaim = originalClaim;
     await cdp

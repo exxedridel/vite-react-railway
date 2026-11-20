@@ -53,6 +53,10 @@ type PvpContextValue = {
     trainerPresetId: string,
   ) => Promise<PvpBattleView | null>;
   claimBattle: () => Promise<PvpBattleView | null>;
+  selectLead: (
+    side: TrainerSide,
+    captureId: string,
+  ) => Promise<PvpBattleView | null>;
   cancelBattle: () => Promise<PvpBattleView | null>;
   sendCommand: (
     side: TrainerSide,
@@ -104,6 +108,19 @@ function validState(value: unknown): value is PvpBattleView {
   return (
     typeof state.battleId === "string" &&
     Number.isSafeInteger(state.revision) &&
+    (state.levelRewards === undefined || state.levelRewards === "immediate") &&
+    (state.rewardBundleVersion === undefined ||
+      state.rewardBundleVersion === 1) &&
+    (state.leads === undefined ||
+      (!!state.leads &&
+        typeof state.leads === "object" &&
+        !Array.isArray(state.leads) &&
+        Object.entries(state.leads).every(
+          ([side, captureId]) =>
+            ["a", "b"].includes(side) &&
+            typeof captureId === "string" &&
+            /^[\w.:-]{1,128}$/.test(captureId),
+        ))) &&
     [
       "collecting",
       "ready",
@@ -656,15 +673,28 @@ export default function PvpProvider({
       commandId: crypto.randomUUID(),
       playerAId,
       playerBId,
+      levelRewards: "immediate",
     });
   const createTrainerBattle = (playerAId: number, trainerPresetId: string) =>
     mutate("pvp:create", {
       commandId: crypto.randomUUID(),
       playerAId,
       trainerPresetId,
+      levelRewards: "immediate",
+      rewardBundleVersion: 1,
     });
   const claimBattle = () =>
     mutate("pvp:claim", { battleId: requireState().battleId });
+  const selectLead = (side: TrainerSide, captureId: string) => {
+    const battle = requireState();
+    return mutate("pvp:lead", {
+      battleId: battle.battleId,
+      hostEpoch: battle.host.epoch,
+      expectedRevision: battle.revision,
+      side,
+      captureId,
+    });
+  };
   const cancelBattle = () => {
     const battle = requireState();
     return mutate("pvp:cancel", {
@@ -720,6 +750,7 @@ export default function PvpProvider({
         createBattle,
         createTrainerBattle,
         claimBattle,
+        selectLead,
         cancelBattle,
         sendCommand,
         publishCheckpoint,

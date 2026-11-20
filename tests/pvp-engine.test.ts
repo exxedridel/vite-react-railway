@@ -189,6 +189,26 @@ test("manual trainer validation remains strict; PvP still rejects duplicate IDs 
   wrongOwner.players.a.snapshot!.userId = 2;
   assert.throws(() => createPvpTrainerSession(wrongOwner), /propietario/);
 });
+test("new PvP sessions use immediate human rewards and the server-confirmed living leads without changing snapshots", () => {
+  const state = view();
+  state.levelRewards = "immediate";
+  state.leads = { a: "reserve-a", b: "same-capture-id" };
+  state.players.a.snapshot!.pokemons[1].pokemon.stats.find((stat) => stat.name === "hp")!.value = 10;
+  const before = clone(state);
+  const session = createPvpTrainerSession(state);
+  assert.deepEqual(session.rewards, { version: 1, timing: "immediate", eligibleSides: ["a", "b"], appliedCount: 0, defeats: [] });
+  assert.equal(session.teams.a.activeCaptureId, "reserve-a");
+  assert.equal(session.teams.b.activeCaptureId, "same-capture-id");
+  const started = startTrainerBattle(session, seed);
+  assert.equal(started.teams.a.activeCaptureId, "reserve-a");
+  assert.equal(Battle.fromJSON(started.runtime!.engine).p1.active[0].set.name, "a1");
+  assert.deepEqual(state, before);
+  const fainted = view(); fainted.leads = { a: "reserve-a" };
+  assert.throws(() => createPvpTrainerSession(fainted), /inicial|HP/);
+  const foreign = view(); foreign.leads = { a: "another-player-capture" };
+  assert.throws(() => createPvpTrainerSession(foreign), /inicial|HP/);
+  assert.equal(createPvpTrainerSession(view()).rewards, undefined, "unflagged legacy battles stay deferred");
+});
 
 test("forfeit resolves a winner without running queued attacks, consuming PP or healing HP and primary statuses", () => {
   const started = startTrainerBattle(createPvpTrainerSession(view()), seed);

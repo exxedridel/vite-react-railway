@@ -3,7 +3,8 @@ import { Battle, Dex, toID } from "@pkmn/sim";
 import type { Side, Pokemon as SimPokemon } from "@pkmn/sim";
 import type { BattleResult } from "@/types/battle";
 import { STATUS_OPTIONS } from "@/types/pokemon";
-import { getCurrentHp } from "@/lib/pokemonStats";
+import { changeLevel, getCurrentHp, isLeveled } from "@/lib/pokemonStats";
+import { rewardedLevel } from "@/lib/battleRewards";
 import { clearBattleConditions } from "@/lib/pokemonCondition";
 import { installRollAudit } from "@/lib/emerald/audit";
 import { installDefeatAudit } from "@/lib/emerald/defeatAudit";
@@ -100,6 +101,38 @@ function initialPokemonSet(entry: ReturnType<typeof entries>[number]) {
   if (gender) set.gender = gender;
   return set;
 }
+/** Apply only the new native KO batch. The turn has finished resolving, so the
+ * increased level affects the next legal choice without changing its past RNG,
+ * PP, move continuations, condition sources, or the replacement request. */
+function applyImmediateTrainerRewards(session: TrainerBattleSession, battle: Battle): string[] {
+  const ledger = session.rewards;
+  if (ledger?.timing !== "immediate") return [];
+  const pending = ledger.defeats.slice(ledger.appliedCount ?? 0);
+  const messages: string[] = [];
+  const roster = entries(session);
+  for (const side of ledger.eligibleSides ?? []) {
+    for (const capture of session.teams[side].pokemons) {
+      const levels = pending.reduce((sum, reward) => sum +
+        (reward.winnerSide === side && reward.winnerCaptureId === capture.captureId ? reward.levels : 0), 0);
+      if (!levels || !isLeveled(capture.pokemon) || capture.pokemon.level >= 100) continue;
+      const entry = roster.find((candidate) => candidate.side === side && candidate.capture.captureId === capture.captureId);
+      const pokemon = simSide(battle, side).pokemon.find((candidate) =>
+        candidate.set.name === entry?.key);
+      if (!pokemon) throw new Error("No se encontró el Pokémon que ganó niveles en esta batalla.");
+      const previousLevel = capture.pokemon.level;
+      capture.pokemon = changeLevel(capture.pokemon, rewardedLevel(previousLevel, levels));
+      // Transform copies the other species' battle stats, while HP and the
+      // original permanent stats still belong to this Pokémon's progression.
+      const transformedStats = pokemon.transformed ? { ...pokemon.storedStats } : undefined;
+      applyEmeraldStats(pokemon, capture.pokemon);
+      if (transformedStats) pokemon.storedStats = transformedStats;
+      pokemon.updateSpeed();
+      messages.push(`${capture.pokemon.name} (${session.teams[side].name}): nivel ${previousLevel} → ${capture.pokemon.level}.`);
+    }
+  }
+  ledger.appliedCount = ledger.defeats.length;
+  return messages;
+}
 function exportSession(
   session: TrainerBattleSession,
   battle: Battle,
@@ -135,6 +168,12 @@ function exportSession(
     session.teams[side].activeCaptureId =
       roster.find((entry) => entry.key === simulated.active[0]?.set.name)
         ?.capture.captureId ?? null;
+  }
+  const rewards = applyImmediateTrainerRewards(session, battle);
+  const summary = session.history[0];
+  if (rewards.length && summary?.id === `${session.id}:${serial}`) {
+    summary.events.push(...rewards);
+    summary.highlights.push(...rewards);
   }
   const weather = Object.entries(weatherIds).find(
     ([, id]) => id === battle.field.weather,

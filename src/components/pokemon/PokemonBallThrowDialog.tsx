@@ -1,5 +1,4 @@
-import { useRef, useState } from "react";
-import { toast } from "sonner";
+import { useEffect, useRef, useState } from "react";
 import { store } from "@/store/store";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,11 +12,16 @@ import {
 import { useShopContext } from "@/context/ShopContext";
 import { useAppSelector } from "@/store/hooks";
 import { isLocalPartyMutationBlocked } from "@/store/accountStorage";
-import { BALL_ITEM_IDS, type BallItemId } from "@/lib/shop/types";
+import {
+  BALL_ITEM_IDS,
+  type BallItemId,
+  type CaptureQuote,
+} from "@/lib/shop/types";
 import { SHOP_ITEMS } from "@/lib/adminShop";
 import { captureRequirements } from "@/lib/captureRates";
 import type { BattleOpponent } from "@/lib/battleOpponent";
 import PokemonCaptureRequirements from "./PokemonCaptureRequirements";
+import PokemonCaptureThrow from "./PokemonCaptureThrow";
 
 const captureBallId = {
   "poke-ball": "poke",
@@ -29,16 +33,28 @@ export default function PokemonBallThrowDialog({
   opponent,
   open,
   onOpenChange,
+  onPresentationChange,
+  onResolved,
 }: {
   opponent: BattleOpponent | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onPresentationChange?: (active: boolean) => void;
+  onResolved?: () => void;
 }) {
   const shop = useShopContext();
   const party = useAppSelector((state) => state.party);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const inFlight = useRef(false);
+  const [selected, setSelected] = useState<{
+    ballId: BallItemId;
+    opponent: BattleOpponent;
+    quote: CaptureQuote;
+  } | null>(null);
+  const presentation = useRef(onPresentationChange);
+  presentation.current = onPresentationChange;
+  useEffect(() => () => presentation.current?.(false), []);
   const settings = shop.catalog
     ? {
         captureDifficulty: shop.catalog.captureDifficulty ?? 0,
@@ -54,7 +70,7 @@ export default function PokemonBallThrowDialog({
     !shop.usingItem &&
     shop.localItemsReady &&
     !isLocalPartyMutationBlocked(party);
-  async function launch(ballId: BallItemId) {
+  function select(ballId: BallItemId) {
     const target = info?.balls.find(
       (ball) => ball.id === captureBallId[ballId],
     );
@@ -67,48 +83,62 @@ export default function PokemonBallThrowDialog({
       (party.bag?.items?.[ballId] ?? 0) < 1
     )
       return;
-    inFlight.current = true;
-    setBusy(true);
     setError("");
-    try {
-      if (!target || !opponent?.encounterId) return;
-      await shop.throwBall(ballId, {
-        minimum: target.minimum!,
+    if (!opponent?.encounterId) return;
+    setSelected({
+      ballId,
+      opponent,
+      quote: {
+        minimum: target.minimum,
         encounterId: opponent.encounterId,
         captureDifficulty: difficulty,
         captureRevision: settings?.captureRevision ?? 0,
-      });
-      const result = store.getState().party.lastCaptureResult;
-      if (result?.roll !== undefined && result.minimum !== undefined) {
-        toast(
-          result.outcome === "caught"
-            ? `${result.pokemonName} se unió a tu equipo.`
-            : `${result.pokemonName} escapó de la pokebola.`,
-          {
-            id: `capture:${result.attemptId}`,
-            description: (
-              <span data-testid="capture-auto-result">
-                D20: {result.roll} · mínimo: {result.minimum}.{" "}
-                {result.outcome === "caught"
-                  ? "Captura conseguida."
-                  : "El salvaje respondió al lanzamiento."}
-              </span>
-            ),
-          },
-        );
-      }
-      onOpenChange(false);
-    } catch (reason) {
-      setError(
-        reason instanceof Error
-          ? reason.message
-          : "No se pudo confirmar el lanzamiento.",
-      );
-    } finally {
-      inFlight.current = false;
-      setBusy(false);
-    }
+      },
+    });
+    presentation.current?.(true);
   }
+  if (selected)
+    return (
+      <PokemonCaptureThrow
+        ballId={selected.ballId}
+        opponent={selected.opponent}
+        minimum={selected.quote.minimum}
+        onLaunch={async (hit) => {
+          if (inFlight.current)
+            throw new Error("El lanzamiento ya se está guardando.");
+          inFlight.current = true;
+          setBusy(true);
+          const before = store.getState().party.lastCaptureResult?.attemptId;
+          try {
+            await shop.throwBall(selected.ballId, selected.quote, hit);
+            const result = store.getState().party.lastCaptureResult;
+            if (
+              !result ||
+              result.attemptId === before ||
+              result.ballId !== selected.ballId ||
+              result.throwHit !== hit
+            )
+              throw new Error(
+                "No se encontró el resultado guardado del lanzamiento.",
+              );
+            return result;
+          } finally {
+            inFlight.current = false;
+            setBusy(false);
+          }
+        }}
+        onCancel={() => {
+          setSelected(null);
+          presentation.current?.(false);
+        }}
+        onDone={() => {
+          setSelected(null);
+          presentation.current?.(false);
+          onOpenChange(false);
+          onResolved?.();
+        }}
+      />
+    );
   return (
     <Dialog
       open={open}
@@ -133,8 +163,8 @@ export default function PokemonBallThrowDialog({
           <DialogTitle>Lanzar pokebola</DialogTitle>
           <DialogDescription>
             Elige una bola de tu Bag para atrapar a {opponent?.pokemon.name}.
-            Toca la pokebola que quieras lanzar. El D20 y el resultado se
-            calculan automáticamente al gastar una unidad.
+            Después de elegirla, arrástrala hacia el Pokémon y suéltala para
+            lanzarla. Si le das, el D20 resolverá la captura.
           </DialogDescription>
         </DialogHeader>
         <p
@@ -166,7 +196,7 @@ export default function PokemonBallThrowDialog({
                   minimum === null ||
                   minimum > 20
                 }
-                onClick={() => void launch(id)}
+                onClick={() => select(id)}
               >
                 <span className="flex items-center gap-2">
                   <img

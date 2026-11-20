@@ -362,6 +362,20 @@ export function validTrainerBattleSession(
     ids.push(...memberIds);
   }
   if (!value.networkBattleId && new Set(ids).size !== ids.length) return false;
+  if (value.rewards !== undefined) {
+    const ledger = value.rewards as import("@/lib/battleRewards").CombatRewardLedger;
+    if (ledger.timing === "immediate" &&
+      (ledger.appliedCount !== ledger.defeats.length ||
+        (value.phase === "setup" && ledger.defeats.length !== 0))) return false;
+    for (const reward of ledger.defeats) {
+      const winningTeam = value.teams[reward.winnerSide] as { pokemons: CapturedPokemon[] };
+      const defeatedTeam = value.teams[reward.defeatedSide] as { pokemons: CapturedPokemon[] };
+      const winner = winningTeam.pokemons.find((capture) => capture.captureId === reward.winnerCaptureId);
+      const defeated = defeatedTeam.pokemons.find((capture) => capture.captureId === reward.defeatedCaptureId);
+      if (!winner || !defeated || reward.winnerLevel > Number(winner.pokemon.level) || reward.defeatedLevel > Number(defeated.pokemon.level))
+        return false;
+    }
+  }
   if (value.networkItems !== undefined) {
     const items = value.networkItems;
     if (

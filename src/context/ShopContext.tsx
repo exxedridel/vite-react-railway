@@ -139,7 +139,11 @@ type ShopContextValue = {
   sync: () => Promise<void>;
   restartGame: () => Promise<void>;
   useFullRestore: (captureId: string) => Promise<void>;
-  throwBall: (ballId: BallItemId, quote?: CaptureQuote) => Promise<void>;
+  throwBall: (
+    ballId: BallItemId,
+    quote?: CaptureQuote,
+    throwHit?: boolean,
+  ) => Promise<void>;
   useTm: (
     captureId: string,
     move: PokemonMove,
@@ -318,6 +322,7 @@ export default function ShopProvider({
       moveId?: number,
       learning?: { move: PokemonMove; replaceMoveId?: number },
       captureQuote?: CaptureQuote,
+      throwHit?: boolean,
     ) => Promise<void>
   >(async () => {
     throw new Error("Inicia sesión para usar objetos de tu Bag.");
@@ -331,24 +336,29 @@ export default function ShopProvider({
     (captureId: string) => useItemRef.current("full-restore", captureId),
     [],
   );
-  const throwBall = useCallback((ballId: BallItemId, quote?: CaptureQuote) => {
-    const party = store.getState().party;
-    const active =
-      party.pokemons.find(
-        (capture) => capture.captureId === party.battleField?.activeCaptureId,
-      ) ?? party.pokemons.find((capture) => getCurrentHp(capture.pokemon) > 0);
-    if (!active)
-      return Promise.reject(
-        new Error("Selecciona un Pokémon con HP antes de lanzar."),
+  const throwBall = useCallback(
+    (ballId: BallItemId, quote?: CaptureQuote, throwHit?: boolean) => {
+      const party = store.getState().party;
+      const active =
+        party.pokemons.find(
+          (capture) => capture.captureId === party.battleField?.activeCaptureId,
+        ) ??
+        party.pokemons.find((capture) => getCurrentHp(capture.pokemon) > 0);
+      if (!active)
+        return Promise.reject(
+          new Error("Selecciona un Pokémon con HP antes de lanzar."),
+        );
+      return useItemRef.current(
+        ballId,
+        active.captureId,
+        undefined,
+        undefined,
+        quote,
+        throwHit,
       );
-    return useItemRef.current(
-      ballId,
-      active.captureId,
-      undefined,
-      undefined,
-      quote,
-    );
-  }, []);
+    },
+    [],
+  );
   const useTm = useCallback(
     (captureId: string, move: PokemonMove, replaceMoveId?: number) =>
       useItemRef.current("tm", captureId, move.id, {
@@ -1484,6 +1494,7 @@ export default function ShopProvider({
       moveId,
       learning,
       captureQuote,
+      throwHit,
     ) => {
       if (itemStarting || itemRecovery)
         throw new Error("Espera a que termine el uso del objeto anterior.");
@@ -1547,6 +1558,8 @@ export default function ShopProvider({
                 resultCaptureId,
                 captureQuote,
                 captureSettings,
+                undefined,
+                throwHit,
               );
             }
             if (itemId === "tm") {

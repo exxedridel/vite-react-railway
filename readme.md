@@ -4,15 +4,17 @@ Frontend del juego con React, TypeScript y Vite. `mysql-restapi` autentica y
 administra usuarios; `nest-mongo-pokedex` comunica jugadores y conserva las
 batallas PvP, las carteras y los recibos del Poké Mart. El motor de combate se
 ejecuta en el panel administrador y, para encuentros individuales, en el frontend
-del jugador. Versión de la aplicación: **2.13.0**.
+del jugador. Versión de la aplicación: **2.15.0**.
 
 ## Recompensas automáticas de combate
 
 Cada KO premia al Pokémon que lo causó con1nivel si el rival era igual o menor,
 o2si era mayor. Capturar también premia al Pokémon activo. Se aplican al guardar
 el encuentro, con máximo100, conservando HP proporcional, estados y PP. En
-JcJ/Trainer del admin llegan mediante el resultado al salir; los niveles no
-alteran las estadísticas durante la pelea.
+nuevas batallas JcJ/Trainer del admin suben durante el combate, tras resolver
+el turno del KO, y actualizan las estadísticas para las siguientes acciones.
+Al salir se guarda el nivel final sin volver a sumarlo. Las batallas guardadas
+con reglas anteriores conservan sus niveles diferidos.
 
 Las victorias contra entrenadores individuales dan200/300/400/500/600Pokedollars
 en casillas rosa/verde/azul/amarilla/roja. Se elige y conserva el color al crear
@@ -20,13 +22,23 @@ el encuentro, incluso personalizado. Dorada es sólo para captura. Los presets
 Kanto tienen los premios acordados para gimnasios, Alto Mando y rival. JcJ no
 paga dinero ni incorpora apuestas. Huida, rendición y empate no pagan.
 
+Cada líder de gimnasio vencido entrega también su medalla y una TM. La medalla
+es única; cada nueva victoria entrega otra TM. Dinero, TM y medalla se guardan
+juntos en Nest y se muestran automáticamente en Bag. Se conservan las medallas
+manuales antiguas y ahora se muestran de sólo lectura.
+
+Antes de iniciar el combate, el admin puede elegir el **Pokémon inicial A/B**
+de los equipos humanos con HP. La selección se guarda sin alterar el equipo
+reservado y sobrevive a recargar. El NPC mantiene el orden del preset.
+
 El dinero permanece central en Nest; una cola guardada reintenta los premios
 locales en segundo plano sin bloquear juego/música. Identificadores y recibos
 evitan cobros duplicados al recargar. Reiniciar cambia la generación de premios
 y descarta reclamaciones de partidas anteriores. Ver reglas, compatibilidad y
 validación en [BATTLE_REWARDS_PROTOCOL.md](../BATTLE_REWARDS_PROTOCOL.md).
 
-Desplegar Nest primero y React después y recargar a2.13.0. Sin variables nuevas,
+La base de recompensas2.14 requiere Nest antes de React; la animación2.15 sólo
+añade cambios al frontend. Recargar los frontends a2.15.0. Sin variables nuevas,
 cambios MySQL, seed ni borrar partidas. `npm run test:rewards` comprueba niveles,
 dinero y guardado; `npm run test:rewards:browser` valida el flujo en Chrome local.
 
@@ -173,10 +185,12 @@ normal; +2 convierte un mínimo7+ en9+. Se suma después del mínimo base y sus
 bonos. El valor se guarda globalmente en Nest y se actualiza por WebSocket.
 Un mínimo superior a20 muestra la bola como imposible y no permite gastarla.
 
-Desde2.12.0, **Lanzar pokebola** muestra Poké Ball, Great Ball y Ultra Ball con
-sus existencias y mínimos. **Tocar una bola realiza directamente el lanzamiento**:
-gasta una unidad, tira un D20 uniforme y resuelve automáticamente éxito o fallo.
-No hay una segunda confirmación ni botones para marcar Capturada/Escapó.
+Desde2.15.0, **Lanzar pokebola** muestra Poké Ball, Great Ball y Ultra Ball con
+sus existencias y mínimos. Elegir una abre una escena: **arrastra la bola hacia
+el Pokémon y suéltala dentro del círculo**. Fallar consume una bola sin D20 y
+el salvaje responde. Acertar tira el D20 y anima vuelo, sacudidas y captura o
+escapada. El éxito muestra un diálogo con Continuar. También admite flechas y
+Enter con teclado. Cancelar antes de lanzar conserva la bola.
 
 Captura cuando el dado iguala o supera el mínimo. Conserva nivel, HP, estados
 principales y PP del Pokémon. Si falla, consume tu acción y el salvaje responde
@@ -196,6 +210,8 @@ compatibilidad anterior en [POKEBALL_PROTOCOL.md](../POKEBALL_PROTOCOL.md).
 ```bash
 npm run test:capture
 npm run test:capture:browser
+npm run test:capture-throw
+npm run test:capture-throw:browser
 ```
 
 ## Poké Center

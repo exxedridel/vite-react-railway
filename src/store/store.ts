@@ -74,6 +74,7 @@ const pvpPartyGuard: Middleware<{}, { party: AppState["party"] }> =
       (action.type === resetGame.type ||
         action.type === "party/fullRestorePokemon" ||
         action.type === "party/learnPokemonMoveWithTm" ||
+        action.type === "party/toggleGymBadge" ||
         action.type === "party/captureWildOpponent")
     )
       return action;
@@ -378,7 +379,15 @@ export function importLegacyParty(userId: number): Promise<void> {
               centerLock: undefined,
               captureAttempt: undefined,
               lastCaptureResult: undefined,
-              bag: { ...bag, badges: [...(legacy.party.bag?.badges ?? [])] },
+              bag: {
+                ...bag,
+                badges: [
+                  ...new Set([
+                    ...(legacy.party.bag?.badges ?? []),
+                    ...(bag.rewardBadges ?? []),
+                  ]),
+                ],
+              },
             },
           });
         } else resumeWithParty({ party: current });

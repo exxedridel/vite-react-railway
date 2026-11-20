@@ -91,6 +91,9 @@ export type PvpTrainer = {
   team?: TrainerTeam;
 };
 export type PvpBattleView = {
+  levelRewards?: "immediate";
+  leads?: Partial<Record<TrainerSide, string>>;
+  rewardBundleVersion?: 1;
   battleId: string;
   mode?: "pvp" | "trainer";
   trainer?: PvpTrainer;

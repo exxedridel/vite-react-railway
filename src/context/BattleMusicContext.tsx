@@ -16,11 +16,29 @@ const MusicContext = createContext<{
   enabled: boolean;
   phase: MusicPhase;
   toggle: () => void;
+  holdEncounter: () => () => void;
 } | null>(null);
 
 export function BattleMusicProvider({ children }: { children: ReactNode }) {
   const opponent = useAppSelector((state) => state.party.opponent);
   const { key, active } = getBattlePresence(opponent);
+  const [held, setHeld] = useState<{
+    key: string | null;
+    active: boolean;
+  } | null>(null);
+  const holdToken = useRef<symbol | null>(null);
+  const playbackKey = held ? held.key : key;
+  const playbackActive = held?.active ?? active;
+  const holdEncounter = () => {
+    const token = Symbol("capture-presentation");
+    holdToken.current = token;
+    setHeld({ key, active });
+    return () => {
+      if (holdToken.current !== token) return;
+      holdToken.current = null;
+      setHeld(null);
+    };
+  };
   const [enabled, setEnabled] = useState(() => {
     try {
       return localStorage.getItem(STORAGE_KEY) !== "false";
@@ -49,17 +67,20 @@ export function BattleMusicProvider({ children }: { children: ReactNode }) {
       if (!event.repeat) unlock();
     };
     document.addEventListener("pointerdown", unlock);
+    // Touch receives user activation on release, so the first throw can unlock audio.
+    document.addEventListener("pointerup", unlock);
     document.addEventListener("keydown", keyboard);
     return () => {
       document.removeEventListener("pointerdown", unlock);
+      document.removeEventListener("pointerup", unlock);
       document.removeEventListener("keydown", keyboard);
       player.dispose();
       engine.current = null;
     };
   }, []);
   useEffect(() => {
-    engine.current?.setEncounter(key, enabled);
-  }, [key, enabled]);
+    engine.current?.setEncounter(playbackKey, enabled);
+  }, [playbackKey, enabled]);
   const toggle = () => {
     if (enabled && (phase === "blocked" || phase === "error")) {
       engine.current?.unlock();
@@ -72,11 +93,13 @@ export function BattleMusicProvider({ children }: { children: ReactNode }) {
     } catch {
       /* Preferencia solo en memoria. */
     }
-    engine.current?.setEncounter(key, next);
+    engine.current?.setEncounter(playbackKey, next);
     if (next) engine.current?.unlock();
   };
   return (
-    <MusicContext.Provider value={{ active, enabled, phase, toggle }}>
+    <MusicContext.Provider
+      value={{ active: playbackActive, enabled, phase, toggle, holdEncounter }}
+    >
       {children}
     </MusicContext.Provider>
   );

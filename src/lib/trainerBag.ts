@@ -51,6 +51,8 @@ export const KANTO_BADGES = [
 
 export type GymBadgeId = (typeof KANTO_BADGES)[number]["id"];
 export type TrainerBag = {
+  /** Last centrally awarded badges; preserves historic local badges on migration. */
+  rewardBadges?: GymBadgeId[];
   consumptionAck?: import("./shop/types").ConsumptionAck;
   money: number;
   badges: GymBadgeId[];

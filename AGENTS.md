@@ -1,5 +1,27 @@
 # Contexto de la trilogia Pokemon
 
+Etapa actual2026-11-20 React2.15.0 TERMINADA LOCAL: capturaGo básica elegirbola
+sinspend, arrastraralcírculo/soltar. Miss1bola+acción+salvajesinD20; hitD20actual
+yflight/shake/breakout/caughtdialogContinue. ThrowHit optin enAPI/resultfalse
+minimumsinroll/trueD20/undefinedlegacy. Checkedwriteefecto/debit/outbox sinACK.
+SnapshotUIparent/highlightsdiferenpresentación, musicHoldtransienthastaContinue,
+pointerupdesbloqueaAudioContextprimerTouchEnd. Cancelprethrowfree/reloadpostcommit
+nodouble.24captura44wallet7cuentas11Party/TS/build/audit176 yChromeaim4/auto-only/
+ShopCOMPLETOPASSsinJSerrors/cleanup. Harnesslegacyitemesperaconsumptionqueue
+libre antesviejoRPC(noaflojarApp), Centeresperahydrate. SóloReact2.15recargar,
+sinNestnuevo/MySQL/env/seed/reset/borrados/commit/push/deploy, no producciónverificada.
+
+Etapa actual2026-11-19 React2.14.0/Nest TERMINADA LOCAL. Nuevasbatallasadmin
+levelRewardsimmediate: KOsube humanos alresolverturno/stats/HP/speedantesnextacción,
+PP/status/PRNG/Transform/forzadosintactos; resultabsnorelevel, olddeferredintacta.
+CreateTrainerrewardBundleVersion1: gymPD+TM1cadavictoria+badgeúnicaCAScentral;
+oldrecibosnoextras. Walletbadges/BagrewardBadges preservanmanuallegacy; medallas
+readonly/rawguard. pvp:lead guardaA/Bhumanovivo expectedRevision/fencing sin
+snapshot/hash/orderchange. Outboxstartpendiente impidecambiarlead hastarecovery.
+176combat11Party44wallet8dinero7cuentas/TS/build/audit174PASS; ChromeRewards5+
+ShopCOMPLETOPASSsinJSerrors/cleanup. Ver memoria/protocolo. Nest→Reactrecargar
+2.14.0 sinvars/MySQL/seed/reset/borrados/commit/push/despliegue, producciónnoverificada.
+
 Etapa actual2026-11-17 React2.13.0/Nest: recompensasautomáticasterminadaslocal.
 CadaKOautorreal/fallbackactivo/capturaactivo +1si rival<=/+2mayor; nivelesfinal
 alguardar/saliradmin cap100 HPproporcional/status/PPconservados. Dinero sóloPvE

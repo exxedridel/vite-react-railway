@@ -3,6 +3,7 @@ import { transactPvpParty } from "@/store/store";
 import { getCurrentHp } from "@/lib/pokemonStats";
 import { pvpPartyRevision } from "@/store/accountStorage";
 import { pendingLocalItemOperations, validConsumptionAck } from "./localItems";
+import { KANTO_BADGES } from "@/lib/trainerBag";
 import {
   SHOP_ITEM_IDS,
   type BalanceAdjustment,
@@ -24,6 +25,12 @@ export function validWallet(value: unknown): value is Wallet {
     !integer(value.userId, 1) ||
     !integer(value.balance) ||
     !integer(value.revision) ||
+    (value.badges !== undefined &&
+      (!Array.isArray(value.badges) ||
+        new Set(value.badges).size !== value.badges.length ||
+        !value.badges.every((id) =>
+          KANTO_BADGES.some((badge) => badge.id === id),
+        ))) ||
     (value.rewardEpoch !== undefined && !integer(value.rewardEpoch)) ||
     !record(value.items)
   )
@@ -166,8 +173,8 @@ export function localBattleActive(party: PartyState): boolean {
   );
 }
 
-/** Canonical wallet snapshots replace only currency/items. Pokémon and badges
- * stay in the local party. Revision fencing prevents replays from restoring cash.
+/** Canonical snapshots replace currency/items and awarded badges, preserving
+ * historic local badges. Revision fencing prevents replays from restoring cash.
  */
 export function partyWithWallet(party: PartyState, wallet: Wallet): PartyState {
   if (!validWallet(wallet)) throw new Error("El saldo recibido no es válido.");
@@ -177,6 +184,18 @@ export function partyWithWallet(party: PartyState, wallet: Wallet): PartyState {
   const rewardEpoch =
     wallet.rewardEpoch ?? (sameOwner ? (current.rewardEpoch ?? 0) : 0);
   if (sameOwner && rewardEpoch < (current.rewardEpoch ?? 0)) return party;
+  const rewardBadges = wallet.badges ?? current?.rewardBadges;
+  const badges =
+    rewardBadges === undefined
+      ? [...(current?.badges ?? [])]
+      : [
+          ...new Set([
+            ...(current?.badges ?? []).filter(
+              (id) => !current?.rewardBadges?.includes(id),
+            ),
+            ...rewardBadges,
+          ]),
+        ];
   if (
     sameOwner &&
     current?.consumptionAck &&
@@ -239,6 +258,12 @@ export function partyWithWallet(party: PartyState, wallet: Wallet): PartyState {
     if (current.walletRevision === wallet.revision) {
       if (
         current.money !== wallet.balance ||
+        (wallet.badges !== undefined &&
+          current.rewardBadges !== undefined &&
+          (current.rewardBadges.length !== wallet.badges.length ||
+            !current.rewardBadges.every((id) =>
+              wallet.badges!.includes(id),
+            ))) ||
         (!advancedAck &&
           !SHOP_ITEM_IDS.every(
             (id) => (current.items?.[id] ?? 0) === (items[id] ?? 0),
@@ -250,6 +275,8 @@ export function partyWithWallet(party: PartyState, wallet: Wallet): PartyState {
       if (
         JSON.stringify(current.consumptionAck) === JSON.stringify(ack) &&
         (current.rewardEpoch ?? 0) === rewardEpoch &&
+        JSON.stringify(current.rewardBadges) === JSON.stringify(rewardBadges) &&
+        JSON.stringify(current.badges) === JSON.stringify(badges) &&
         JSON.stringify(outbox) === JSON.stringify(nextOutbox)
       )
         return party;
@@ -262,7 +289,10 @@ export function partyWithWallet(party: PartyState, wallet: Wallet): PartyState {
     ...(conflicts ? { localItemConflicts: conflicts } : {}),
     bag: {
       money: wallet.balance,
-      badges: [...(party.bag?.badges ?? [])],
+      badges,
+      ...(rewardBadges !== undefined
+        ? { rewardBadges: [...rewardBadges] }
+        : {}),
       items,
       ...(ack ? { consumptionAck: ack } : {}),
       currencyVersion: 1,

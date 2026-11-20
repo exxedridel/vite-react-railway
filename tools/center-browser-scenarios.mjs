@@ -641,6 +641,20 @@ export async function runCenterBrowserScenario({
     await shopGateway.publish();
     publishStale(pendingHeld);
     await cdp.request("Page.reload", {}, playerA);
+    await waitArgs(
+      playerA,
+      async (captureIds) => {
+        const [{ store }, storage] = await Promise.all([
+          import("/src/store/store.ts"),
+          import("/src/store/accountStorage.ts"),
+        ]);
+        return storage.getActiveAccountId() === 2 &&
+          store.getState().party.pokemons.length === captureIds.length &&
+          captureIds.every((id) => store.getState().party.pokemons.some((capture) => capture.captureId === id));
+      },
+      "the reloaded player has restored its saved team before comparing a cancelled heal",
+      healedBeforeClose.map((capture) => capture.captureId),
+    );
     await waitReady();
     assert.deepEqual((await state()).pokemons, healedBeforeClose);
     assert.deepEqual((await state()).bag, beforeHeld.bag);

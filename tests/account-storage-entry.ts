@@ -3,7 +3,7 @@ import partyReducer, {
   addPokemon,
   changeBagMoney,
   configureGame,
-  toggleGymBadge,
+  changePokemonHp,
 } from "../src/slices/partySlice";
 import { STAT_NAMES } from "../src/lib/pokemonStats";
 import type { Pokemon } from "../src/types/pokemon";
@@ -298,7 +298,7 @@ export async function runAccountStorageTests() {
   );
 
   await activateAccountStore(a);
-  store.dispatch(toggleGymBadge("cascade"));
+  store.dispatch(changePokemonHp({ captureId: aCaptureId, amount: -1 }));
   testStorage.failWritesFor.add(accountStorageKey(a));
   await assert.rejects(activateAccountStore(b), /guardar/);
   assert.equal(getActiveAccountId(), null);
@@ -312,7 +312,7 @@ export async function runAccountStorageTests() {
     123,
     "Failed writes must not masquerade as saved progress",
   );
-  store.dispatch(toggleGymBadge("cascade"));
+  store.dispatch(changePokemonHp({ captureId: aCaptureId, amount: -1 }));
   testStorage.failWritesFor.add(accountStorageKey(a));
   await assert.rejects(clearAccountStore(), /guardar/);
   assert.equal(getActiveAccountId(), null);

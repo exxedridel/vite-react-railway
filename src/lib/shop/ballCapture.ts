@@ -78,17 +78,26 @@ export function validCaptureResult(
     typeof result.pokemonName === "string" &&
     result.pokemonName.length > 0 &&
     result.pokemonName.length <= 128 &&
-    ((result.roll === undefined && result.minimum === undefined) ||
-      (Number.isSafeInteger(result.roll) &&
-        Number(result.roll) >= 1 &&
-        Number(result.roll) <= 20 &&
+    (result.throwHit === undefined || typeof result.throwHit === "boolean") &&
+    (result.throwHit === false
+      ? result.outcome === "escaped" &&
+        result.roll === undefined &&
         Number.isSafeInteger(result.minimum) &&
         Number(result.minimum) >= 1 &&
-        Number(result.minimum) <= 20 &&
-        result.outcome ===
-          (Number(result.roll) >= Number(result.minimum)
-            ? "caught"
-            : "escaped"))) &&
+        Number(result.minimum) <= 20
+      : (result.throwHit === undefined &&
+          result.roll === undefined &&
+          result.minimum === undefined) ||
+        (Number.isSafeInteger(result.roll) &&
+          Number(result.roll) >= 1 &&
+          Number(result.roll) <= 20 &&
+          Number.isSafeInteger(result.minimum) &&
+          Number(result.minimum) >= 1 &&
+          Number(result.minimum) <= 20 &&
+          result.outcome ===
+            (Number(result.roll) >= Number(result.minimum)
+              ? "caught"
+              : "escaped"))) &&
     (result.outcome === "caught"
       ? identifier(result.captureId)
       : result.outcome === "escaped" && result.captureId === undefined)
@@ -229,11 +238,17 @@ async function applyCaptureOutcome(
   party: PartyState,
   attempt: CaptureAttempt,
   outcome: "caught" | "escaped",
+  throwHit?: boolean,
 ): Promise<PartyState> {
   const clean = { ...party, captureAttempt: undefined };
   let next: PartyState;
   if (outcome === "caught")
-    next = captureParty(clean, attempt.encounterId, attempt.resultCaptureId, attempt.captureId);
+    next = captureParty(
+      clean,
+      attempt.encounterId,
+      attempt.resultCaptureId,
+      attempt.captureId,
+    );
   else {
     const turn = await import("@/lib/captureTurn");
     const id = `ball-miss:${attempt.attemptId}`;
@@ -256,9 +271,12 @@ async function applyCaptureOutcome(
     ballId: attempt.ballId,
     pokemonName: attempt.pokemonName,
     outcome,
-    ...(attempt.autoRoll === undefined
-      ? {}
-      : { roll: attempt.autoRoll, minimum: attempt.minimum }),
+    ...(throwHit === undefined ? {} : { throwHit }),
+    ...(throwHit === false
+      ? { minimum: attempt.minimum }
+      : attempt.autoRoll === undefined
+        ? {}
+        : { roll: attempt.autoRoll, minimum: attempt.minimum }),
     ...(outcome === "caught" ? { captureId: attempt.resultCaptureId } : {}),
   };
   if (!validCaptureResult(result))
@@ -279,7 +297,10 @@ export async function prepareAutomaticBallCaptureParty(
   quote?: CaptureQuote,
   settings?: CaptureSettings,
   roll: () => number = rollCaptureD20,
+  throwHit?: boolean,
 ): Promise<PartyState> {
+  if (throwHit !== undefined && typeof throwHit !== "boolean")
+    throw new Error("El resultado de puntería no es válido.");
   const planned = await prepareBallCaptureParty(
     party,
     captureId,
@@ -290,6 +311,13 @@ export async function prepareAutomaticBallCaptureParty(
     quote,
     settings,
   );
+  if (throwHit === false)
+    return applyCaptureOutcome(
+      planned,
+      planned.captureAttempt!,
+      "escaped",
+      false,
+    );
   const attempt = { ...planned.captureAttempt!, autoRoll: roll() };
   if (!validCaptureAttempt(attempt))
     throw new Error("La tirada D20 no es válida.");
@@ -297,6 +325,7 @@ export async function prepareAutomaticBallCaptureParty(
     planned,
     attempt,
     automaticCaptureOutcome(attempt.autoRoll, attempt.minimum),
+    throwHit,
   );
 }
 

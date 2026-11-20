@@ -68,7 +68,7 @@ export class BattleMusic {
     }
     void this.start(false);
   }
-  /** Se llama directamente desde pointerdown/keydown, antes de cualquier await. */
+  /** Se llama directamente desde pointerdown/pointerup/keydown, antes de cualquier await. */
   unlock() {
     void this.start(true);
   }

@@ -1,6 +1,7 @@
 import type { PartyState } from "@/slices/partySlice";
 import type { BattleOpponent } from "@/lib/battleOpponent";
 import type { CatchTierColor } from "@/lib/captureRates";
+import type { GymBadgeId } from "@/lib/trainerBag";
 
 export const TRAINER_REWARD_AMOUNTS: Record<CatchTierColor, number> = {
   pink: 200,
@@ -16,6 +17,9 @@ export type LocalTrainerRewardClaim = {
   color: CatchTierColor;
 };
 export type CombatReward = {
+  rewardBundleVersion?: 1;
+  badgeId?: GymBadgeId;
+  items?: { tm: 1 };
   rewardId: string;
   userId: number;
   source: "local-trainer" | "admin-trainer";
@@ -29,6 +33,21 @@ export type CombatReward = {
   status: "credited" | "rejected";
   reason?: "STALE_GAME";
 };
+export function trainerGymBadge(presetId: string): GymBadgeId | undefined {
+  const badges: Record<string, GymBadgeId> = {
+    "kanto-brock": "boulder",
+    "kanto-misty": "cascade",
+    "kanto-surge": "thunder",
+    "kanto-erika": "rainbow",
+    "kanto-koga": "soul",
+    "kanto-sabrina": "marsh",
+    "kanto-blaine": "volcano",
+    "kanto-giovanni": "earth",
+  };
+  return Object.prototype.hasOwnProperty.call(badges, presetId)
+    ? badges[presetId]
+    : undefined;
+}
 const record = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === "object" && !Array.isArray(value);
 const id = (value: unknown): value is string =>
@@ -76,6 +95,33 @@ export function validCombatReward(value: unknown): value is CombatReward {
       : value.reason !== undefined)
   )
     return false;
+  if (
+    value.rewardBundleVersion !== undefined &&
+    value.rewardBundleVersion !== 1
+  )
+    return false;
+  if (
+    value.rewardBundleVersion === undefined &&
+    (value.badgeId !== undefined || value.items !== undefined)
+  )
+    return false;
+  if (value.rewardBundleVersion === 1) {
+    if (value.source !== "admin-trainer") return false;
+    const expected =
+      typeof value.presetId === "string"
+        ? trainerGymBadge(value.presetId)
+        : undefined;
+    if (value.status === "credited" && expected) {
+      if (
+        value.badgeId !== expected ||
+        !record(value.items) ||
+        Object.keys(value.items).length !== 1 ||
+        value.items.tm !== 1
+      )
+        return false;
+    } else if (value.badgeId !== undefined || value.items !== undefined)
+      return false;
+  }
   if (value.source === "local-trainer")
     return (
       id(value.encounterId) &&
