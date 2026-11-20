@@ -452,20 +452,32 @@ export async function runBallCaptureBrowserScenario({
   const assertMinima = async (modifier, base) =>
     waitArgs(
       playerA,
-      (expected) =>
-        ["poke-ball", "great-ball", "ultra-ball"].every((id, index) => {
+      async ({ expected, modifier }) => {
+        const [{ store }, { captureRequirements }] = await Promise.all([
+          import("/src/store/store.ts"),
+          import("/src/lib/captureRates.ts"),
+        ]);
+        const party = store.getState().party;
+        if (party.captureSettings?.captureDifficulty !== modifier) return false;
+        const quote = captureRequirements(
+          party.opponent.pokemon,
+          party.opponent.statuses,
+          modifier,
+        );
+        return ["poke-ball", "great-ball", "ultra-ball"].every((id, index) => {
           const button = document.querySelector(
             '[data-testid="capture-ball-' + id + '"]',
           );
           return (
             button &&
-            new RegExp("mínimo\\s+" + expected[index] + "\\+", "i").test(
-              button.textContent,
-            )
+            quote.balls[index].minimum === expected[index] &&
+            !/D20|mínimo/i.test(button.textContent) &&
+            button.disabled === expected[index] > 20
           );
-        }),
-      "every ball displays the live difficulty-adjusted minimum",
-      base.map((n) => n + modifier),
+        });
+      },
+      "capture rules and availability update without exposing dice instructions before throwing",
+      { expected: base.map((n) => n + modifier), modifier },
     );
 
   // Real purchases remain the source of inventory for old and new item flows.

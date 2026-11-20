@@ -222,7 +222,7 @@ export async function runCaptureThrowBrowserScenario({
     assert.equal(reloadedMiss.opponent.moves[0].currentPp, 19);
     assert.equal(reloadedMiss.battleField.turn, 2);
     assert.equal(reloadedMiss.pokemons.length, 1);
-    console.log("PASS: desktop aiming miss spends exactly one ball/action with no D20, runs one enemy reply, blocks dismissal and reloads mid-flight without repeating any effect.");
+    console.log("PASS: old desktop dragging directly onto the target now misses the slingshot, spends one ball/action without D20, responds once and reloads mid-flight without repeating any effect.");
 
     await openBalls();
     const beforeEscape = await select("great-ball", 1);
@@ -246,7 +246,7 @@ export async function runCaptureThrowBrowserScenario({
     assert.equal(await draws(), 1);
     assert.deepEqual((await state()).lastCaptureResult, escaped.lastCaptureResult);
     assert.equal((await state()).bag.items["great-ball"], 1);
-    console.log("PASS: a desktop hit rolls once, failed D20 shakes and breaks out, spends one ball/turn and attacks once; repeated input never replays the throw and music remains continuous.");
+    console.log("PASS: a desktop pull opposite the target lands in its smaller circle, rolls once, shakes/breaks on failed D20 and responds once; repeated input never replays the throw and music remains continuous.");
 
     await cdp.request("Emulation.setDeviceMetricsOverride", { width: 375, height: 812, deviceScaleFactor: 1, mobile: true }, playerA);
     await cdp.request("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 }, playerA);
@@ -263,7 +263,7 @@ export async function runCaptureThrowBrowserScenario({
     assert.equal(await draws(), 0);
     assert.equal(await evalArgs(playerA, () => document.documentElement.scrollWidth <= innerWidth), true,
       "mobile capture layout stays within its 375px viewport");
-    console.log("PASS: real mobile touch release outside the target follows the same stock/action/no-D20 rules and fits the narrow viewport.");
+    console.log("PASS: old mobile direct-to-target dragging misses instead of launching forward, following the stock/action/no-D20 rules within the narrow viewport.");
 
     await openBalls(true);
     const beforeCaught = await select("great-ball", 20);
@@ -290,7 +290,7 @@ export async function runCaptureThrowBrowserScenario({
     assert.equal(afterReload.pokemons.filter((mon) => mon.captureId === caught.lastCaptureResult.captureId).length, 1);
     assert.equal(afterReload.bag.items["great-ball"], 0);
     assert.equal(afterReload.bag.items["poke-ball"], 0);
-    console.log("PASS: a real mobile hit and favorable D20 animate into capture, preserve battle audio until Continue, add one Pokémon/reward once and never duplicate inventory or levels on reload.");
+    console.log("PASS: a real mobile slingshot pull in the opposite direction hits the smaller target, captures on favorable D20, keeps audio until Continue and never duplicates inventory or levels on reload.");
   } finally {
     await cdp.request("Emulation.setTouchEmulationEnabled", { enabled: false }, playerA).catch(() => {});
     await cdp.request("Emulation.clearDeviceMetricsOverride", {}, playerA).catch(() => {});

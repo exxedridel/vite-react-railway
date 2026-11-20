@@ -18,6 +18,7 @@ import { useBattleMusic } from "@/context/BattleMusicContext";
 import { SHOP_ITEMS } from "@/lib/adminShop";
 import {
   captureThrowHits,
+  captureSlingshotLanding,
   THROW_ORIGIN,
   THROW_TARGET,
   type ThrowPoint,
@@ -30,14 +31,12 @@ type Phase = "aiming" | "flight" | "shake" | "breakout" | "result" | "error";
 export default function PokemonCaptureThrow({
   ballId,
   opponent,
-  minimum,
   onLaunch,
   onCancel,
   onDone,
 }: {
   ballId: BallItemId;
   opponent: BattleOpponent;
-  minimum: number;
   onLaunch: (hit: boolean) => Promise<CaptureAttemptResult>;
   onCancel: () => void;
   onDone: () => void;
@@ -51,6 +50,7 @@ export default function PokemonCaptureThrow({
   const [imageFailed, setImageFailed] = useState(false);
   const scene = useRef<HTMLDivElement>(null);
   const pointer = useRef<number | null>(null);
+  const grip = useRef<ThrowPoint>(THROW_ORIGIN);
   const working = useRef(false);
   const mounted = useRef(true);
   const timers = useRef(new Map<ReturnType<typeof setTimeout>, () => void>());
@@ -84,6 +84,13 @@ export default function PokemonCaptureThrow({
       y: (event.clientY - bounds.top) / bounds.height,
     };
   };
+  const pulledPointFor = (event: PointerEvent): ThrowPoint => {
+    const point = pointFor(event);
+    return {
+      x: THROW_ORIGIN.x + point.x - grip.current.x,
+      y: THROW_ORIGIN.y + point.y - grip.current.y,
+    };
+  };
   async function launch(point: ThrowPoint) {
     if (working.current || phase !== "aiming" || !scene.current) return;
     working.current = true;
@@ -92,7 +99,11 @@ export default function PokemonCaptureThrow({
     setAim(point);
     setPhase("flight");
     const bounds = scene.current.getBoundingClientRect();
-    const hit = captureThrowHits(point, bounds.width, bounds.height);
+    const hit = captureThrowHits(
+      captureSlingshotLanding(point),
+      bounds.width,
+      bounds.height,
+    );
     try {
       // Only the checked result is revealed. Animation time never waits on Nest.
       const [saved] = await Promise.all([onLaunch(hit), delay(650)]);
@@ -124,11 +135,14 @@ export default function PokemonCaptureThrow({
   const caught = result?.outcome === "caught";
   const aiming = phase === "aiming";
   const busy = ["flight", "shake", "breakout"].includes(phase);
+  const landing = captureSlingshotLanding(aim);
   const style = {
-    "--throw-x": `${aim.x * 100}%`,
-    "--throw-y": `${aim.y * 100}%`,
-    "--throw-mid-x": `${(aim.x + THROW_ORIGIN.x) * 50}%`,
-    "--throw-mid-y": `${Math.min(aim.y, THROW_ORIGIN.y) * 100 - 12}%`,
+    "--pull-x": `${aim.x * 100}%`,
+    "--pull-y": `${aim.y * 100}%`,
+    "--throw-x": `${landing.x * 100}%`,
+    "--throw-y": `${landing.y * 100}%`,
+    "--throw-mid-x": `${(aim.x + landing.x) * 50}%`,
+    "--throw-mid-y": `${(landing.y < aim.y ? Math.min(aim.y, landing.y) - 0.12 : (aim.y + landing.y) / 2) * 100}%`,
   } as CSSProperties;
   const title =
     phase === "result"
@@ -151,9 +165,9 @@ export default function PokemonCaptureThrow({
       >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="min-h-10">
             {aiming
-              ? "Arrastra la bola hacia el Pokémon y suéltala dentro del círculo. Acertar activa el D20."
+              ? "Tira de la bola hacia atrás y suéltala. Ajusta la fuerza para acertar al Pokémon."
               : phase === "result"
                 ? caught
                   ? `${opponent.pokemon.name} se unió a tu Party.`
@@ -176,6 +190,7 @@ export default function PokemonCaptureThrow({
         >
           <div className="capture-throw-cloud" aria-hidden="true" />
           <div className="capture-throw-ground" aria-hidden="true" />
+          <span className="capture-throw-anchor" aria-hidden="true" />
           <div
             className="capture-throw-target"
             data-testid="capture-throw-target"
@@ -207,15 +222,8 @@ export default function PokemonCaptureThrow({
                 preserveAspectRatio="none"
                 aria-hidden="true"
               >
-                <path
-                  d={`M50 86 Q${(aim.x + 0.5) * 50} ${Math.min(aim.y, 0.86) * 100 - 12} ${aim.x * 100} ${aim.y * 100}`}
-                />
+                <path d={`M44 70 L${aim.x * 100} ${aim.y * 100} L56 70`} />
               </svg>
-              <span
-                className="capture-throw-reticle"
-                style={{ left: `${aim.x * 100}%`, top: `${aim.y * 100}%` }}
-                aria-hidden="true"
-              />
             </>
           )}
           <button
@@ -223,7 +231,7 @@ export default function PokemonCaptureThrow({
             className="capture-throw-ball"
             data-testid="capture-throw-ball"
             disabled={!aiming}
-            aria-label="Arrastrar pokebola hacia el Pokémon; también puedes apuntar con las flechas y lanzar con Enter"
+            aria-label="Tirar de la pokebola hacia atrás y soltar; flechas y Enter con teclado"
             onPointerDown={(event) => {
               if (
                 !aiming ||
@@ -234,20 +242,21 @@ export default function PokemonCaptureThrow({
                 return;
               event.preventDefault();
               pointer.current = event.pointerId;
+              grip.current = pointFor(event);
               event.currentTarget.setPointerCapture(event.pointerId);
               setDragging(true);
-              setAim(pointFor(event));
+              setAim(THROW_ORIGIN);
             }}
             onPointerMove={(event) => {
               if (pointer.current === event.pointerId) {
                 event.preventDefault();
-                setAim(pointFor(event));
+                setAim(pulledPointFor(event));
               }
             }}
             onPointerUp={(event) => {
               if (pointer.current !== event.pointerId) return;
               event.preventDefault();
-              const point = pointFor(event);
+              const point = pulledPointFor(event);
               pointer.current = null;
               if (event.currentTarget.hasPointerCapture(event.pointerId))
                 event.currentTarget.releasePointerCapture(event.pointerId);
@@ -259,13 +268,19 @@ export default function PokemonCaptureThrow({
               setDragging(false);
               setAim(THROW_ORIGIN);
             }}
+            onLostPointerCapture={(event) => {
+              if (pointer.current !== event.pointerId) return;
+              pointer.current = null;
+              setDragging(false);
+              setAim(THROW_ORIGIN);
+            }}
             onKeyDown={(event) => {
               if (!aiming || working.current) return;
               const offsets: Record<string, ThrowPoint> = {
-                ArrowUp: { x: 0, y: -0.08 },
-                ArrowDown: { x: 0, y: 0.08 },
-                ArrowLeft: { x: -0.08, y: 0 },
-                ArrowRight: { x: 0.08, y: 0 },
+                ArrowUp: { x: 0, y: -0.02 },
+                ArrowDown: { x: 0, y: 0.02 },
+                ArrowLeft: { x: -0.02, y: 0 },
+                ArrowRight: { x: 0.02, y: 0 },
               };
               if (offsets[event.key]) {
                 event.preventDefault();
@@ -276,7 +291,10 @@ export default function PokemonCaptureThrow({
                   y: Math.max(0, Math.min(1, point.y + offset.y)),
                 }));
               }
-              if (event.key === "Enter" || event.key === " ") {
+              if (
+                !event.repeat &&
+                (event.key === "Enter" || event.key === " ")
+              ) {
                 event.preventDefault();
                 void launch(aim);
               }
@@ -294,7 +312,7 @@ export default function PokemonCaptureThrow({
           )}
           <p className="capture-throw-status" role="status">
             {aiming
-              ? "Arrastra y suelta para lanzar"
+              ? ""
               : phase === "flight"
                 ? "¡Allá va!"
                 : phase === "shake"
@@ -308,13 +326,6 @@ export default function PokemonCaptureThrow({
                         : "Inténtalo con otra bola"}
           </p>
         </div>
-        {aiming && (
-          <p className="text-xs text-muted-foreground">
-            Si aciertas: D20 mínimo {minimum}+. La bola se gasta al lanzarla,
-            aciertes o falles. Con teclado: flechas para apuntar, Enter para
-            lanzar.
-          </p>
-        )}
         {phase === "result" && (
           <div
             data-testid="capture-throw-result"
@@ -328,9 +339,6 @@ export default function PokemonCaptureThrow({
             </p>
             <p className="mt-1 text-muted-foreground">
               Se gastó 1 {ball.name}.
-              {caught
-                ? " Tu equipo se actualizó automáticamente."
-                : " La acción del turno ya se resolvió."}
             </p>
           </div>
         )}
@@ -339,7 +347,7 @@ export default function PokemonCaptureThrow({
             {error}
           </p>
         )}
-        <DialogFooter>
+        <DialogFooter className="min-h-10">
           {aiming && (
             <Button variant="outline" onClick={onCancel}>
               Cambiar pokebola

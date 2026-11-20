@@ -36,8 +36,8 @@
 }
 .capture-throw-target {
   position: absolute;
-  width: min(34cqw, 29cqh);
-  height: min(34cqw, 29cqh);
+  width: min(25cqw, 21cqh);
+  height: min(25cqw, 21cqh);
   border: 3px solid #ffffffb0;
   outline: 2px solid #49ba84;
   border-radius: 50%;
@@ -54,7 +54,7 @@
   border-radius: 50%;
 }
 .capture-throw-pokemon {
-  width: 115%;
+  width: 155%;
   max-width: none;
   image-rendering: pixelated;
   position: absolute;
@@ -74,20 +74,22 @@
   stroke-width: 0.7;
   stroke-dasharray: 2 2;
 }
-.capture-throw-reticle {
+.capture-throw-anchor {
   position: absolute;
-  width: 18px;
-  height: 18px;
-  border: 2px solid white;
+  left: 50%;
+  top: 70%;
+  width: 62px;
+  height: 62px;
+  border: 2px dashed #ffffff70;
   border-radius: 50%;
   transform: translate(-50%, -50%);
-  background: #fff5;
+  background: #314b2520;
   pointer-events: none;
 }
 .capture-throw-ball {
   position: absolute;
   left: 50%;
-  top: 86%;
+  top: 70%;
   width: 58px;
   height: 58px;
   transform: translate(-50%, -50%);
@@ -106,6 +108,10 @@
 }
 .capture-throw-ball:active {
   cursor: grabbing;
+}
+.capture-throw-scene[data-phase="aiming"] .capture-throw-ball {
+  left: var(--pull-x);
+  top: var(--pull-y);
 }
 .capture-throw-ball > img,
 .capture-throw-ball-half img {
@@ -211,8 +217,8 @@
 }
 @keyframes capture-toss {
   0% {
-    left: 50%;
-    top: 86%;
+    left: var(--pull-x);
+    top: var(--pull-y);
     transform: translate(-50%, -50%) scale(1) rotate(0);
   }
   55% {

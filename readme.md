@@ -4,7 +4,7 @@ Frontend del juego con React, TypeScript y Vite. `mysql-restapi` autentica y
 administra usuarios; `nest-mongo-pokedex` comunica jugadores y conserva las
 batallas PvP, las carteras y los recibos del Poké Mart. El motor de combate se
 ejecuta en el panel administrador y, para encuentros individuales, en el frontend
-del jugador. Versión de la aplicación: **2.15.0**.
+del jugador. Versión de la aplicación: **2.16.0**.
 
 ## Recompensas automáticas de combate
 
@@ -38,7 +38,7 @@ y descarta reclamaciones de partidas anteriores. Ver reglas, compatibilidad y
 validación en [BATTLE_REWARDS_PROTOCOL.md](../BATTLE_REWARDS_PROTOCOL.md).
 
 La base de recompensas2.14 requiere Nest antes de React; la animación2.15 sólo
-añade cambios al frontend. Recargar los frontends a2.15.0. Sin variables nuevas,
+añade cambios al frontend, igual que la resortera2.16. Recargar a2.16.0. Sin variables nuevas,
 cambios MySQL, seed ni borrar partidas. `npm run test:rewards` comprueba niveles,
 dinero y guardado; `npm run test:rewards:browser` valida el flujo en Chrome local.
 
@@ -185,12 +185,14 @@ normal; +2 convierte un mínimo7+ en9+. Se suma después del mínimo base y sus
 bonos. El valor se guarda globalmente en Nest y se actualiza por WebSocket.
 Un mínimo superior a20 muestra la bola como imposible y no permite gastarla.
 
-Desde2.15.0, **Lanzar pokebola** muestra Poké Ball, Great Ball y Ultra Ball con
-sus existencias y mínimos. Elegir una abre una escena: **arrastra la bola hacia
-el Pokémon y suéltala dentro del círculo**. Fallar consume una bola sin D20 y
-el salvaje responde. Acertar tira el D20 y anima vuelo, sacudidas y captura o
+Desde2.16.0, **Lanzar pokebola** muestra Poké Ball, Great Ball y Ultra Ball con
+sus existencias. Elegir una abre una resortera: **tira hacia atrás y suelta**.
+La bola sale en dirección contraria con fuerza ×3; ajusta el tiro para caer
+en el círculo más pequeño. Fallar consume una bola sin D20 y el salvaje responde.
+Acertar tira el D20 y anima vuelo, sacudidas y captura o
 escapada. El éxito muestra un diálogo con Continuar. También admite flechas y
-Enter con teclado. Cancelar antes de lanzar conserva la bola.
+Enter con teclado. Cancelar antes de lanzar conserva la bola. El dado y su
+mínimo sólo se muestran al terminar; antes se ven instrucciones breves.
 
 Captura cuando el dado iguala o supera el mínimo. Conserva nivel, HP, estados
 principales y PP del Pokémon. Si falla, consume tu acción y el salvaje responde

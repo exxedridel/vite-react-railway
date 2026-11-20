@@ -516,7 +516,7 @@ export default function PokemonOpponentPanel({
                         ? "No tienes pokebolas en tu Bag. Compra más en el Poké Mart."
                         : !shop.localItemsReady
                           ? "Sincroniza la Bag una primera vez para habilitar los lanzamientos."
-                          : "Elige una pokebola y lánzala hacia el Pokémon. Acertar activa la tirada D20."}
+                          : "Elige una pokebola, tira hacia atrás y suelta para lanzarla."}
               </p>
             </div>
           )}

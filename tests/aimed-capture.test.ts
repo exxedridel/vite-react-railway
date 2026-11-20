@@ -20,6 +20,7 @@ import type { CapturedPokemon } from "../src/types/pokemon";
 import type { CaptureQuote } from "../src/lib/shop/types";
 import {
   captureThrowHits,
+  captureSlingshotLanding,
   THROW_ORIGIN,
   THROW_TARGET,
 } from "../src/lib/captureThrow";
@@ -301,7 +302,7 @@ test("aim geometry recognizes the target center and rejects the ball origin", ()
 test("aim geometry distinguishes releases immediately inside and outside the circular boundary", () => {
   const width = 400,
     height = 320;
-  const radius = Math.min(width * 0.17, height * 0.145);
+  const radius = Math.min(width * 0.125, height * 0.105);
   for (const direction of [-1, 1]) {
     assert.equal(
       captureThrowHits(
@@ -353,7 +354,7 @@ test("aim geometry distinguishes releases immediately inside and outside the cir
 test("aim geometry rejects square corners that lie outside the target circle", () => {
   const width = 400,
     height = 320;
-  const radius = Math.min(width * 0.17, height * 0.145);
+  const radius = Math.min(width * 0.125, height * 0.105);
   assert.equal(
     captureThrowHits(
       {
@@ -384,7 +385,7 @@ test("aim geometry follows the same pixel circle when the scene resizes between 
     [740, 230],
     [400, 320],
   ]) {
-    const radius = Math.min(width * 0.17, height * 0.145);
+    const radius = Math.min(width * 0.125, height * 0.105);
     assert.equal(captureThrowHits(THROW_TARGET, width, height), true);
     assert.equal(
       captureThrowHits(
@@ -422,4 +423,56 @@ test("aim geometry rejects nonfinite coordinates and missing or nonpositive scen
     assert.equal(captureThrowHits(THROW_TARGET, value, 320), false);
     assert.equal(captureThrowHits(THROW_TARGET, 400, value), false);
   }
+});
+
+test("slingshot origin sits above the bottom and the launch reverses direction with threefold power", () => {
+  assert.deepEqual(THROW_ORIGIN, { x: 0.5, y: 0.7 });
+  assert.deepEqual(THROW_TARGET, { x: 0.5, y: 0.3 });
+  const landing = captureSlingshotLanding({
+    x: THROW_ORIGIN.x + 0.06,
+    y: THROW_ORIGIN.y + 0.08,
+  });
+  assert(Math.abs(landing.x - (THROW_ORIGIN.x - 0.18)) < 1e-12);
+  assert(Math.abs(landing.y - (THROW_ORIGIN.y - 0.24)) < 1e-12);
+});
+
+test("a zero-length slingshot pull stays at the origin and cannot hit the target", () => {
+  const landing = captureSlingshotLanding(THROW_ORIGIN);
+  assert.deepEqual(landing, THROW_ORIGIN);
+  assert.equal(captureThrowHits(landing, 400, 320), false);
+});
+
+test("pulling one third of the target distance backwards lands at its center across scene sizes", () => {
+  const pull = {
+    x: THROW_ORIGIN.x + (THROW_ORIGIN.x - THROW_TARGET.x) / 3,
+    y: THROW_ORIGIN.y + (THROW_ORIGIN.y - THROW_TARGET.y) / 3,
+  };
+  const landing = captureSlingshotLanding(pull);
+  assert(Math.abs(landing.x - THROW_TARGET.x) < 1e-12);
+  assert(Math.abs(landing.y - THROW_TARGET.y) < 1e-12);
+  for (const [width, height] of [
+    [320, 370],
+    [740, 230],
+    [400, 320],
+  ])
+    assert.equal(captureThrowHits(landing, width, height), true);
+});
+
+test("the old direct drag onto the target now shoots in the wrong direction and misses", () => {
+  const landing = captureSlingshotLanding(THROW_TARGET);
+  assert(
+    landing.y > 1,
+    "the landing remains beyond the scene instead of clamping to an edge",
+  );
+  assert.equal(captureThrowHits(landing, 400, 320), false);
+});
+
+test("an excessive slingshot pull overshoots without clamping magnitude or landing coordinates", () => {
+  const landing = captureSlingshotLanding({
+    x: THROW_ORIGIN.x + 0.3,
+    y: THROW_ORIGIN.y + 0.5,
+  });
+  assert(Math.abs(landing.x + 0.4) < 1e-12);
+  assert(Math.abs(landing.y + 0.8) < 1e-12);
+  assert.equal(captureThrowHits(landing, 400, 320), false);
 });

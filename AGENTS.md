@@ -1,5 +1,14 @@
 # Contexto de la trilogia Pokemon
 
+Etapa vigente2026-11-20 React2.16.0 RESORTERA: pullatrás/soltar, impulsoopuesto×3
+desdeorigin(.5,.70), no clampsalióaescena. Gripoffsetreal, bolasecarga yvuelo
+saledeahí; círculomenor minradius.125W/.105H, spriteigual, sinpreviewlanding.
+UIinstruccionessimples/D20sólofinal (pickernofórmulas), antiguo dragalPokémon
+ahorafalla. Consumobola/acción/turno/stock/música/BG/recovery2.15intactos.
+29captura/TS/build/audit175/Chromeaim4+legacycapturedificultadPASS; diffcheckPASS.
+SóloReact2.16recargar,sinNest/MySQL/env/seed/reset/commit/push/deploy.
+Ver memoria yPOKEBALL_PROTOCOL; producciónnoverificada.
+
 Etapa actual2026-11-20 React2.15.0 TERMINADA LOCAL: capturaGo básica elegirbola
 sinspend, arrastraralcírculo/soltar. Miss1bola+acción+salvajesinD20; hitD20actual
 yflight/shake/breakout/caughtdialogContinue. ThrowHit optin enAPI/resultfalse

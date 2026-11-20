@@ -20,7 +20,6 @@ import {
 import { SHOP_ITEMS } from "@/lib/adminShop";
 import { captureRequirements } from "@/lib/captureRates";
 import type { BattleOpponent } from "@/lib/battleOpponent";
-import PokemonCaptureRequirements from "./PokemonCaptureRequirements";
 import PokemonCaptureThrow from "./PokemonCaptureThrow";
 
 const captureBallId = {
@@ -102,7 +101,6 @@ export default function PokemonBallThrowDialog({
       <PokemonCaptureThrow
         ballId={selected.ballId}
         opponent={selected.opponent}
-        minimum={selected.quote.minimum}
         onLaunch={async (hit) => {
           if (inFlight.current)
             throw new Error("El lanzamiento ya se está guardando.");
@@ -163,16 +161,9 @@ export default function PokemonBallThrowDialog({
           <DialogTitle>Lanzar pokebola</DialogTitle>
           <DialogDescription>
             Elige una bola de tu Bag para atrapar a {opponent?.pokemon.name}.
-            Después de elegirla, arrástrala hacia el Pokémon y suéltala para
-            lanzarla. Si le das, el D20 resolverá la captura.
+            Tira hacia atrás y suelta para lanzarla.
           </DialogDescription>
         </DialogHeader>
-        <p
-          className="text-xs text-muted-foreground"
-          data-testid="capture-difficulty-bonus"
-        >
-          Dificultad global: +{difficulty} al mínimo D20
-        </p>
         <div className="space-y-2" aria-label="Pokebolas disponibles">
           {BALL_ITEM_IDS.map((id) => {
             const entry = SHOP_ITEMS.find((item) => item.id === id)!;
@@ -214,8 +205,8 @@ export default function PokemonBallThrowDialog({
                         : minimum !== undefined &&
                             minimum !== null &&
                             minimum > 20
-                          ? `Imposible · mínimo ${minimum}+`
-                          : `D20 mínimo ${minimum}+`}
+                          ? "No puede capturarlo"
+                          : "Lista para lanzar"}
                     </span>
                   </span>
                 </span>
@@ -224,23 +215,8 @@ export default function PokemonBallThrowDialog({
           })}
         </div>
         <p className="text-sm text-muted-foreground">
-          Cada lanzamiento consume una bola y tu acción, tanto si captura como
-          si falla. El D20 debe igualar o superar el mínimo indicado. Si falla,
-          el salvaje responderá. Un mínimo superior a 20 impide lanzar esa bola.
+          Cada lanzamiento gasta una bola. Puedes cancelar antes de soltarla.
         </p>
-        {opponent && (
-          <details className="rounded-xl border p-3 text-xs text-muted-foreground">
-            <summary className="cursor-pointer font-medium">
-              Cómo se calcula el mínimo
-            </summary>
-            <div className="mt-3">
-              <PokemonCaptureRequirements
-                opponent={opponent}
-                difficulty={difficulty}
-              />
-            </div>
-          </details>
-        )}
         {!BALL_ITEM_IDS.some((id) => (party.bag?.items?.[id] ?? 0) > 0) && (
           <p role="status" className="text-sm text-muted-foreground">
             No tienes pokebolas. Compra más en el Poké Mart para intentar una
