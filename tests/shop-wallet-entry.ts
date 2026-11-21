@@ -16,6 +16,7 @@ import {
   accountStorageKey,
   accountStorage,
   encodeAccountParty,
+  decodeAccountParty,
   PVP_PARTY_COMMIT,
   setPvpSyncBlocked,
   setShopSyncBlocked,
@@ -112,6 +113,7 @@ export async function runAccountStorageTests() {
   await activateAccountStore(id);
   setPvpSyncBlocked(false);
   assert.equal(store.getState().party.bag?.money, 500);
+  assert.deepEqual(store.getState().party.bag?.items ?? {}, {}, "creating or signing into an account does not grant reset-only Pokeballs");
   const beforeMutation = JSON.stringify(store.getState().party);
   store.dispatch(changeBagMoney({ amount: 999, direction: "add" }));
   store.dispatch(changeBagMoney({ amount: 100, direction: "subtract" }));
@@ -331,6 +333,12 @@ export async function runAccountStorageTests() {
   await prepareGameReset(resetUser, "reset-client", "reset-intent", 2);
   const intended = clone(store.getState().party);
   assert.equal(saved(resetUser).resetLock.requestId, "reset-intent");
+  assert.equal(saved(resetUser).resetLock.starterItemsVersion, 1);
+  for (const starterItemsVersion of [0, 2, null, "1"])
+    assert.throws(() => decodeAccountParty(JSON.stringify({ party: JSON.stringify({ ...intended,
+      resetLock: { ...intended.resetLock, starterItemsVersion } }) })), /interpretar/);
+  await prepareGameReset(resetUser, "reset-client", "reset-intent", 2);
+  assert.deepEqual(store.getState().party, intended, "retrying preparation preserves the saved consent and starter inventory contract");
   assert.equal(saved(resetUser).pokemons.length, 1);
   assert.equal(saved(resetUser).bag.money, 200);
   store.dispatch(toggleGymBadge("cascade"));
@@ -357,8 +365,9 @@ export async function runAccountStorageTests() {
     "reset consent is saved before deletion; storage failure, stale tabs, legacy dispatches and concurrent purchases cannot bypass it",
   );
 
-  const resetWallet = wallet(resetUser, 3);
+  const resetWallet = wallet(resetUser, 3, 500, { "poke-ball": 6 });
   const resetReceipt: GameReset = {
+    starterItemsVersion: 1,
     requestId: "reset-intent",
     userId: resetUser,
     clientId: "reset-client",
@@ -388,6 +397,14 @@ export async function runAccountStorageTests() {
     "ignored",
   );
   assert.equal(saved(resetUser).pokemons.length, 1);
+  const invalidResetBefore = clone(saved(resetUser));
+  const oldShapeReceipt = { ...resetReceipt };
+  delete oldShapeReceipt.starterItemsVersion;
+  await assert.rejects(applyGameReset(wallet(resetUser, 3), oldShapeReceipt, "reset-client"), /objetos iniciales/);
+  for (const items of [{}, { "poke-ball": 5 }, { "poke-ball": 7 }, { "poke-ball": 6, "great-ball": 1 }, { "poke-ball": 6, tm: 1 }])
+    await assert.rejects(applyGameReset(wallet(resetUser, 3, 500, items), resetReceipt, "reset-client"), /cartera/);
+  await assert.rejects(applyGameReset(wallet(resetUser, 3, 501, { "poke-ball": 6 }), resetReceipt, "reset-client"), /cartera/);
+  assert.deepEqual(saved(resetUser), invalidResetBefore, "bad receipts or starter quantities cannot delete the old game or grant inventory");
   testStorage.failWritesFor.add(accountStorageKey(resetUser));
   await assert.rejects(
     applyGameReset(resetWallet, resetReceipt, "reset-client"),
@@ -406,7 +423,7 @@ export async function runAccountStorageTests() {
   assert.equal(resetAppliedLocally.gameSettings, null);
   assert.equal(resetAppliedLocally.starterClaimed, false);
   assert.equal(resetAppliedLocally.bag?.money, 500);
-  assert.deepEqual(resetAppliedLocally.bag?.items, {});
+  assert.deepEqual(resetAppliedLocally.bag?.items, { "poke-ball": 6 });
   assert.deepEqual(resetAppliedLocally.bag?.badges, []);
   assert.deepEqual(
     resetAppliedLocally.pvpReceipts,
@@ -419,7 +436,7 @@ export async function runAccountStorageTests() {
     (partyBeforeReset.activityHistory?.length ?? 0) + 1,
   );
   passed.push(
-    "a matching committed reset atomically clears team, progress and purchased items, restores 500 and preserves battle receipts/history before ACK",
+    "a matching committed reset atomically clears team, progress and other purchased items, restores 500 plus exactly six normal Pokeballs and preserves battle receipts/history before ACK",
   );
 
   await clearAccountStore();
@@ -460,6 +477,7 @@ export async function runAccountStorageTests() {
   );
   assert.equal(saved(resetUser).bag.money, 50);
   assert.equal(saved(resetUser).bag.items["ultra-ball"], 1);
+  assert.equal(saved(resetUser).bag.items["poke-ball"] ?? 0, 0, "old reset receipts cannot replenish the starter balls after later inventory changes");
   passed.push(
     "reset replay after reload, ACK loss, a new starter or a later purchase never deletes progress or replenishes funds again",
   );
@@ -467,6 +485,7 @@ export async function runAccountStorageTests() {
   const beforeCancellation = clone(store.getState().party);
   await prepareGameReset(resetUser, "reset-client", "cancel-intent", 4);
   const cancelled: GameReset = {
+    starterItemsVersion: 1,
     requestId: "cancel-intent",
     userId: resetUser,
     clientId: "reset-client",
@@ -502,9 +521,50 @@ export async function runAccountStorageTests() {
   );
   assert.equal(validGameReset({ ...cancelled, walletRevision: -1 }), false);
   assert.equal(validGameReset({ ...resetReceipt, status: "unknown" }), false);
+  assert(validGameReset(resetReceipt));
+  assert(validGameReset(oldShapeReceipt));
+  for (const starterItemsVersion of [0, 2, null, "1"])
+    assert.equal(validGameReset({ ...resetReceipt, starterItemsVersion }), false);
   passed.push(
     "only a matching durable cancellation releases an uncommitted reset, preserving its team, items, balance and history",
   );
+
+  const legacyResetLock = {
+    userId: resetUser, clientId: "reset-client", requestId: "legacy-reset-intent", expectedWalletRevision: 4,
+  };
+  await transactPvpParty(resetUser, async (current) => ({ party: { ...current, resetLock: legacyResetLock }, value: undefined }));
+  const legacyResetBytes = JSON.stringify(saved(resetUser).resetLock);
+  await clearAccountStore();
+  await activateAccountStore(resetUser);
+  await prepareGameReset(resetUser, "reset-client", "legacy-reset-intent", 4);
+  assert.equal(JSON.stringify(saved(resetUser).resetLock), legacyResetBytes,
+    "recovering old consent never opts it into a new starting-inventory contract");
+  const legacyResetReceipt: GameReset = {
+    requestId: "legacy-reset-intent", userId: resetUser, clientId: "reset-client", walletRevision: 5, status: "pending",
+  };
+  const legacyResetWallet = wallet(resetUser, 5);
+  const legacyResetBefore = clone(saved(resetUser));
+  await assert.rejects(applyGameReset(wallet(resetUser, 5, 500, { "poke-ball": 6 }),
+    { ...legacyResetReceipt, starterItemsVersion: 1 }, "reset-client"), /objetos iniciales/);
+  await assert.rejects(applyGameReset(wallet(resetUser, 5, 500, { "poke-ball": 6 }),
+    legacyResetReceipt, "reset-client"), /cartera/);
+  assert.deepEqual(saved(resetUser), legacyResetBefore);
+  testStorage.failWritesFor.add(accountStorageKey(resetUser));
+  await assert.rejects(applyGameReset(legacyResetWallet, legacyResetReceipt, "reset-client"), /guardar/);
+  testStorage.failWritesFor.clear();
+  assert.deepEqual(saved(resetUser), legacyResetBefore);
+  await applyGameReset(legacyResetWallet, legacyResetReceipt, "reset-client");
+  assert.deepEqual(saved(resetUser).bag.items, {});
+  assert.equal(saved(resetUser).bag.money, 500);
+  assert.equal(saved(resetUser).resetLock.starterItemsVersion, undefined);
+  await applyGameReset(legacyResetWallet, { ...legacyResetReceipt, status: "applied" }, "reset-client");
+  await clearAccountStore();
+  await activateAccountStore(resetUser);
+  const legacyResetAfter = clone(saved(resetUser));
+  await applyGameReset(legacyResetWallet, legacyResetReceipt, "reset-client");
+  await applyShopWallet(legacyResetWallet);
+  assert.deepEqual(saved(resetUser), legacyResetAfter, "a legacy replay or ordinary sync never grants the new Pokeballs");
+  passed.push("Legacy reset consent and receipts preserve their exact unmarked contract through retry, reload and checked-write failure; completing or replaying them keeps the original empty inventory without retroactive starter Pokeballs");
 
   const battleParty = clone(store.getState().party);
   battleParty.pvpLock = {
@@ -2845,10 +2905,11 @@ export async function runAccountStorageTests() {
   });
   await releasePvpParty("consumption-barrier");
   await prepareGameReset(localUser, localClient, "local-reset", 3);
-  const resetLocalWallet = localWallet(4, 3, {});
+  const resetLocalWallet = localWallet(4, 3, { "poke-ball": 6 });
   resetLocalWallet.consumptionAck!.rejected =
     rejectedWallet.consumptionAck!.rejected;
   const resetLocalReceipt: GameReset = {
+    starterItemsVersion: 1,
     requestId: "local-reset",
     userId: localUser,
     clientId: localClient,
@@ -2960,6 +3021,7 @@ export async function runAccountStorageTests() {
   );
   await prepareGameReset(rewardUser, "vm-reward-client", "vm-reward-reset", 1);
   const rewardReset: GameReset = {
+    starterItemsVersion: 1,
     requestId: "vm-reward-reset",
     userId: rewardUser,
     clientId: "vm-reward-client",
@@ -2967,6 +3029,7 @@ export async function runAccountStorageTests() {
     status: "pending",
   };
   const rewardResetWallet = rewardWallet(2, 500, 8);
+  rewardResetWallet.items = { "poke-ball": 6 };
   await applyGameReset(rewardResetWallet, rewardReset, "vm-reward-client");
   await applyGameReset(
     rewardResetWallet,
@@ -3314,21 +3377,22 @@ export async function runAccountStorageTests() {
   );
   await prepareGameReset(gymRewardUser, "vm-gym-client", "vm-gym-reset", 3);
   const gymResetReceipt: GameReset = {
+    starterItemsVersion: 1,
     requestId: "vm-gym-reset", userId: gymRewardUser, clientId: "vm-gym-client",
     walletRevision: 4, status: "pending",
   };
-  const gymResetWallet: Wallet = { ...gymWallet(4, 500, 0, []), rewardEpoch: 1 };
+  const gymResetWallet: Wallet = { ...gymWallet(4, 500, 0, []), items: { "poke-ball": 6 }, rewardEpoch: 1 };
   await applyGameReset(gymResetWallet, gymResetReceipt, "vm-gym-client");
   await applyGameReset(gymResetWallet, { ...gymResetReceipt, status: "applied" }, "vm-gym-client");
   assert.equal(saved(gymRewardUser).bag.money, 500);
-  assert.deepEqual(saved(gymRewardUser).bag.items, {});
+  assert.deepEqual(saved(gymRewardUser).bag.items, { "poke-ball": 6 });
   assert.deepEqual(saved(gymRewardUser).bag.badges, []);
   assert.deepEqual(saved(gymRewardUser).bag.rewardBadges, []);
   await applyShopWallet(gymWallet(3, 2900, 2, ["boulder"]));
   await clearAccountStore();
   await activateAccountStore(gymRewardUser);
   assert.deepEqual(saved(gymRewardUser).bag.badges, []);
-  assert.deepEqual(saved(gymRewardUser).bag.items, {});
+  assert.deepEqual(saved(gymRewardUser).bag.items, { "poke-ball": 6 });
   passed.push(
     "A confirmed new game clears canonical and legacy badges plus rewarded TMs, and delayed old wallet snapshots cannot restore the gym bundle after reset/reload",
   );

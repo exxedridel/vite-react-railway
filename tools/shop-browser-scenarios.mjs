@@ -28,6 +28,7 @@ export async function runShopBrowserScenario({
   pvpRepository,
   pvpService,
   pvpGateway,
+  resetOnly = false,
 }) {
   const balance = (id) => `[data-testid="shop-balance-${id}"]`;
   const card = (id) => `[data-testid="shop-player-${id}"]`;
@@ -135,8 +136,9 @@ export async function runShopBrowserScenario({
         !!document.querySelector('[data-testid="confirm-restart-game"]') &&
         document
           .querySelector('[role="dialog"]')
-          ?.textContent.includes("500 Pokedollars"),
-      "reset confirmation explains the starting Pokedollars",
+          ?.textContent.includes("500 Pokedollars") &&
+        document.querySelector('[role="dialog"]')?.textContent.includes("6 Poké Balls"),
+      "reset confirmation explains the starting Pokedollars and six Poké Balls",
     );
   };
   const confirmResetTwice = async () =>
@@ -166,7 +168,8 @@ export async function runShopBrowserScenario({
           !party.shopLock &&
           party.pokemons.length === 0 &&
           party.bag.money === 500 &&
-          Object.values(party.bag.items ?? {}).every((count) => count === 0)
+          party.bag.items?.["poke-ball"] === 6 &&
+          Object.entries(party.bag.items ?? {}).every(([id, count]) => id === "poke-ball" || count === 0)
         );
       },
       label,
@@ -617,22 +620,53 @@ export async function runShopBrowserScenario({
   assert.equal((await partyState(playerA)).bag.money, 200);
   assert.equal((await partyState(playerA)).pokemons.length, 1);
 
+  // A newer client must not persist an unserviceable intent against an old
+  // server that cannot understand the six-ball reset contract.
+  const originalResetState = shopService.state;
+  shopService.state = async function (...args) {
+    const state = await originalResetState.apply(this, args);
+    delete state.resetStarterItemsVersion;
+    return state;
+  };
+  try {
+    await cdp.request("Page.reload", {}, playerA);
+    await openReset();
+    await confirmResetTwice();
+    await waitArgs(playerA, () => document.body.textContent.includes(
+      "Actualiza el servicio de Tienda antes de reiniciar",
+    ), "an older server is detected before saving reset consent");
+    assert.equal((await partyState(playerA)).resetLock, undefined);
+    assert.equal((await partyState(playerA)).pokemons.length, 1);
+    assert.deepEqual((await partyState(playerA)).bag.items, beforeResetParty.bag.items);
+    assert.equal((await shopRepository.get(2)).revision, beforeReset.revision);
+    await clickButton(playerA, "Cancelar", "[role=dialog]");
+  } finally {
+    shopService.state = originalResetState;
+  }
+  await cdp.request("Page.reload", {}, playerA);
+  await waitArgs(playerA, async () => {
+    const party = (await import("/src/store/store.ts")).store.getState().party;
+    return party.bag?.walletUserId === 2 && !party.resetLock &&
+      !document.querySelector('[data-testid="shop-reset-lock"]');
+  }, "compatible server reconnects without a persisted reset lock");
+
   await openReset();
   await confirmResetTwice();
   await waitResetSaved(
-    "a confirmed new game clears the team and purchased objects",
+    "a confirmed new game clears the team and gives exactly six starting Poké Balls",
   );
   await waitBalance(2, 500);
   const firstReset = await shopRepository.get(2);
   assert.equal(firstReset.revision, beforeReset.revision + 1);
   assert.equal(firstReset.balance, 500);
-  assert.deepEqual(firstReset.items, {});
+  assert.deepEqual(firstReset.items, { "poke-ball": 6 });
   assert.equal(
     firstReset.resets.length,
     1,
     "double click creates one reset receipt",
   );
   assert.equal(firstReset.resets[0].status, "applied");
+  assert.equal(firstReset.resets[0].starterItemsVersion, 1);
   assert.deepEqual(
     firstReset.purchases,
     beforeReset.purchases,
@@ -695,7 +729,7 @@ export async function runShopBrowserScenario({
           .party;
         return (
           party.bag.money === 350 &&
-          party.bag.items["poke-ball"] === 1 &&
+          party.bag.items["poke-ball"] === 7 &&
           party.pokemons.length === 1 &&
           !party.resetLock
         );
@@ -800,7 +834,7 @@ export async function runShopBrowserScenario({
   assert.equal(resetPending.revision, beforeFailedReset.revision + 1);
   assert.equal(resetPending.resets.length, 2);
   assert.equal(resetPending.resets[1].status, "pending");
-  assert.deepEqual(resetPending.items, {});
+  assert.deepEqual(resetPending.items, { "poke-ball": 6 });
   assert.ok((await partyState(playerA)).resetLock);
   assert.equal(
     (await partyState(playerA)).pokemons.length,
@@ -822,6 +856,10 @@ export async function runShopBrowserScenario({
     "a second reload does not repeat or re-credit the reset",
   );
   assert.equal((await shopRepository.get(2)).revision, resetPending.revision);
+  if (resetOnly) {
+    console.log("PASS: explicit player resets grant exactly500PD/six Poké Balls and clear the team/other items; cancel, offline, double-click, later purchase, lost checked-write, retry/reload and exact receipts preserve inventory without another grant.");
+    return;
+  }
   await fullRestoreBrowserScenario({
     admin,
     playerA,
@@ -909,6 +947,6 @@ export async function runShopBrowserScenario({
   });
   assert.deepEqual(cdp.exceptions, [], "Unexpected browser exception");
   console.log(
-    "PASS: live Poké Mart, 600/Great Ball quantity2, read-only cash, live objects/balances, battle locks, durable purchase recovery, and player new games: 500 Pokedollars, empty purchased inventory/team, cancel/offline guards, double-click deduplication, checked-save recovery and no repeated reset on reload.",
+    "PASS: live Poké Mart, 600/Great Ball quantity2, read-only cash, live objects/balances, battle locks, durable purchase recovery, and player new games: 500 Pokedollars, six Poké Balls, cleared other items/team, cancel/offline guards, double-click deduplication, checked-save recovery and no repeated reset on reload.",
   );
 }

@@ -199,6 +199,8 @@ export type ItemUse = {
   status: "pending" | "applied" | "cancelled";
 };
 export type GameReset = {
+  /** Missing on historical resets, whose original inventory remains empty. */
+  starterItemsVersion?: 1;
   requestId: string;
   userId: number;
   clientId: string;
@@ -228,6 +230,7 @@ export type GiftPrepare = {
   quantity: number;
 };
 export type ShopState = {
+  resetStarterItemsVersion?: 1;
   rewards?: import("./combatRewards").CombatReward[];
   centerPreview?: CenterPreview;
   centerHeal?: CenterHeal;

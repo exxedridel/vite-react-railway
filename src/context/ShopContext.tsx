@@ -214,6 +214,7 @@ function validState(value: unknown): value is ShopState {
   if (!value || typeof value !== "object") return false;
   const state = value as ShopState;
   return (
+    (state.resetStarterItemsVersion === undefined || state.resetStarterItemsVersion === 1) &&
     (!state.centerPreview || validCenterPreview(state.centerPreview)) &&
     (!state.centerHeal || validCenterHeal(state.centerHeal)) &&
     (!state.centerHeals ||
@@ -550,6 +551,7 @@ export default function ShopProvider({
     let centerRecovery: Promise<void> | null = null;
     const centerAcknowledgements = new Set<string>();
     let latestResets: GameReset[] = [];
+    let resetStarterItemsVersion: 1 | undefined;
     let resetRecovery: Promise<void> | null = null;
     let resetStarting = false;
     let latestUses: ItemUse[] = [];
@@ -1091,6 +1093,7 @@ export default function ShopProvider({
         setSynced(false);
         return Promise.resolve();
       }
+      if (next.resetStarterItemsVersion === 1) resetStarterItemsVersion = 1;
       const operation = reconciliation
         .catch(() => {})
         .then(() => reconcile(next, proof));
@@ -1280,6 +1283,9 @@ export default function ShopProvider({
       const payload = {
         requestId: lock.requestId,
         expectedWalletRevision: lock.expectedWalletRevision,
+        ...(lock.starterItemsVersion !== undefined
+          ? { starterItemsVersion: lock.starterItemsVersion }
+          : {}),
       };
       let response: Extract<ShopAck, { ok: true }>;
       let rejected: unknown;
@@ -1339,6 +1345,10 @@ export default function ShopProvider({
         );
       if (actor.role !== "player")
         throw new Error("Sólo un jugador puede reiniciar su partida.");
+      if (resetStarterItemsVersion !== 1)
+        throw new Error(
+          "Actualiza el servicio de Tienda antes de reiniciar con las 6 Poké Balls iniciales.",
+        );
       if (
         isLocalPartyMutationBlocked(store.getState().party) ||
         localBattleActive(store.getState().party)
@@ -1817,6 +1827,7 @@ export default function ShopProvider({
     socket.on("connect", () => {
       if (!current()) return;
       applied = false;
+      resetStarterItemsVersion = undefined;
       consumptionPresenceReported = false;
       setConnected(true);
       setSynced(false);
@@ -1828,6 +1839,7 @@ export default function ShopProvider({
     socket.on("disconnect", () => {
       if (!current()) return;
       applied = false;
+      resetStarterItemsVersion = undefined;
       setConnected(false);
       setSynced(false);
       presenceKey = "";

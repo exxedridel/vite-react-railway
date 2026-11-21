@@ -4,7 +4,7 @@ Frontend del juego con React, TypeScript y Vite. `mysql-restapi` autentica y
 administra usuarios; `nest-mongo-pokedex` comunica jugadores y conserva las
 batallas PvP, las carteras y los recibos del Poké Mart. El motor de combate se
 ejecuta en el panel administrador y, para encuentros individuales, en el frontend
-del jugador. Versión de la aplicación: **2.21.1**.
+del jugador. Versión de la aplicación: **2.22.0**.
 
 ## Recompensas automáticas de combate
 
@@ -63,7 +63,7 @@ y descarta reclamaciones de partidas anteriores. Ver reglas, compatibilidad y
 validación en [BATTLE_REWARDS_PROTOCOL.md](../BATTLE_REWARDS_PROTOCOL.md).
 
 La regla de niveles 2.21 requiere Nest antes de React y recargar ambos
-frontends a 2.21.1. Sin variables nuevas,
+frontends a 2.22.0. Sin variables nuevas,
 cambios MySQL, seed ni borrar partidas. `npm run test:rewards` comprueba niveles,
 dinero y guardado; `npm run test:rewards:browser` valida premios y JcJ en Chrome
 local, y `npm run test:penalties:browser` comprueba derrotas, rendición y reconexión.
@@ -352,24 +352,33 @@ lectura; los jugadores no pueden editar sus Pokedollars desde la interfaz.
 ### Reiniciar partida desde el jugador
 
 El menú de la cuenta incluye **Reiniciar juego**. La confirmación informa que se
-eliminarán el equipo, el inicial, el oponente y las medallas, se vaciarán los
-objetos comprados y el saldo quedará en **500 Pokedollars**. Exige conexión y
+eliminarán el equipo, el inicial, el oponente y las medallas. Desde 2.22.0 el
+saldo queda en **500 Pokedollars** y la Bag con **6 Poké Balls normales**;
+se eliminan los demás objetos. Exige conexión y
 sincronización; no se permite durante una batalla ni una compra pendiente.
 
 El dispositivo guarda primero la solicitud de reinicio. Nest valida la operación
-del propio jugador y guarda saldo500, objetos vacíos y un recibo pendiente de
+del propio jugador y guarda saldo 500, `items:{'poke-ball':6}` y un recibo pendiente de
 forma atómica. El navegador guarda entonces la nueva partida y confirma ese
 recibo. La Tienda recibe automáticamente el saldo actualizado: abrir la Tienda
 no inicia ni reinicia partidas. La cartera pertenece a la cuenta; el resto de
 la partida continúa guardándose por navegador.
 
 Si falla la red o el guardado, **Recuperar reinicio** continúa la misma solicitud
-desde el navegador original. Los reintentos no vuelven a entregar500 ni borran
+desde el navegador original. Los reintentos no vuelven a entregar dinero o bolas ni borran
 un nuevo equipo. Las compras y reservas de batalla esperan su confirmación.
 Un rechazo se resuelve con una cancelación persistida antes de retirar el bloqueo;
 un evento antiguo o la ausencia de recibo no prueban que el reinicio se canceló.
 El historial y los recibos anteriores se conservan. Cancelar el diálogo antes de
 confirmar no cambia la partida ni el saldo.
+
+La solicitud, el bloqueo y el recibo nuevos llevan `starterItemsVersion:1`;
+las operaciones anteriores sin esa marca conservan su inventario original.
+El servidor anuncia `resetStarterItemsVersion:1`. Si todavía no lo soporta,
+el frontend avisa antes de guardar un bloqueo. No se regalan bolas al recargar,
+iniciar sesión o abrir Tienda, ni se modifica una partida existente por actualizar.
+Desplegar Nest antes de React y recargar a 2.22.0. Sin MySQL, variables nuevas ni
+reinicios obligatorios. `npm run test:reset:browser` comprueba el flujo en Chrome.
 
 No se permite comprar durante PvP, Trainer Battle ni un encuentro local activo.
 Una compra en curso también bloquea temporalmente las acciones de la Party y

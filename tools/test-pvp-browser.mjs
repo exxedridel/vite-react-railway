@@ -935,6 +935,7 @@ try {
     });
   } else if (
     process.argv.includes("--shop-only") ||
+    process.argv.includes("--reset-only") ||
     process.argv.includes("--back-office-only")
   ) {
     await runShopBrowserScenario({
@@ -955,6 +956,7 @@ try {
       pvpRepository,
       pvpService: app.get(PvpService),
       pvpGateway: app.get(PvpGateway),
+      resetOnly: process.argv.includes("--reset-only"),
     });
   } else {
     const originalA = await seedPvpTeam(playerA, 1, 17, 1);

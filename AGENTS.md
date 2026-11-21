@@ -1,5 +1,17 @@
 # Contexto de la trilogia Pokemon
 
+Etapa vigente 2026-11-21 React2.22/Nest: nuevoreset500PD+6poke-ball/resto0.
+prepare lock starterItemsVersion1, payload/cancelcondicional, receipt/wallet
+matching exactos antescheckedwrite/ACK. Oldsinmarca500/{}sinoptin/regrant/hash
+rewrite. Synccap resetStarterItemsVersion1 guardantesnewlock (oldNestnoloop),
+oldrecoveryintacto. Confirm/toast6, Gate distinguelegacy. No grantlogin/reload/
+shop niwalletinitcambio. React50wallet11Party7cuentas/TS/build/audit177 PASS;
+Nest285Shop86PvP/build. ChromeReset PASS sinJSerrors/cleanup:6exactas/reload/
+compra7/oldserveranteslock/checkedwritefaultrecuperable/retrysinregrant.
+npmrun test:reset:browser. Ver Punto/SHOP_PROTOCOL.
+Nest→React/recargar2.22 sinvars/MySQL/seed/reset/borrados/commit/push/deploy;
+producción no verificada.
+
 Corrección vigente 2026-11-21 React 2.21.1/Nest: FullRestore sólo HP>0, nunca
 revive. UI propio/Party/admin KOdeshabilitado e indica MaxRevive; planners,
 coordinadores, primitiva Party y native/helper/choiceadmin rechazan antes

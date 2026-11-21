@@ -426,6 +426,7 @@ export function decodeAccountParty(
       const lock = party.resetLock;
       if (
         !isRecord(lock) ||
+        (lock.starterItemsVersion !== undefined && lock.starterItemsVersion !== 1) ||
         typeof lock.requestId !== "string" ||
         !lock.requestId ||
         typeof lock.clientId !== "string" ||

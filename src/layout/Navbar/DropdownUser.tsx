@@ -143,7 +143,7 @@ export default function DropdownUser() {
       navigate("/dashboard");
       toast.success("Partida reiniciada.", {
         description:
-          "Tienes 500 Pokedollars y la mochila vacía. Ya puedes elegir un nuevo Pokémon inicial.",
+          "Tienes 500 Pokedollars y 6 Poké Balls. Ya puedes elegir un nuevo Pokémon inicial.",
       });
     } catch (error) {
       setResetError(
@@ -316,10 +316,11 @@ export default function DropdownUser() {
             <DialogDescription>
               Se eliminará todo tu equipo, incluido el inicial, con sus niveles,
               movimientos y estados. También se quitará al oponente guardado. Tu
-              saldo quedará en 500 Pokedollars, se vaciarán los objetos de la
-              mochila y se retirarán tus medallas. El saldo se actualizará
-              también en la Tienda. Necesitas conexión para confirmar el
-              reinicio. Podrás elegir un nuevo Pokémon inicial. Esta acción no
+              saldo quedará en 500 Pokedollars y recibirás 6 Poké Balls. Se
+              eliminará el resto de los objetos de la mochila y se retirarán
+              tus medallas. El saldo se actualizará también en la Tienda.
+              Necesitas conexión para confirmar el reinicio. Podrás elegir un
+              nuevo Pokémon inicial. Esta acción no
               se puede deshacer. El historial de las últimas 20 acciones se
               conserva y registrará este reinicio.
             </DialogDescription>

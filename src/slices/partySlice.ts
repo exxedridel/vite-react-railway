@@ -174,6 +174,7 @@ export type PartyState = {
     quantity?: number;
   };
   resetLock?: {
+    starterItemsVersion?: 1;
     requestId: string;
     userId: number;
     clientId: string;

@@ -30,6 +30,8 @@ export default function ShopPartyGate({ children }: { children: ReactNode }) {
   const [localError, setLocalError] = useState("");
   const pendingReset = shop.resets.find((reset) => reset.status === "pending");
   const resetting = !!resetLock || !!pendingReset;
+  const resetIncludesStarterItems =
+    (pendingReset ?? resetLock)?.starterItemsVersion === 1;
   const otherBrowser = pendingReset && pendingReset.clientId !== shop.clientId;
   const pendingAdjustment = shop.adjustments.find(
     (entry) => entry.status === "pending",
@@ -195,7 +197,9 @@ export default function ShopPartyGate({ children }: { children: ReactNode }) {
         {resetting
           ? otherBrowser
             ? "Esta cuenta tiene un reinicio pendiente en otro navegador. Vuelve al navegador que lo solicitó para terminarlo."
-            : "Tu partida está protegida mientras confirmamos y guardamos el reinicio con 500 Pokedollars y la mochila de objetos vacía."
+            : resetIncludesStarterItems
+              ? "Tu partida está protegida mientras confirmamos y guardamos el reinicio con 500 Pokedollars y 6 Poké Balls. Se eliminará el resto de los objetos de la mochila."
+              : "Tu partida está protegida mientras confirmamos y guardamos el reinicio con 500 Pokedollars y la mochila de objetos vacía."
           : adjusting
             ? pendingAdjustment && pendingAdjustment.clientId !== shop.clientId
               ? "Vuelve al navegador que recibió el ajuste para completar su guardado."

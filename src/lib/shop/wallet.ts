@@ -153,6 +153,7 @@ export function validBalanceAdjustment(
 export function validGameReset(value: unknown): value is GameReset {
   return (
     record(value) &&
+    (value.starterItemsVersion === undefined || value.starterItemsVersion === 1) &&
     typeof value.requestId === "string" &&
     /^[\w.:-]{1,128}$/.test(value.requestId) &&
     typeof value.clientId === "string" &&
@@ -695,7 +696,7 @@ export function prepareGameReset(
       party: {
         ...party,
         pvpRevision: pvpPartyRevision(party) + 1,
-        resetLock: { userId, clientId, requestId, expectedWalletRevision },
+        resetLock: { userId, clientId, requestId, expectedWalletRevision, starterItemsVersion: 1 },
       },
       value: undefined,
     };
@@ -726,6 +727,8 @@ export function applyGameReset(
       lock.requestId !== receipt.requestId
     )
       return { party, value: "ignored" as const };
+    if (lock.starterItemsVersion !== receipt.starterItemsVersion)
+      throw new Error("Los objetos iniciales del reinicio no corresponden a esta partida.");
     if (
       (party.bag?.walletRevision ?? -1) > wallet.revision ||
       receipt.walletRevision > wallet.revision
@@ -763,7 +766,8 @@ export function applyGameReset(
       if (
         wallet.revision !== receipt.walletRevision ||
         wallet.balance !== 500 ||
-        Object.values(wallet.items).some((quantity) => quantity !== 0)
+        SHOP_ITEM_IDS.some((itemId) => (wallet.items[itemId] ?? 0) !==
+          (receipt.starterItemsVersion === 1 && itemId === "poke-ball" ? 6 : 0))
       )
         throw new Error(
           "Recupera la cartera correspondiente al reinicio antes de continuar.",

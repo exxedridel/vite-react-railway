@@ -221,6 +221,7 @@ export async function runAccountStorageTests() {
     importedWallet,
     {
       requestId: "import-reset-pending",
+      starterItemsVersion: 1,
       userId: importer,
       clientId: "import-client",
       walletRevision: 4,
