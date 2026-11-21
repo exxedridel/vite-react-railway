@@ -87,6 +87,11 @@ export async function runBattleRewardsBrowserScenario({
       () => !!document.querySelector(".battle-scene"),
       "reward local arena mounted",
     );
+    assert.equal(await evalArgs(playerA, () => !!document.querySelector('[data-testid="own-level-readonly"]')),
+      true, "the current Pokémon level remains visible");
+    assert.equal(await evalArgs(playerA, () => !!document.querySelector(
+      'button[aria-label="Subir un nivel"],button[aria-label="Bajar un nivel"]')),
+      false, "manual level adjustment controls are not rendered");
   };
   const dismissHighlights = async (page) => {
     const present = await evalArgs(page, () =>
@@ -278,10 +283,15 @@ export async function runBattleRewardsBrowserScenario({
     return originalClaim.call(this, actor, payload);
   };
   try {
-    await fixture("reward-local-pink", "trainer", "pink", 21);
+    await fixture("reward-local-pink", "trainer", "pink", 20);
     const first = await winLocal();
     assert.equal(first.before.pokemons[0].pokemon.level, 20);
     assert.equal(first.after.pokemons[0].pokemon.level, 22);
+    assert.deepEqual(first.after.localBattleRewards.defeats.map((entry) => ({
+      winner: entry.winnerLevel, defeated: entry.defeatedLevel,
+      levels: entry.levels, rule: entry.levelRuleVersion,
+    })), [{ winner: 20, defeated: 20, levels: 2, rule: 2 }],
+      "a real equal-level KO receives the new two-level rule in its durable event");
     await flushRewards();
     await until(
       async () =>
@@ -306,12 +316,17 @@ export async function runBattleRewardsBrowserScenario({
     assert.equal((await state()).pokemons[0].pokemon.level, 22);
     assert.deepEqual((await state()).pokemons, firstSaved.pokemons);
     console.log(
-      "PASS: a native pink trainer KO gives two levels, preserves spent PP and credits 200 PD once across reload and replay.",
+      "PASS: a native equal-level trainer KO gives two levels, preserves spent PP and credits 200 PD once across reload and replay.",
     );
 
-    await fixture("reward-local-capture", "wild", "pink", 20);
+    await fixture("reward-local-capture", "wild", "pink", 22);
     await openBattle();
     await clickButton(playerA, "Oponente", '[role="dialog"]');
+    assert.equal(await evalArgs(playerA, () => !!document.querySelector('[data-testid="opponent-level-readonly"]')),
+      true, "the opponent level is visible as read-only information");
+    assert.equal(await evalArgs(playerA, () => !!document.querySelector(
+      '#active-opponent-level,button[aria-label="Subir un nivel del oponente"],button[aria-label="Bajar un nivel del oponente"]')),
+      false, "opponent level inputs and increment buttons stay hidden");
     await waitArgs(
       playerA,
       () => {
@@ -348,11 +363,11 @@ export async function runBattleRewardsBrowserScenario({
       "real direct D20 throw captures and commits its level reward",
     );
     const captureParty = await state();
-    assert.equal(captureParty.pokemons[0].pokemon.level, 23);
+    assert.equal(captureParty.pokemons[0].pokemon.level, 24);
     assert.equal(captureParty.pokemons.length, 2);
     assert.equal(
       captureParty.pokemons[1].pokemon.level,
-      20,
+      22,
       "the caught Pokémon keeps its level; the throwing active member gets the reward",
     );
     assert.equal(captureParty.bag.items["great-ball"], 0);
@@ -368,7 +383,7 @@ export async function runBattleRewardsBrowserScenario({
     await route(playerA);
     assert.deepEqual((await state()).pokemons, captureParty.pokemons);
     console.log(
-      "PASS: automatic wild capture spends one ball, awards only the active Pokémon one level and remains idempotent after reload.",
+      "PASS: an equal-level wild capture spends one ball, awards the active Pokémon two levels and remains idempotent after reload.",
     );
 
     await cdp.request("Network.enable", {}, playerA);
@@ -380,12 +395,12 @@ export async function runBattleRewardsBrowserScenario({
     await route(playerA);
     await fixture("reward-offline-green", "trainer", "green", 25);
     const offline = await winLocal();
-    assert.equal(offline.after.pokemons[0].pokemon.level, 25);
+    assert.equal(offline.after.pokemons[0].pokemon.level, 26);
     assert.equal(offline.after.localRewardOutbox.length, 1);
     assert.equal((await shopRepository.get(2)).balance, startingBalance + 200);
     await route(playerA);
     const savedOffline = await state();
-    assert.equal(savedOffline.pokemons[0].pokemon.level, 25);
+    assert.equal(savedOffline.pokemons[0].pokemon.level, 26);
     assert.deepEqual(
       savedOffline.localRewardOutbox,
       offline.after.localRewardOutbox,
@@ -597,24 +612,30 @@ export async function runBattleRewardsBrowserScenario({
       "PASS: selecting the second human lead starts it against Brock, each KO raises its live level, and exit grants 1200 PD/one TM/one badge without applying levels or bundles twice on replay/reload.",
     );
 
-    // Both human selectors use the same durable lead protocol in PvP. A
-    // forfeit exercises finalization without inventing KO or gym rewards.
+    // Both human selectors use the same durable lead protocol in PvP. One
+    // equal-level KO raises the human immediately; forfeit adds no extra KO.
     await route(playerB);
     await seedPvpTeam(playerB, 2, 40, 1.3);
-    await evalArgs(playerB, async () => {
-      const [{ transactPvpParty }, stats] = await Promise.all([
+    const pvpEqualLevel = (await state()).pokemons[1].pokemon.level;
+    await evalArgs(playerB, async (level) => {
+      const [{ transactPvpParty }, stats, { trainerMoves }] = await Promise.all([
         import("/src/store/store.ts"), import("/src/lib/pokemonStats.ts"),
+        import("/src/lib/trainerBattle/catalog.ts"),
       ]);
       await transactPvpParty(3, async (party) => {
         const pokemons = JSON.parse(JSON.stringify(party.pokemons));
-        pokemons.forEach((mon) => {
+        pokemons.forEach((mon, index) => {
+          mon.pokemon = stats.changeLevel(mon.pokemon, level);
           mon.pokemon.stats.find((stat) => stat.name === "hp").value = stats.getMaxHp(mon.pokemon);
+          if (index === 1) mon.pokemon.stats.find((stat) => stat.name === "hp").value = 1;
           mon.pokemon.battleStages = stats.neutralBattleStages();
           mon.statuses = []; mon.statusTurns = {};
+          mon.moves = [{ ...trainerMoves.find((move) => move.id === 150), source: "starter", currentPp: 5 }];
+          mon.pokemon.learnset = { versionGroup: "emerald", moves: [{ id: 150, name: "splash" }] };
         });
         return { party: { ...party, pokemons, pvpRevision: party.pvpRevision + 1 }, value: undefined };
       });
-    });
+    }, pvpEqualLevel);
     const pvpOriginalA = await state();
     const pvpOriginalB = await partyState(playerB);
     const pvpWalletA = await shopRepository.get(2);
@@ -653,6 +674,44 @@ export async function runBattleRewardsBrowserScenario({
     }, "PvP starts both selected second-slot Pokémon");
     assert.equal(await evalArgs(admin, () => !!document.querySelector('select[aria-label="Pokémon inicial A"]')),
       false, "initial lead selection is no longer editable after the battle begins");
+    const pvpBeforeKo = await pvpRepository.get(pvpBattleId);
+    assert.equal(pvpBeforeKo.session.teams.a.pokemons[1].pokemon.level,
+      pvpBeforeKo.session.teams.b.pokemons[1].pokemon.level);
+    await waitArgs(admin, () => {
+      const sections = document.querySelectorAll('section[aria-label^="Controles de"]');
+      return sections[0]?.querySelector('button[data-move-id="57"]') &&
+        !sections[0].querySelector('button[data-move-id="57"]').disabled;
+    }, "the equal-level PvP attacker can choose Surf");
+    await evalArgs(admin, () => document.querySelectorAll('section[aria-label^="Controles de"]')[0]
+      .querySelector('button[data-move-id="57"]').click());
+    await waitArgs(admin, () => {
+      const button = document.querySelectorAll('section[aria-label^="Controles de"]')[1]
+        ?.querySelector('button[data-move-id="150"]');
+      return button && !button.disabled;
+    }, "the second PvP side can commit its legal response");
+    await evalArgs(admin, () => document.querySelectorAll('section[aria-label^="Controles de"]')[1]
+      .querySelector('button[data-move-id="150"]').click());
+    await until(async () => (await pvpRepository.get(pvpBattleId)).session?.rewards?.defeats.length === 1,
+      "the new equal-level KO is accepted as a real server checkpoint");
+    const pvpAfterKo = await pvpRepository.get(pvpBattleId);
+    const pvpLeadAfterKo = pvpAfterKo.session.teams.a.pokemons.find((mon) => mon.captureId === pvpOriginalA.pokemons[1].captureId);
+    assert.equal(pvpLeadAfterKo.pokemon.level, pvpEqualLevel + 2);
+    assert.equal(pvpAfterKo.session.rewards.defeats[0].levelRuleVersion, 2);
+    assert.equal(pvpAfterKo.session.rewards.defeats[0].levels, 2);
+    assert.equal((await state()).pokemons[1].pokemon.level, pvpEqualLevel,
+      "the player's reserved Party receives its level only with the final result");
+    await waitArgs(admin, () => [...document.querySelectorAll("button")].some((b) =>
+      b.textContent.trim() === "Volver al combate"), "PvP knockout summary is ready");
+    await dismissHighlights(admin);
+    await evalArgs(admin, () => {
+      const section = document.querySelectorAll('section[aria-label^="Controles de"]')[1];
+      const button = [...section.querySelectorAll("button")].find((b) =>
+        b.getAttribute("aria-label")?.startsWith("Cambiar a:") && !b.disabled);
+      if (!button) throw new Error("The knocked out PvP team needs a living replacement");
+      button.click();
+    });
+    await until(async () => !(await pvpRepository.get(pvpBattleId)).session.runtime.requests.b.forceSwitch,
+      "the PvP replacement finishes before choosing forfeit");
     await waitArgs(admin, () => [...document.querySelectorAll('section[aria-label^="Controles de"] button')].some(
       (button) => button.textContent.trim().startsWith("Rendirse:") && !button.disabled,
     ), "admin can forfeit a real human turn");
@@ -681,10 +740,10 @@ export async function runBattleRewardsBrowserScenario({
         "a PvP outcome never adds a money, TM or badge reward");
     }
     assert.deepEqual((await state()).pokemons.map((mon) => mon.pokemon.level),
-      pvpOriginalA.pokemons.map((mon) => mon.pokemon.level));
+      pvpOriginalA.pokemons.map((mon, index) => mon.pokemon.level + (index === 1 ? 2 : 0)));
     assert.deepEqual((await partyState(playerB)).pokemons.map((mon) => mon.pokemon.level),
       pvpOriginalB.pokemons.map((mon) => mon.pokemon.level));
-    console.log("PASS: PvP selects second-slot leads for both real users without changing snapshots, freezes selection at start and finalizes a forfeit without money, TM, badge or invented KO levels.");
+    console.log("PASS: PvP equal-level KO awards two live levels and persists them on exit; selected snapshots remain frozen and a later forfeit adds no money, items or extra levels.");
 
     // The first rival encounter has its own versioned money/item bundle.
     // Use the real preset and normal admin UI so a central receipt must reach

@@ -4,17 +4,27 @@ Frontend del juego con React, TypeScript y Vite. `mysql-restapi` autentica y
 administra usuarios; `nest-mongo-pokedex` comunica jugadores y conserva las
 batallas PvP, las carteras y los recibos del Poké Mart. El motor de combate se
 ejecuta en el panel administrador y, para encuentros individuales, en el frontend
-del jugador. Versión de la aplicación: **2.19.0**.
+del jugador. Versión de la aplicación: **2.21.0**.
 
 ## Recompensas automáticas de combate
 
-Cada KO premia al Pokémon que lo causó con1nivel si el rival era igual o menor,
-o2si era mayor. Capturar también premia al Pokémon activo. Se aplican al guardar
-el encuentro, con máximo100, conservando HP proporcional, estados y PP. En
+Desde 2.21, cada KO premia al Pokémon que lo causó con **dos niveles si el rival
+era del mismo nivel o mayor**, y uno si era menor. Capturar también premia al
+Pokémon activo. Se aplican al guardar el encuentro, con máximo 100,
+conservando HP proporcional, estados y PP. En
 nuevas batallas JcJ/Trainer del admin suben durante el combate, tras resolver
 el turno del KO, y actualizan las estadísticas para las siguientes acciones.
 Al salir se guarda el nivel final sin volver a sumarlo. Las batallas guardadas
 con reglas anteriores conservan sus niveles diferidos.
+
+Los nuevos eventos guardan `levelRuleVersion:2`. Los eventos anteriores sin esa
+marca conservan sus recompensas originales: no se recalculan niveles ya ganados
+ni se modifican hashes o resultados pendientes al recuperar una partida.
+
+Los controles manuales para subir/bajar el nivel del Pokémon, del oponente y
+del encuentro en preparación quedaron comentados; los niveles siguen visibles
+como información. Se mantiene la configuración del nivel inicial al crear la
+partida. Rare Candy conserva su uso fuera de combate para subir un nivel.
 
 Las victorias contra entrenadores individuales dan200/300/400/500/600Pokedollars
 en casillas rosa/verde/azul/amarilla/roja. Se elige y conserva el color al crear
@@ -52,8 +62,8 @@ evitan cobros duplicados al recargar. Reiniciar cambia la generación de premios
 y descarta reclamaciones de partidas anteriores. Ver reglas, compatibilidad y
 validación en [BATTLE_REWARDS_PROTOCOL.md](../BATTLE_REWARDS_PROTOCOL.md).
 
-La recompensa del rival2.19 requiere Nest antes de React y recargar ambos
-frontends a2.19.0. Sin variables nuevas,
+La regla de niveles 2.21 requiere Nest antes de React y recargar ambos
+frontends a 2.21.0. Sin variables nuevas,
 cambios MySQL, seed ni borrar partidas. `npm run test:rewards` comprueba niveles,
 dinero y guardado; `npm run test:rewards:browser` valida premios y JcJ en Chrome
 local, y `npm run test:penalties:browser` comprueba derrotas, rendición y reconexión.
@@ -120,7 +130,7 @@ antiguo. Tampoco se importa mientras hay una batalla o compra pendiente.
 
 ## Objetos inmediatos y sincronización central
 
-Full Restore, Max Ether, Max Elixir, TM y pokebolas del frontend del jugador
+Full Restore, Max Revive, Max Ether, Max Elixir, Rare Candy, TM y pokebolas del frontend del jugador
 guardan su efecto y consumo al instante. La app envía los consumos por lotes en
 segundo plano y permite continuar jugando, sin diálogo de validación por uso.
 Nest sigue siendo la autoridad del inventario y de los Pokedollars. La Bag
@@ -275,7 +285,7 @@ npm run test:center:browser
 ### Back office: `/back-office`
 
 El administrador abre **Back office** desde su panel para cambiar el precio de
-cualquiera de los ocho objetos. Son precios globales persistidos en Nest/Mongo,
+cualquiera de los diez objetos. Son precios globales persistidos en Nest/Mongo,
 actualizados por WebSocket y conservados al reiniciar. Se permiten enteros desde
 **0 Pokedollars**; los objetos gratis siguen limitados a99 unidades por compra.
 La Tienda y sus cotizaciones leen esos precios. Si cambia el catálogo con una
@@ -365,8 +375,35 @@ No se permite comprar durante PvP, Trainer Battle ni un encuentro local activo.
 Una compra en curso también bloquea temporalmente las acciones de la Party y
 una nueva reserva de batalla. Una respuesta antigua no retira ese bloqueo. Si
 falla el guardado local, la pantalla ofrece **Recuperar compra** y conserva el
-recibo pendiente. Full Restore, Max Ether, Max Elixir y TM consumen existencias;
-los demás objetos conservan sus cantidades sin uso desde el inventario.
+recibo pendiente. Los objetos consumibles descuentan sus existencias al usarse;
+Bicycle conserva su cantidad sin una acción de uso implementada.
+
+### Max Revive y Rare Candy
+
+Desde2.20.0, ambos se compran en Tienda y se regalan desde Back office, con
+precio inicial de **300 Pokedollars** por unidad. Sus precios se pueden editar
+en cualquier momento como los demás, incluido0. Agregarlos no reinicia precios
+personalizados ni el inventario de las partidas.
+
+**Acciones → Max Revive** sólo se habilita para un Pokémon debilitado y lo
+revive con todos sus HP. Conserva sus PP, estados y progreso. En los encuentros
+del jugador y en JcJ/Trainer del admin aparece en **Items**, con selector del
+Pokémon debilitado; consume una unidad y la acción del turno. Requiere una acción
+libre: primero se atienden reemplazos, recargas y continuaciones obligatorias.
+
+**Acciones → Rare Candy** sube un nivel automáticamente, sólo fuera de combate.
+Tiene máximo100 y no consume objeto al alcanzarlo. Conserva HP proporcional,
+estados y PP; un debilitado sigue con0HP. Respeta los bloqueos de compras y
+batallas reservadas. Los efectos del jugador se guardan al instante con su
+consumo local y se sincronizan en segundo plano, sin esperar confirmación de red.
+
+```bash
+npm run test:new-items
+npm run test:new-items:browser
+```
+
+Sprites de [PokeAPI/sprites](https://github.com/PokeAPI/sprites/tree/master/sprites/items),
+servidos localmente en `public/admin-shop/`.
 
 ### Full Restore desde la Bag
 
@@ -528,8 +565,8 @@ este frontend y recargar los navegadores originales. No requiere variables nueva
    temporales y modificadores se limpian al finalizar. Pokedollars, medallas, especie,
    nivel y movimientos permanecen en sus respectivas partidas.
 
-La mochila conserva cantidades de objetos comprados. Full Restore, Max Ether y
-Max Elixir requieren existencias y consumen la acción de ese lado. Los PP restantes
+La mochila conserva cantidades de objetos comprados. Full Restore, Max Revive,
+Max Ether y Max Elixir requieren existencias y consumen la acción de ese lado. Los PP restantes
 se conservan al salir mediante `movesPp`; `moves[].pp` sigue siendo el máximo del catálogo.
 No se añade XP, premios o intercambio de Pokémon en este flujo.
 

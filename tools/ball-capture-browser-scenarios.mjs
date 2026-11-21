@@ -85,7 +85,22 @@ export async function runBallCaptureBrowserScenario({
             current.pvpLock
           )
             throw new Error(
-              "A capture fixture must never discard a pending operation",
+              "A capture fixture must never discard a pending operation: " + JSON.stringify({
+                fixture: name,
+                captureAttempt: current.captureAttempt?.attemptId,
+                itemUseLock: current.itemUseLock?.requestId,
+                centerLock: current.centerLock?.requestId,
+                shopLock: current.shopLock?.requestId,
+                shopOperation: current.shopLock?.operation,
+                resetLock: current.resetLock?.requestId,
+                pvpLock: current.pvpLock?.battleId,
+                centerHealingRevision: current.centerHealingRevision,
+                walletRevision: current.bag?.walletRevision,
+                pvpRevision: current.pvpRevision,
+                owner: storage.getActiveAccountId(),
+                blocked: storage.isLocalPartyMutationBlocked(current),
+                transient: storage.isAccountTransactionBlocked(),
+              }),
             );
           const party = JSON.parse(JSON.stringify(current));
           const own = party.pokemons[0];
@@ -506,7 +521,25 @@ export async function runBallCaptureBrowserScenario({
 
   // Existing paid v1 plans retain their original hash/seed/ID. Only after their
   // original receipt is APPLIED does the new UI persist the automatic D20.
-  await fixtureEncounter("legacy-capture-paid-success", false, true);
+  try {
+    await fixtureEncounter("legacy-capture-paid-success", false, true);
+  } catch (error) {
+    const party = await state(), wallet = await shopRepository.get(2);
+    console.error("Legacy capture preparation diagnostics:", {
+      local: {
+        centerLock: party.centerLock?.requestId, shopLock: party.shopLock?.requestId,
+        captureAttempt: party.captureAttempt?.attemptId, itemUseLock: party.itemUseLock?.requestId,
+        centerHealingRevision: party.centerHealingRevision, walletRevision: party.bag?.walletRevision,
+      },
+      wallet: {
+        revision: wallet.revision,
+        centers: wallet.centerHeals?.slice(-3).map((entry) => ({ id: entry.requestId, status: entry.status, revision: entry.centerRevision })),
+        purchases: wallet.purchases?.slice(-3).map((entry) => ({ id: entry.requestId, status: entry.status, item: entry.itemId })),
+        uses: wallet.uses?.slice(-3).map((entry) => ({ id: entry.requestId, status: entry.status, item: entry.itemId })),
+      },
+    });
+    throw error;
+  }
   const beforeCapture = await state();
   const success = await paidLegacy("great-ball", "outcome", 20);
   const frozen = (await state()).captureAttempt;

@@ -24,12 +24,8 @@ import { isLocalPartyMutationBlocked } from "@/store/accountStorage";
 import { canChooseStarter } from "@/lib/starterPokemon";
 import { generateWildEncounter } from "@/lib/wildEncounter";
 import PokemonTypeBadges from "./PokemonTypeBadges";
-import {
-  createLeveledPokemon,
-  changeLevel,
-  isLeveled,
-  STAT_NAMES,
-} from "@/lib/pokemonStats";
+import { createLeveledPokemon, STAT_NAMES } from "@/lib/pokemonStats";
+// Manual level controls are kept below for reference: import { changeLevel, isLeveled } from "@/lib/pokemonStats";
 import {
   useEffect,
   useRef,
@@ -38,7 +34,8 @@ import {
   type FormEvent,
   type SetStateAction,
 } from "react";
-import { Loader2, Minus, Plus, Search, Swords, X } from "lucide-react";
+import { Loader2, Search, Swords, X } from "lucide-react";
+// Manual level controls are kept below for reference: import { Minus, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,11 +49,8 @@ import {
 } from "@/components/ui/dialog";
 import { pokeApi, useLazyGetPokemonQuery } from "@/api/pokeApi";
 import type { Pokemon } from "@/types/pokemon";
-import {
-  BATTLE_STATS,
-  changeOpponentLevel,
-  type BattleOpponent,
-} from "@/lib/battleOpponent";
+import { BATTLE_STATS, type BattleOpponent } from "@/lib/battleOpponent";
+// Manual level editing is hidden: import { changeOpponentLevel } from "@/lib/battleOpponent";
 type Props = {
   opponent: BattleOpponent | null;
   onChange: Dispatch<SetStateAction<BattleOpponent | null>>;
@@ -141,12 +135,14 @@ export default function PokemonOpponentPanel({
   const [tierColor, setTierColor] = useState<CatchTierColor>("pink");
   const pool = encounterPool(party, tierColor);
   const [candidateLevel, setCandidateLevel] = useState("");
+  /* Manual editing of an existing opponent's level is hidden.
   const [opponentLevel, setOpponentLevel] = useState(
     String(opponent?.pokemon.level ?? balance.startingLevel),
   );
   useEffect(() => {
     setOpponentLevel(String(opponent?.pokemon.level ?? balance.startingLevel));
   }, [opponent?.pokemon.id, opponent?.pokemon.level, balance.startingLevel]);
+  */
   const [building, setBuilding] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const generationRef = useRef<AbortController | null>(null);
@@ -401,11 +397,13 @@ export default function PokemonOpponentPanel({
       }
     }
   };
+  /* Manual editing of an existing opponent's level is hidden.
   const handleChangeLevel = (amount: number) => {
     onChange((current) =>
       current ? changeOpponentLevel(current, amount) : null,
     );
   };
+  */
   return (
     <section
       aria-label="Oponente del combate"
@@ -440,6 +438,13 @@ export default function PokemonOpponentPanel({
             {opponent.automation?.enabled ? "Rival automático" : "Rival manual"}{" "}
             · {opponent.kind === "wild" ? "Salvaje" : "Entrenador"}
           </p>
+          <p
+            data-testid="opponent-level-readonly"
+            className="text-sm font-semibold tabular-nums"
+          >
+            Lv. {opponent.pokemon.level ?? balance.startingLevel}
+          </p>
+          {/* Manual opponent level controls are hidden.
           <div
             role="group"
             aria-label="Nivel del oponente"
@@ -507,6 +512,7 @@ export default function PokemonOpponentPanel({
               <Plus className="h-4 w-4" />
             </Button>
           </div>
+          */}
           {opponent.kind === "wild" && (
             <div className="space-y-3">
               <Button
@@ -830,6 +836,13 @@ export default function PokemonOpponentPanel({
                   {tierForSpecies(captureSpecies(candidate.id)!).targetD20}
                 </p>
               )}
+              <p
+                data-testid="candidate-level-readonly"
+                className="text-sm font-medium tabular-nums"
+              >
+                Nivel del encuentro: {candidate.level ?? balance.startingLevel}
+              </p>
+              {/* Manual encounter level controls are hidden.
               <div className="space-y-2">
                 <label
                   htmlFor="candidate-level"
@@ -902,6 +915,7 @@ export default function PokemonOpponentPanel({
                   </p>
                 )}
               </div>
+              */}
 
               <dl className="grid grid-cols-2 gap-2 text-xs">
                 {candidate.stats.map((stat) => (

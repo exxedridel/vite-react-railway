@@ -48,8 +48,10 @@ export const SHOP_ITEM_IDS = [
   "great-ball",
   "ultra-ball",
   "full-restore",
+  "max-revive",
   "max-ether",
   "max-elixir",
+  "rare-candy",
   "tm",
   "bicycle",
 ] as const;
@@ -78,6 +80,7 @@ export const CONSUMABLE_ITEM_IDS = [
   "full-restore",
   "max-ether",
   "max-elixir",
+  "max-revive",
 ] as const;
 export type ConsumableItemId = (typeof CONSUMABLE_ITEM_IDS)[number];
 export const BALL_ITEM_IDS = ["poke-ball", "great-ball", "ultra-ball"] as const;
@@ -124,6 +127,7 @@ export type CaptureAttemptResult = {
 /** TM is usable only from the Party; combat choices keep the narrower union. */
 export const USABLE_ITEM_IDS = [
   ...CONSUMABLE_ITEM_IDS,
+  "rare-candy",
   "tm",
   ...BALL_ITEM_IDS,
 ] as const;

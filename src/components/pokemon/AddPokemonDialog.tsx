@@ -254,8 +254,8 @@ export default function AddPokemonDialog() {
                     </div>
                     <p className="text-xs text-muted-foreground">
                       El inicial y los nuevos rivales aparecerán a este nivel.
-                      Después podrás subir o bajar su nivel con los controles de
-                      combate.
+                      Tu equipo subirá de nivel con las recompensas de combate y
+                      Rare Candy.
                     </p>
                   </div>
                   <div className="space-y-2">

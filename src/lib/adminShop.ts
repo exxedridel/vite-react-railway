@@ -52,6 +52,12 @@ export const SHOP_ITEMS = [
     image: "/admin-shop/full-restore.png",
   },
   {
+    id: "max-revive",
+    name: "Max Revive",
+    price: 300,
+    image: "/admin-shop/max-revive.png",
+  },
+  {
     id: "max-ether",
     name: "Max Ether",
     price: 350,
@@ -62,6 +68,12 @@ export const SHOP_ITEMS = [
     name: "Max Elixir",
     price: 700,
     image: "/admin-shop/max-elixir.png",
+  },
+  {
+    id: "rare-candy",
+    name: "Rare Candy",
+    price: 300,
+    image: "/admin-shop/rare-candy.png",
   },
   { id: "tm", name: "TM", price: 500, image: "/admin-shop/tm-normal.png" },
   {

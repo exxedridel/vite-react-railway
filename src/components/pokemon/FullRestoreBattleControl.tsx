@@ -6,6 +6,7 @@ import { useAppSelector } from "@/store/hooks";
 import { isLocalPartyMutationBlocked } from "@/store/accountStorage";
 import { localBattleActive } from "@/lib/shop/wallet";
 import PpRestoreControls from "./PpRestoreControls";
+import PokemonConsumableControl from "./PokemonConsumableControl";
 
 export default function FullRestoreBattleControl({
   captureId,
@@ -70,7 +71,18 @@ export default function FullRestoreBattleControl({
           turno. Se guarda al instante y se sincroniza en segundo plano.
         </p>
       </div>
-      <PpRestoreControls captureId={captureId} battle disabled={busy} />
+      <PokemonConsumableControl
+        itemId="max-revive"
+        battle
+        disabled={busy}
+        onBusyChange={setBusy}
+      />
+      <PpRestoreControls
+        captureId={captureId}
+        battle
+        disabled={busy}
+        onBusyChange={setBusy}
+      />
     </>
   );
 }

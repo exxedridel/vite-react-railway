@@ -5,7 +5,12 @@ import partyReducer, {
   commitEmeraldAction,
   type PartyState,
 } from "@/slices/partySlice";
-import { getCurrentHp, getMaxHp, isLeveled } from "@/lib/pokemonStats";
+import {
+  changeLevel,
+  getCurrentHp,
+  getMaxHp,
+  isLeveled,
+} from "@/lib/pokemonStats";
 import { combatKey } from "@/lib/emerald/types";
 import { emptyBattleField } from "@/lib/battleField";
 import type { ConsumableItemId } from "@/lib/shop/types";
@@ -60,6 +65,16 @@ export function needsFullRestore(
   );
 }
 
+/** Revival restores HP only; PP, conditions and permanent progression are kept. */
+export function needsMaxRevive(state: PartyState, captureId: string): boolean {
+  const target = state.pokemons.find(
+    (capture) => capture.captureId === captureId,
+  );
+  return (
+    !!target && isLeveled(target.pokemon) && getCurrentHp(target.pokemon) <= 0
+  );
+}
+
 /** Pure inventory-use draft. The caller persists it before requesting the
  * server debit, then commits this exact draft once. Bag is never modified here. */
 export async function preparePartyItem(
@@ -93,12 +108,14 @@ export async function preparePartyItem(
   const needsItem =
     itemId === "full-restore"
       ? needsFullRestore(input, captureId)
-      : target.moves?.some(
-          (move) =>
-            (itemId === "max-elixir" ||
-              (itemId === "max-ether" && move.id === moveId)) &&
-            getCurrentMovePp(move) < getMaxMovePp(move),
-        );
+      : itemId === "max-revive"
+        ? needsMaxRevive(input, captureId)
+        : target.moves?.some(
+            (move) =>
+              (itemId === "max-elixir" ||
+                (itemId === "max-ether" && move.id === moveId)) &&
+              getCurrentMovePp(move) < getMaxMovePp(move),
+          );
   if (!needsItem)
     throw new Error(
       itemId === "full-restore"
@@ -113,21 +130,40 @@ export async function preparePartyItem(
   const applyItem = (): PartyState =>
     itemId === "full-restore"
       ? applyFullRestoreToParty(state, captureId)
-      : {
-          ...state,
-          pokemons: state.pokemons.map((capture) =>
-            capture.captureId !== captureId
-              ? capture
-              : {
-                  ...capture,
-                  moves: capture.moves?.map((move) =>
-                    itemId === "max-elixir" || move.id === moveId
-                      ? restoreMovePp(move)
-                      : move,
-                  ),
-                },
-          ),
-        };
+      : itemId === "max-revive"
+        ? {
+            ...state,
+            pokemons: state.pokemons.map((capture) =>
+              capture.captureId !== captureId
+                ? capture
+                : {
+                    ...capture,
+                    pokemon: {
+                      ...capture.pokemon,
+                      stats: capture.pokemon.stats.map((stat) =>
+                        stat.name === "hp"
+                          ? { ...stat, value: getMaxHp(capture.pokemon)! }
+                          : stat,
+                      ),
+                    },
+                  },
+            ),
+          }
+        : {
+            ...state,
+            pokemons: state.pokemons.map((capture) =>
+              capture.captureId !== captureId
+                ? capture
+                : {
+                    ...capture,
+                    moves: capture.moves?.map((move) =>
+                      itemId === "max-elixir" || move.id === moveId
+                        ? restoreMovePp(move)
+                        : move,
+                    ),
+                  },
+            ),
+          };
   if (!inBattle) return applyItem();
   if (usesNativeLocalEngine(state.opponent)) {
     const native = await loadFullRestoreEngine();
@@ -201,6 +237,42 @@ export function prepareFullRestoreParty(
   captureId: string,
 ): Promise<PartyState> {
   return preparePartyItem(input, captureId, "full-restore");
+}
+
+/** Pure outside-battle draft. Inventory is debited only by the checked caller. */
+export async function prepareRareCandyParty(
+  input: PartyState,
+  captureId: string,
+): Promise<PartyState> {
+  if (
+    input.pvpLock ||
+    input.shopLock ||
+    input.resetLock ||
+    input.itemUseLock ||
+    input.centerLock ||
+    input.captureAttempt
+  )
+    throw new Error(
+      "La Party tiene una batalla u operación pendiente. Recupérala antes de usar Rare Candy.",
+    );
+  if (localBattleActive(input))
+    throw new Error("Rare Candy sólo puede usarse fuera de combate.");
+  const target = input.pokemons.find(
+    (capture) => capture.captureId === captureId,
+  );
+  if (!target || !isLeveled(target.pokemon))
+    throw new Error("Elige un Pokémon válido de tu equipo.");
+  if (target.pokemon.level >= 100)
+    throw new Error(
+      "Este Pokémon ya alcanzó el nivel 100. No se consumió Rare Candy.",
+    );
+  const pokemon = changeLevel(target.pokemon, target.pokemon.level + 1);
+  return {
+    ...input,
+    pokemons: input.pokemons.map((capture) =>
+      capture.captureId === captureId ? { ...capture, pokemon } : capture,
+    ),
+  };
 }
 
 /** A TM plan is persisted before any stock is debited. It never changes Bag. */

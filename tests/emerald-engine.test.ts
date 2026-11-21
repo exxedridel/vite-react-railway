@@ -529,7 +529,7 @@ test("physical capture preserves moves/level/primary status and clears engine/se
       (pokemon) => pokemon.captureId === old.captureId,
     )!;
     const expected = old.captureId === s.localBattleRewards?.defeats[0].winnerCaptureId
-      ? changeLevel(old.pokemon as ReturnType<typeof createLeveledPokemon>, old.pokemon.level! + 1)
+      ? changeLevel(old.pokemon as ReturnType<typeof createLeveledPokemon>, old.pokemon.level! + 2)
       : old.pokemon;
     assert.deepEqual(member.pokemon, {
       ...expected,

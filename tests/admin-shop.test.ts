@@ -46,7 +46,7 @@ test("purchase quantities reject fractions, zero, non-finite values and amounts 
   assert.equal(quoteShopPurchase(0, 0, 100), null);
 });
 
-test("display catalog includes PP recovery items at the agreed prices", () => {
+test("display catalog preserves existing prices and includes Max Revive and Rare Candy at 300 PD", () => {
   assert.deepEqual(
     SHOP_ITEMS.map(({ id, price }) => [id, price]),
     [
@@ -54,8 +54,10 @@ test("display catalog includes PP recovery items at the agreed prices", () => {
       ["great-ball", 300],
       ["ultra-ball", 450],
       ["full-restore", 350],
+      ["max-revive", 300],
       ["max-ether", 350],
       ["max-elixir", 700],
+      ["rare-candy", 300],
       ["tm", 500],
       ["bicycle", 1200],
     ],

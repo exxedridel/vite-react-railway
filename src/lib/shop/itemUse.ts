@@ -33,7 +33,7 @@ export function validItemUse(value: unknown): value is ItemUse {
         Number(item.moveId) <= 354
       : item.moveId === undefined) &&
     ["party", "local-battle"].includes(item.context) &&
-    (item.itemId !== "tm" || item.context === "party") &&
+    (!["tm", "rare-candy"].includes(item.itemId) || item.context === "party") &&
     (!(BALL_ITEM_IDS as readonly string[]).includes(item.itemId) ||
       item.context === "local-battle") &&
     (item.captureRevision === undefined ||
@@ -104,8 +104,8 @@ export function prepareItemUse(
     if ((party.bag.items?.[itemId] ?? 0) < 1)
       throw new Error("No tienes existencias de este objeto en tu Bag.");
     const context = localBattleActive(party) ? "local-battle" : "party";
-    if (itemId === "tm" && context !== "party")
-      throw new Error("Las TM sólo pueden usarse fuera de combate.");
+    if (["tm", "rare-candy"].includes(itemId) && context !== "party")
+      throw new Error("Este objeto sólo puede usarse fuera de combate.");
     const ball = (BALL_ITEM_IDS as readonly string[]).includes(itemId);
     if (ball && (context !== "local-battle" || party.opponent?.kind !== "wild"))
       throw new Error(

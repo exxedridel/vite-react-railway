@@ -1,5 +1,26 @@
 # Contexto de la trilogia Pokemon
 
+Etapa vigente 2026-11-20 React 2.21/Nest: KO/captura de rival igual o mayor +2,
+menor +1; nuevo evento levelRuleVersion:2, legacy sin marca mantiene >.
+Ledger mixto/reload sin reescribir prefijo/appliedCount/hash/ganancias antiguas.
+UI controles manuales propio/oponente/candidato comentados, nivel readonly;
+configuración inicial conservada y RareCandy +1 intacta. 225core47wallet11Party/
+7cuentas/TS/build/audit177 y ChromeRewards6/OpponentAuto3 PASS sinJSerrors/cleanup; Nest83PvP/
+build PASS. Ver Punto y BATTLE_REWARDS_PROTOCOL. Nest→React/recargar2.21,
+sinvars/MySQL/seed/reset/borrados/commit/push/despliegue. Preservar2.20previo;
+producción no verificada.
+
+Etapa vigente2026-11-20 React2.20/Nest: MaxRevive/RareCandy300PD/default/shop/gift/
+precioBO. MaxRevive4ºConsumable sóloKOHPfull/1turno, PPstatusstagesintactos/flags/
+pokemonLeft/cola permitenvolveracampo. CandyUsableonlyParty+1cap100/noopnoconsume/
+HPproporcional/KO0/PPstatusintactos; useRareCandy→prepareRareCandyPartypuro.
+BGcheckedefecto+unidad+outboxsinACK/guardlocks; newUIItemsbenchKO/Adminstockcentral.
+initlocalNUEVOseedsKOstatusHP1temporalparaimportpoisoncomoadmin, norewriteoldruntime
+nihash/planes/budget0.277Shop76PvP/buildNest;80core47wallet4catalog7accounts11Party/
+TS/build/audit177PASS, ChromeNewItems5+ShopCOMPLETOPASSsinJSerrors/cleanup. VerPunto/
+LOCAL_ITEM_SYNC/SHOP_PROTOCOL. Nest→React2.20sinvars/MySQL/seed/reset/borrados/
+commit/push/deploy, producciónnoverificada.
+
 Etapa vigente2026-11-20 React2.19/Nest: primerRivalLab250PD+1GreatBall(3variantes).
 NuevoTrainercreate rewardBundleVersion2; receiptv2labamount250/itemsGB1exactos,
 gymTMbadge/Champion6660/penaltyLab50intactos. Legacyv1/ausente500sinobjeto yhash/

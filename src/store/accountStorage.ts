@@ -459,7 +459,8 @@ export function decodeAccountParty(
             Number(lock.moveId) > 354
           : lock.moveId !== undefined) ||
         !["party", "local-battle"].includes(String(lock.context)) ||
-        (lock.itemId === "tm" && lock.context !== "party") ||
+        (["tm", "rare-candy"].includes(String(lock.itemId)) &&
+          lock.context !== "party") ||
         ((BALL_ITEM_IDS as readonly unknown[]).includes(lock.itemId) &&
           lock.context !== "local-battle") ||
         (lock.captureRevision !== undefined &&

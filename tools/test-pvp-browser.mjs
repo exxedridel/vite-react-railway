@@ -18,6 +18,7 @@ import { runLocalItemsBrowserScenario } from "./local-items-browser-scenarios.mj
 import { runBattleRewardsBrowserScenario } from "./battle-rewards-browser-scenarios.mjs";
 import { runCaptureThrowBrowserScenario } from "./capture-throw-browser-scenarios.mjs";
 import { runTrainerPenaltiesBrowserScenario } from "./trainer-penalties-browser-scenarios.mjs";
+import { runNewItemsBrowserScenario } from "./new-items-browser-scenarios.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const nestRoot = resolve(root, "../nest-mongo-pokedex");
@@ -858,7 +859,13 @@ try {
   const admin = await openAccount(ADMIN_EMAIL, frontendUrl);
   const playerA = await openAccount(PLAYER_EMAIL, frontendUrl);
   const playerB = await openAccount(OTHER_EMAIL, frontendUrl);
-  if (process.argv.includes("--penalties-only")) {
+  if (process.argv.includes("--new-items-only")) {
+    await runNewItemsBrowserScenario({
+      admin, playerA, cdp, evalArgs, waitArgs, field, clickButton,
+      seedPvpTeam, shopRepository, shopService: app.get(ShopService),
+      shopGateway: app.get(ShopGateway), pvpRepository,
+    });
+  } else if (process.argv.includes("--penalties-only")) {
     await runTrainerPenaltiesBrowserScenario({
       admin, playerA, playerB, cdp, evalArgs, waitArgs, field, clickButton,
       seedPvpTeam, partyState, frontendUrl, backendUrl, shopRepository,

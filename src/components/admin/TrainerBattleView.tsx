@@ -15,6 +15,7 @@ import BattleTurnHighlightsDialog from "@/components/pokemon/BattleTurnHighlight
 import TrainerBattleArena from "./TrainerBattleArena";
 import TrainerPpItems from "./TrainerPpItems";
 import type { ConsumableItemId } from "@/lib/shop/types";
+import TrainerMaxReviveItem from "./TrainerMaxReviveItem";
 import {
   chooseTrainerAction,
   cancelTrainerAction,
@@ -337,6 +338,15 @@ function TrainerControls({
                       </Button>
                     </div>
                   )}
+                  <TrainerMaxReviveItem
+                    team={team}
+                    side={side}
+                    stock={consumableStock?.["max-revive"] ?? 0}
+                    disabled={
+                      !canChoose || request.forceSwitch || request.locked
+                    }
+                    onChoose={chooseAction}
+                  />
                   <TrainerPpItems
                     team={team}
                     stock={consumableStock}

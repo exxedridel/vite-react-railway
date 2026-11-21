@@ -250,9 +250,18 @@ export async function runOpponentAutoBrowserScenario({
     await evalArgs(playerA, () => document.querySelector(
       'button[aria-label="Buscar oponente"]',
     ).click());
-    await waitArgs(playerA, () => !!document.querySelector("#candidate-level"),
+    await waitArgs(playerA, () => !!document.querySelector('[data-testid="candidate-level-readonly"]'),
       "real UI loads deterministic local PokeAPI candidate");
-    await field(playerA, "#candidate-level", "5");
+    assert.equal(await evalArgs(playerA, () => document.querySelector("#candidate-level")), null,
+      "encounter level cannot be changed manually");
+    const initialLevel = await evalArgs(playerA, async () => {
+      const [{ store }, { gameBalance }] = await Promise.all([
+        import("/src/store/store.ts"), import("/src/lib/gameSettings.ts"),
+      ]);
+      return gameBalance(store.getState().party.gameSettings).startingLevel;
+    });
+    assert.equal((await evalArgs(playerA, () => document.querySelector('[data-testid="candidate-level-readonly"]').textContent)).trim(),
+      `Nivel del encuentro: ${initialLevel}`, "the candidate keeps the configured initial level");
     if (holdWallet) {
       await evalArgs(playerA, async () => {
         const { transactPvpParty } = await import("/src/store/store.ts");

@@ -19,7 +19,8 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
-import { Minus, Plus, X } from "lucide-react";
+import { X } from "lucide-react";
+// Manual level controls are kept below for reference: import { Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -41,7 +42,7 @@ import { store } from "@/store/store";
 import {
   activateBattlePokemon,
   confirmBattleSwitch,
-  setPokemonLevel,
+  // setPokemonLevel, // Manual level editing is hidden.
   setBattleOpponent,
 } from "@/slices/partySlice";
 type Props = {
@@ -258,6 +259,7 @@ function BattleDialogContent({ captureId, onClose }: Props) {
   const { pokemon } = capturedPokemon;
   const presence = getBattlePresence(opponent);
   const currentLevel = pokemon.level ?? 50;
+  /* Manual level editing is hidden; progression uses battle rewards and Rare Candy.
   const canEditLevel = pokemon.progressionVersion === 1;
   const handleChangeLevel = (amount: number) => {
     const latest = store
@@ -268,6 +270,7 @@ function BattleDialogContent({ captureId, onClose }: Props) {
     if (!Number.isSafeInteger(level) || level < 1) return;
     dispatch(setPokemonLevel({ captureId: latest.captureId, level }));
   };
+  */
   return (
     <Dialog
       open
@@ -317,11 +320,13 @@ function BattleDialogContent({ captureId, onClose }: Props) {
                   className="inline-flex shrink-0 items-center gap-1 rounded-full border bg-muted/50 p-1"
                 >
                   <span
+                    data-testid="own-level-readonly"
                     className="px-2 text-sm font-semibold tabular-nums"
                     aria-live="polite"
                   >
                     Lv. {currentLevel}
                   </span>
+                  {/* Manual level controls are hidden.
                   <Button
                     type="button"
                     variant="ghost"
@@ -346,6 +351,7 @@ function BattleDialogContent({ captureId, onClose }: Props) {
                   >
                     <Plus className="h-3.5 w-3.5" />
                   </Button>
+                  */}
                 </div>
               </div>
               <DialogDescription className="sr-only">

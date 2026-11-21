@@ -10,7 +10,7 @@ import { runPlayerActionWithAutomaticOpponent } from "../src/lib/opponentAutomat
 import { emptyBattleField } from "../src/lib/battleField";
 import { prepareAutomaticBallCaptureParty } from "../src/lib/shop/ballCapture";
 import { combatKey } from "../src/lib/emerald/types";
-import { victoryLevels, rewardedLevel, recordLocalDefeats, finishLocalBattleRewards, validLocalBattleRewards, validCombatRewardLedger } from "../src/lib/battleRewards";
+import { victoryLevels, rewardedLevel, recordLocalDefeats, finishLocalBattleRewards, validLocalBattleRewards, validCombatRewardLedger, validCombatDefeatReward } from "../src/lib/battleRewards";
 import reducer, { changePokemonHp, commitEmeraldAction, executePokemonMove, setBattleOpponent, type PartyState } from "../src/slices/partySlice";
 import { battleContextKey } from "../src/lib/battleEngine";
 import type { CapturedPokemon } from "../src/types/pokemon";
@@ -140,10 +140,25 @@ test("wild, legacy and drawn encounters never acquire a penalty from HP edits or
 
 test("victory rewards compare levels and cap the result at 100", () => {
   assert.equal(victoryLevels(20, 19), 1);
-  assert.equal(victoryLevels(20, 20), 1);
+  assert.equal(victoryLevels(20, 20), 2);
   assert.equal(victoryLevels(20, 21), 2);
   assert.equal(rewardedLevel(99, 2), 100);
   assert.equal(rewardedLevel(100, 2), 100);
+  assert.equal(victoryLevels(20, 20, 1), 1, "the saved, unmarked rule still uses strict higher");
+});
+test("defeat events preserve the old rule and validate the new equal-level rule independently", () => {
+  const oldEvent = { id: "old-equal", winnerSide: "a" as const, winnerCaptureId: "own", defeatedSide: "b" as const,
+    defeatedCaptureId: "opponent", winnerLevel: 20, defeatedLevel: 20, levels: 1 as const };
+  const oldBytes = JSON.stringify(oldEvent);
+  assert(validCombatDefeatReward(oldEvent));
+  assert(validCombatDefeatReward({ ...oldEvent, levelRuleVersion: 2, levels: 2 }));
+  assert.equal(validCombatDefeatReward({ ...oldEvent, levels: 2 }), false);
+  assert.equal(validCombatDefeatReward({ ...oldEvent, levelRuleVersion: 2 }), false);
+  for (const levelRuleVersion of [null, 1, 3, "2"])
+    assert.equal(validCombatDefeatReward({ ...oldEvent, levelRuleVersion }), false);
+  assert(validCombatRewardLedger({ version: 1, defeats: [oldEvent,
+    { ...oldEvent, id: "new-equal", levelRuleVersion: 2, levels: 2 }] }));
+  assert.equal(JSON.stringify(oldEvent), oldBytes, "validation must not normalize legacy payloads");
 });
 for (const foeLevel of [19, 20, 21]) test(`native local victory against level ${foeLevel} earns its levels only with the final checked turn`, () => {
   const before = local(20, foeLevel);
@@ -157,6 +172,7 @@ for (const foeLevel of [19, 20, 21]) test(`native local victory against level ${
   assert.equal(getCurrentHp(result.party.pokemons[0].pokemon), getCurrentHp(expected));
   assert.equal(result.party.pokemons[0].moves![0].currentPp, 4);
   assert.equal(result.party.localBattleRewards!.appliedCount, 1);
+  assert.equal(result.party.localBattleRewards!.defeats[0].levelRuleVersion, 2);
   assert(validLocalBattleRewards(result.party.localBattleRewards));
   assert.deepEqual(reducer(result.party, commitEmeraldAction({ expected: combatKey(before), update: result.update, id: "reward-turn" })), result.party);
 });
@@ -181,24 +197,45 @@ test("saved reward ledger does not apply the same event twice or revive a fainte
   finishLocalBattleRewards(restored);
   assert.deepEqual(restored, party);
 });
+for (const appliedCount of [0, 1]) test(`mixed legacy/new local ledger preserves its applied prefix (${appliedCount}) across reload`, () => {
+  const party = local(20 + appliedCount, 20 + appliedCount);
+  const oldEvent = { id: "old-equal", winnerSide: "a" as const, winnerCaptureId: "own", defeatedSide: "b" as const,
+    defeatedCaptureId: "opponent", winnerLevel: 20, defeatedLevel: 20, levels: 1 as const };
+  party.localBattleRewards = { version: 1, encounterId: party.opponent!.encounterId!, appliedCount, defeats: [oldEvent] };
+  const prefix = JSON.stringify(party.localBattleRewards.defeats);
+  const restored = clone(party);
+  const newEvent = { ...oldEvent, id: "new-equal", winnerLevel: 20 + appliedCount, defeatedLevel: 20 + appliedCount,
+    levelRuleVersion: 2 as const, levels: 2 as const };
+  recordLocalDefeats(restored, [oldEvent, newEvent]);
+  assert.equal(JSON.stringify(restored.localBattleRewards!.defeats.slice(0, 1)), prefix);
+  assert(validLocalBattleRewards(restored.localBattleRewards));
+  finishLocalBattleRewards(restored);
+  assert.equal(restored.pokemons[0].pokemon.level, 23);
+  assert.equal(restored.localBattleRewards!.appliedCount, 2);
+  const saved = clone(restored);
+  recordLocalDefeats(saved, [oldEvent, newEvent]);
+  finishLocalBattleRewards(saved);
+  assert.deepEqual(saved, restored, "neither an old applied event nor a new event repeats after reload");
+});
 test("invalid or duplicate ledger events are rejected", () => {
   assert.equal(validLocalBattleRewards({ version: 1, encounterId: "x", defeats: [], appliedCount: 1 }), false);
   assert.equal(validCombatRewardLedger({ version: 1, defeats: [{ id: "x" }] }), false);
 });
-test("wild capture rewards the selected active Pokemon and preserves the captured level", async () => {
-  const party = local(20, 21, true);
+for (const foeLevel of [19, 20, 21]) test(`wild level ${foeLevel} capture rewards the selected active Pokemon and preserves the captured level`, async () => {
+  const party = local(20, foeLevel, true);
   party.pokemons.unshift(member("bench", 70));
   const result = await prepareAutomaticBallCaptureParty(party, "own", "great-ball",
     { userId: 2, clientId: "reward-browser", requestId: "reward-capture" }, seed, "captured", undefined,
     { captureDifficulty: 0, captureRevision: 0 }, () => 20);
   assert.equal(result.lastCaptureResult!.outcome, "caught");
-  assert.equal(result.pokemons.find((capture) => capture.captureId === "own")!.pokemon.level, 22);
+  assert.equal(result.pokemons.find((capture) => capture.captureId === "own")!.pokemon.level, 20 + victoryLevels(20, foeLevel));
   assert.equal(result.pokemons.find((capture) => capture.captureId === "bench")!.pokemon.level, 70);
-  assert.equal(result.pokemons.find((capture) => capture.captureId === "captured")!.pokemon.level, 21);
+  assert.equal(result.pokemons.find((capture) => capture.captureId === "captured")!.pokemon.level, foeLevel);
   assert.equal(result.localBattleRewards!.appliedCount, 1);
+  assert.equal(result.localBattleRewards!.defeats[0].levelRuleVersion, 2);
 });
 test("legacy trainer move KO also awards the actual attacker without a native runtime", () => {
-  const party = local(20, 21);
+  const party = local(20, 20);
   delete party.opponent!.automation;
   const action = executePokemonMove({ captureId: "own", moveId: 94, commandId: "legacy-reward", conditionsConfirmed: true,
     expectedContext: battleContextKey(party.pokemons[0], party.opponent!, party.battleField) });
@@ -206,6 +243,7 @@ test("legacy trainer move KO also awards the actual attacker without a native ru
   const next = reducer(party, action);
   assert.equal(getCurrentHp(next.opponent!.pokemon), 0);
   assert.equal(next.pokemons[0].pokemon.level, 22);
+  assert.equal(next.localBattleRewards!.defeats[0].levelRuleVersion, 2);
   assert.deepEqual(reducer(next, action), next);
 });
 test("admin KO ledger freezes levels during battle and emits rewarded final patches", () => {
@@ -221,6 +259,25 @@ test("admin KO ledger freezes levels during battle and emits rewarded final patc
   assert.equal(pvpTeamPatches(session, "a")[0].hp, getCurrentHp(changeLevel(own.pokemon as ReturnType<typeof createLeveledPokemon>, 22)));
   assert(validTrainerBattleSession(session));
 });
+test("a reloaded admin battle appends the new reward rule without rewriting an older equal-level KO", () => {
+  const first = member("first", 20, 35, [150]); hurt(first, 1);
+  const second = member("second", 20, 35, [150]); hurt(second, 1);
+  let session = turn(startTrainerBattle(setup([member("own", 20)], [first, second]), seed), { kind: "move", moveId: 94 });
+  const oldEvent = session.rewards!.defeats[0];
+  delete oldEvent.levelRuleVersion;
+  oldEvent.levels = 1;
+  const prefix = JSON.stringify(oldEvent);
+  assert(validTrainerBattleSession(session), "saved sessions keep their original equal-level one-level reward");
+  session = chooseTrainerAction(clone(session), "b", { kind: "switch", captureId: "second" });
+  session = turn(clone(session), { kind: "move", moveId: 94 });
+  assert.equal(session.phase, "finished");
+  assert.equal(JSON.stringify(session.rewards!.defeats[0]), prefix);
+  assert.equal(session.rewards!.defeats[1].levelRuleVersion, 2);
+  assert.equal(session.rewards!.defeats[1].levels, 2);
+  assert.equal(pvpTeamPatches(session, "a")[0].level, 23);
+  assert(validTrainerBattleSession(session));
+  assert.deepEqual(pvpTeamPatches(clone(session), "a"), pvpTeamPatches(session, "a"));
+});
 test("forfeit gives no fictional KO reward, and old sessions keep legacy result patches", () => {
   const session = forfeitTrainerBattle(startTrainerBattle(setup([member("own")], [member("other")]), seed), "b");
   assert.equal(session.rewards, undefined);
@@ -234,7 +291,7 @@ test("Future Sight credits its original switched-out attacker", () => {
   session = turn(clone(session));
   assert.equal(session.phase, "finished");
   assert.equal(session.rewards!.defeats[0].winnerCaptureId, "source");
-  assert.equal(session.rewards!.defeats[0].levels, 1);
+  assert.equal(session.rewards!.defeats[0].levels, 2);
   assert.equal(pvpTeamPatches(session, "a").find((patch) => patch.captureId === "reserve")!.level, undefined);
 });
 test("Toxic residual defeat credits the original status source after switching", () => {
@@ -266,7 +323,7 @@ test("a fainted Future Sight source receives its earned levels while remaining f
   const sourceReward = session.rewards!.defeats.find((reward) => reward.winnerCaptureId === "source")!;
   assert(sourceReward);
   const patch = pvpTeamPatches(session, "a").find((entry) => entry.captureId === "source")!;
-  assert.equal(patch.level, 51);
+  assert.equal(patch.level, 52);
   assert.equal(patch.hp, 0);
 });
 test("Explosion and double KO preserve the reward event for each side", () => {
@@ -343,12 +400,12 @@ test("immediate double KO rewards both human sides without reviving or charging 
   const target = member("target", 20, 35, [150]); hurt(target, 1);
   const session = turn(startTrainerBattle(immediateSetup([source], [target], ["a", "b"]), seed), { kind: "move", moveId: 153 });
   assert.equal(session.phase, "finished");
-  assert.equal(session.teams.a.pokemons[0].pokemon.level, 21);
-  assert.equal(session.teams.b.pokemons[0].pokemon.level, 21);
+  assert.equal(session.teams.a.pokemons[0].pokemon.level, 22);
+  assert.equal(session.teams.b.pokemons[0].pokemon.level, 22);
   assert.equal(getCurrentHp(session.teams.a.pokemons[0].pokemon), 0);
   assert.equal(getCurrentHp(session.teams.b.pokemons[0].pokemon), 0);
-  assert.equal(pvpTeamPatches(session, "a")[0].level, 21);
-  assert.equal(pvpTeamPatches(session, "b")[0].level, 21);
+  assert.equal(pvpTeamPatches(session, "a")[0].level, 22);
+  assert.equal(pvpTeamPatches(session, "b")[0].level, 22);
   assert.equal(session.teams.a.pokemons[0].moves![0].currentPp, 4);
   assert.equal(session.rewards!.appliedCount, 2);
 });
@@ -360,7 +417,7 @@ test("an immediate Hyper Beam KO preserves mandatory recharge and spent PP acros
   let deferred = turn(startTrainerBattle(setup([clone(source)], [clone(first), clone(second)]), seed), { kind: "move", moveId: 63 });
   assert.deepEqual(JSON.parse(session.runtime!.engine).prng, JSON.parse(deferred.runtime!.engine).prng,
     "applying levels after the same native KO draws no extra randomness");
-  assert.equal(session.teams.a.pokemons[0].pokemon.level, 51);
+  assert.equal(session.teams.a.pokemons[0].pokemon.level, 52);
   assert.equal(session.teams.a.pokemons[0].moves![0].currentPp, 4);
   let sim = Battle.fromJSON(session.runtime!.engine);
   assert(sim.p1.active[0].volatiles.mustrecharge);
@@ -369,7 +426,7 @@ test("an immediate Hyper Beam KO preserves mandatory recharge and spent PP acros
   assert.equal(session.runtime!.requests.a.locked, true);
   session = chooseTrainerAction(clone(session), "b", { kind: "move", moveId: 150 });
   deferred = chooseTrainerAction(clone(deferred), "b", { kind: "move", moveId: 150 });
-  assert.equal(session.teams.a.pokemons[0].pokemon.level, 51);
+  assert.equal(session.teams.a.pokemons[0].pokemon.level, 52);
   assert.equal(session.teams.a.pokemons[0].moves![0].currentPp, 4);
   assert.equal(session.rewards!.defeats.length, 1);
   sim = Battle.fromJSON(session.runtime!.engine);
@@ -386,10 +443,10 @@ test("immediate Future Sight rewards its fainted original source, preserving the
   assert.equal(session.teams.b.pokemons[0].pokemon.level, 50);
   session = chooseTrainerAction(clone(session), "a", { kind: "switch", captureId: "reserve" });
   for (let i = 0; i < 3 && session.phase !== "finished"; i++) session = turn(clone(session));
-  assert.equal(session.teams.a.pokemons[0].pokemon.level, 51);
+  assert.equal(session.teams.a.pokemons[0].pokemon.level, 52);
   assert.equal(getCurrentHp(session.teams.a.pokemons[0].pokemon), 0);
   assert.equal(session.teams.a.pokemons[1].pokemon.level, 50);
-  assert.equal(pvpTeamPatches(session, "a")[0].level, 51);
+  assert.equal(pvpTeamPatches(session, "a")[0].level, 52);
   assert.equal(pvpTeamPatches(session, "a")[0].hp, 0);
   assert(validTrainerBattleSession(session));
 });

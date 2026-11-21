@@ -56,6 +56,8 @@ export function commitLocalItemUse(input: {
     const stock = party.bag?.items?.[input.itemId] ?? 0;
     if (stock < 1)
       throw new Error("No tienes existencias de este objeto en tu Bag.");
+    if (input.itemId === "rare-candy" && localBattleActive(party))
+      throw new Error("Rare Candy sólo puede usarse fuera de combate.");
     const next = await input.plan(party);
     if (
       JSON.stringify(next.bag?.items ?? {}) !==

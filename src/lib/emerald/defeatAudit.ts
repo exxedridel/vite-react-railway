@@ -31,6 +31,7 @@ export function installDefeatAudit(
       const winner = author ? member(author) : undefined;
       if (winner && defeated && winner.side !== defeated.side)
         defeats.push({
+          levelRuleVersion: 2,
           id: `${eventPrefix}:ko:${defeats.length}`,
           winnerSide: winner.side, winnerCaptureId: winner.captureId,
           defeatedSide: defeated.side, defeatedCaptureId: defeated.captureId,

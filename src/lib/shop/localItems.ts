@@ -55,6 +55,7 @@ export function validLocalItemOutbox(value: unknown): value is LocalItemOutbox {
       op.quantity !== 1 ||
       !USABLE_ITEM_IDS.includes(op.itemId as LocalItemDebit["itemId"]) ||
       !["party", "local-battle"].includes(String(op.context)) ||
+      (op.itemId === "rare-candy" && op.context !== "party") ||
       (op.itemId === "max-ether" || op.itemId === "tm"
         ? !Number.isSafeInteger(op.moveId) ||
           Number(op.moveId) < 1 ||

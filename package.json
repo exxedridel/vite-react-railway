@@ -1,6 +1,6 @@
 {
   "name": "pokemon-master-trainer",
-  "version": "2.19.0",
+  "version": "2.21.0",
   "type": "module",
   "scripts": {
     "test:capture-throw": "node --import tsx --test tests/aimed-capture.test.ts tests/automatic-capture.test.ts tests/capture-turn.test.ts",
@@ -30,6 +30,8 @@
     "test:future-sight": "node --import tsx --test tests/future-sight-native.test.ts tests/legacy-delayed-attacks.test.ts tests/npc-delayed-moves.test.ts",
     "test:shop:wallet": "node tools/test-account-storage.mjs --shop",
     "test:shop:ui": "node --import tsx --test tests/admin-shop.test.ts",
+    "test:new-items": "node --import tsx --test tests/revive-candy.test.ts tests/admin-shop.test.ts",
+    "test:new-items:browser": "node tools/test-pvp-browser.mjs --new-items-only",
     "test:pp": "node --import tsx --test tests/move-pp-items.test.ts tests/legacy-pp.test.ts tests/pvp-engine.test.ts",
     "test:tm": "node --import tsx --test tests/tm-plan.test.ts && node tools/test-account-storage.mjs --shop",
     "test:shop:browser": "node tools/test-pvp-browser.mjs --shop-only",

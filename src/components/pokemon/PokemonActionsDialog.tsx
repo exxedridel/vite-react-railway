@@ -18,6 +18,7 @@ import { isLocalPartyMutationBlocked } from "@/store/accountStorage";
 import { localBattleActive } from "@/lib/shop/wallet";
 import type { CapturedPokemon } from "@/types/pokemon";
 import PpRestoreControls from "./PpRestoreControls";
+import PokemonConsumableControl from "./PokemonConsumableControl";
 
 type Props = {
   capturedPokemon: CapturedPokemon;
@@ -209,11 +210,25 @@ export default function PokemonActionsDialog({
                 </Button>
               )}
             </div>
+            <PokemonConsumableControl
+              itemId="max-revive"
+              captureId={captureId}
+              disabled={!ready || restoring}
+              onBusyChange={setRestoring}
+              onUsed={() => onOpenChange(false)}
+            />
             <PpRestoreControls
               captureId={captureId}
               disabled={!ready || restoring}
               onUsed={() => onOpenChange(false)}
               onBusyChange={setRestoring}
+            />
+            <PokemonConsumableControl
+              itemId="rare-candy"
+              captureId={captureId}
+              disabled={!ready || restoring}
+              onBusyChange={setRestoring}
+              onUsed={() => onOpenChange(false)}
             />
             <div className="space-y-2 rounded-xl border p-3">
               <Button

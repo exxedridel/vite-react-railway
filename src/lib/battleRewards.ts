@@ -6,6 +6,8 @@ export type RewardSide = "a" | "b";
 /** One actual defeat, rather than a comparison of the HP at the end of a turn.
  * The same victim can earn another event after it has genuinely been revived. */
 export type CombatDefeatReward = {
+  /** Missing on saved events: preserve their original strict-higher rule. */
+  levelRuleVersion?: 2;
   id: string;
   winnerSide: RewardSide;
   winnerCaptureId: string;
@@ -29,8 +31,8 @@ export type LocalBattleRewardLedger = CombatRewardLedger & {
 };
 export type LocalBattleOutcome = "win" | "lose" | "draw" | "escape";
 
-export function victoryLevels(winnerLevel: number, defeatedLevel: number): 1 | 2 {
-  return defeatedLevel > winnerLevel ? 2 : 1;
+export function victoryLevels(winnerLevel: number, defeatedLevel: number, rule: 1 | 2 = 2): 1 | 2 {
+  return defeatedLevel > winnerLevel || (rule === 2 && defeatedLevel === winnerLevel) ? 2 : 1;
 }
 export function rewardedLevel(level: number, levels: number): number {
   return Math.min(100, level + levels);
@@ -45,7 +47,8 @@ export function validCombatDefeatReward(value: unknown): value is CombatDefeatRe
     typeof reward.defeatedCaptureId === "string" && !!reward.defeatedCaptureId && reward.defeatedCaptureId.length <= 128 &&
     Number.isSafeInteger(reward.winnerLevel) && reward.winnerLevel >= 1 && reward.winnerLevel <= 100 &&
     Number.isSafeInteger(reward.defeatedLevel) && reward.defeatedLevel >= 1 && reward.defeatedLevel <= 100 &&
-    reward.levels === victoryLevels(reward.winnerLevel, reward.defeatedLevel);
+    (reward.levelRuleVersion === undefined || reward.levelRuleVersion === 2) &&
+    reward.levels === victoryLevels(reward.winnerLevel, reward.defeatedLevel, reward.levelRuleVersion ?? 1);
 }
 export function validCombatRewardLedger(value: unknown): value is CombatRewardLedger {
   if (!value || typeof value !== "object") return false;
@@ -112,6 +115,7 @@ export function recordLocalOpponentDefeat(party: PartyState, winnerCaptureId: st
   const opponent = party.opponent;
   if (!winner || !opponent || !isLeveled(winner.pokemon) || !isLeveled(opponent.pokemon)) return;
   recordLocalDefeats(party, [{
+    levelRuleVersion: 2,
     id: eventId,
     winnerSide: "a", winnerCaptureId,
     defeatedSide: "b", defeatedCaptureId: "opponent",

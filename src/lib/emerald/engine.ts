@@ -223,6 +223,7 @@ export function emeraldItemNeeded(
 ): boolean {
   if (item === "full-restore")
     return moveId === undefined && emeraldFullRestoreNeeded(target);
+  if (item === "max-revive") return moveId === undefined && target.hp <= 0;
   return ppItemSlots(target, item, moveId).some((slot) => slot.pp < slot.maxpp);
 }
 export function applyEmeraldItem(
@@ -236,6 +237,29 @@ export function applyEmeraldItem(
   if (!emeraldItemNeeded(target, item, moveId)) return false;
   if (item === "full-restore")
     return applyEmeraldFullRestore(battle, target, trainerName, targetName);
+  if (item === "max-revive") {
+    // A revived reserve must be switchable and count as alive in the native
+    // engine as well as on the board. No PP, boosts or status cures are granted.
+    target.hp = target.maxhp;
+    target.fainted = false;
+    target.faintQueued = false;
+    target.subFainted = false;
+    for (let index = battle.faintQueue.length - 1; index >= 0; index--)
+      if (battle.faintQueue[index].target === target)
+        battle.faintQueue.splice(index, 1);
+    target.side.pokemonLeft = target.side.pokemon.filter(
+      (pokemon) => pokemon.hp > 0 && !pokemon.fainted,
+    ).length;
+    battle.add("message", `${trainerName} usó Max Revive en ${targetName}.`);
+    battle.add(
+      "-heal",
+      target,
+      `${target.hp}/${target.maxhp}`,
+      "[from] item: Max Revive",
+    );
+    battle.add("boardend");
+    return true;
+  }
   const slots = ppItemSlots(target, item, moveId);
   for (const slot of slots) slot.pp = slot.maxpp;
   const label = item === "max-ether" ? "Max Ether" : "Max Elixir";
@@ -408,7 +432,9 @@ function syncStatus(
             foe,
             dex.getActiveMove(effect === "partiallytrapped" ? "bind" : effect),
           );
-          const imported = p.volatiles[effect] as SimPokemon["statusState"] | undefined;
+          const imported = p.volatiles[effect] as
+            | SimPokemon["statusState"]
+            | undefined;
           if (imported) imported.boardRewardSourceUnknown = true;
         }
       } else if (p.volatiles[effect]) p.removeVolatile(effect);
@@ -489,7 +515,19 @@ function initialise(
     const c = team.find((c) => c.captureId === p.set.name)!;
     applyStats(p, c.pokemon);
     applyStages(p, c.pokemon.battleStages);
+    // Seed saved conditions while the reserve can receive native status. A
+    // fainted import must retain its primary condition when Max Revive heals
+    // only HP, just as in the administrative trainer adapter.
+    const fainted = p.hp === 0;
+    if (fainted) {
+      p.hp = 1;
+      p.fainted = false;
+    }
     syncStatus(p, c, undefined, b.p2.active[0]);
+    if (fainted) {
+      p.hp = 0;
+      p.fainted = true;
+    }
   }
   applyStats(b.p2.active[0], state.opponent.pokemon);
   applyStages(b.p2.active[0], state.opponent.stages);
@@ -1117,18 +1155,22 @@ export function runEmeraldAction(
     }
   }
   let escaped = false;
-  const defeatAudit = installDefeatAudit(b, `${id}:${existing?.serial ?? 0}`, (pokemon) => {
-    const player = pokemon.side.id === "p1";
-    const capture = player
-      ? state.pokemons.find((entry) => entry.captureId === pokemon.set.name)
-      : state.opponent;
-    if (!capture) return undefined;
-    return {
-      side: player ? "a" : "b",
-      captureId: player ? pokemon.set.name : "opponent",
-      level: capture.pokemon.level ?? 5,
-    };
-  });
+  const defeatAudit = installDefeatAudit(
+    b,
+    `${id}:${existing?.serial ?? 0}`,
+    (pokemon) => {
+      const player = pokemon.side.id === "p1";
+      const capture = player
+        ? state.pokemons.find((entry) => entry.captureId === pokemon.set.name)
+        : state.opponent;
+      if (!capture) return undefined;
+      return {
+        side: player ? "a" : "b",
+        captureId: player ? pokemon.set.name : "opponent",
+        level: capture.pokemon.level ?? 5,
+      };
+    },
+  );
   if (b.allChoicesDone()) {
     // Showdown models trainer battles. Adapt the three escape moves for a wild
     // single encounter; all accuracy, action-blocking and PP still run natively.
@@ -1273,9 +1315,17 @@ export function runEmeraldAction(
   return {
     ...state,
     ...(defeatAudit.defeats.length ? { defeats: defeatAudit.defeats } : {}),
-    ...(b.ended ? {
-      battleOutcome: escaped ? "escape" as const : b.winner === b.p1.name ? "win" as const : b.winner === b.p2.name ? "lose" as const : "draw" as const,
-    } : {}),
+    ...(b.ended
+      ? {
+          battleOutcome: escaped
+            ? ("escape" as const)
+            : b.winner === b.p1.name
+              ? ("win" as const)
+              : b.winner === b.p2.name
+                ? ("lose" as const)
+                : ("draw" as const),
+        }
+      : {}),
     results,
     events,
     highlights,

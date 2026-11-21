@@ -139,6 +139,7 @@ type ShopContextValue = {
   sync: () => Promise<void>;
   restartGame: () => Promise<void>;
   useFullRestore: (captureId: string) => Promise<void>;
+  useRareCandy: (captureId: string) => Promise<void>;
   throwBall: (
     ballId: BallItemId,
     quote?: CaptureQuote,
@@ -334,6 +335,10 @@ export default function ShopProvider({
   );
   const useFullRestore = useCallback(
     (captureId: string) => useItemRef.current("full-restore", captureId),
+    [],
+  );
+  const useRareCandy = useCallback(
+    (captureId: string) => useItemRef.current("rare-candy", captureId),
     [],
   );
   const throwBall = useCallback(
@@ -1529,7 +1534,8 @@ export default function ShopProvider({
         // once against its latest state and persisted before any server debit.
         const planner = await import("@/lib/fullRestorePlan");
         const ball = (BALL_ITEM_IDS as readonly string[]).includes(itemId);
-        if (itemId !== "tm") await planner.loadFullRestoreEngine();
+        if (itemId !== "tm" && itemId !== "rare-candy")
+          await planner.loadFullRestoreEngine();
         const capturePlanner = ball
           ? await import("@/lib/shop/ballCapture")
           : null;
@@ -1575,6 +1581,8 @@ export default function ShopProvider({
                 throwHit,
               );
             }
+            if (itemId === "rare-candy")
+              return planner.prepareRareCandyParty(party, captureId);
             if (itemId === "tm") {
               if (!learning || learning.move.id !== moveId)
                 throw new Error(
@@ -2195,6 +2203,7 @@ export default function ShopProvider({
         sync,
         restartGame,
         useFullRestore,
+        useRareCandy,
         throwBall,
         useTm,
         useItem,
