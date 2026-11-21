@@ -5,6 +5,7 @@ import {
   pvpPartyRevision,
 } from "@/store/accountStorage";
 import { localBattleActive } from "@/lib/shop/wallet";
+import { hasLivingHp } from "@/lib/pokemonCondition";
 import {
   USABLE_ITEM_IDS,
   type LocalItemDebit,
@@ -56,6 +57,13 @@ export function commitLocalItemUse(input: {
     const stock = party.bag?.items?.[input.itemId] ?? 0;
     if (stock < 1)
       throw new Error("No tienes existencias de este objeto en tu Bag.");
+    if (
+      input.itemId === "full-restore" &&
+      !hasLivingHp(
+        party.pokemons.find((capture) => capture.captureId === input.captureId)?.pokemon,
+      )
+    )
+      throw new Error("Full Restore no revive Pokémon debilitados. Usa Max Revive.");
     if (input.itemId === "rare-candy" && localBattleActive(party))
       throw new Error("Rare Candy sólo puede usarse fuera de combate.");
     const next = await input.plan(party);

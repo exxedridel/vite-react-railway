@@ -9,9 +9,11 @@ import reducer, {
   finishBattleTurn,
   type PartyState,
 } from "../src/slices/partySlice";
-import { prepareFullRestoreParty } from "../src/lib/fullRestorePlan";
+import { needsFullRestore, prepareFullRestoreParty, preparePartyItem } from "../src/lib/fullRestorePlan";
 import {
   emeraldMoves,
+  emeraldFullRestoreNeeded,
+  applyEmeraldFullRestore,
   cancelEmeraldChoice,
   runEmeraldAction,
 } from "../src/lib/emerald/engine";
@@ -121,7 +123,7 @@ function makeStore(party: PartyState) {
 test("pure Full Restore heals and clears conditions/stages while preserving the rest of the team", () => {
   const initial = fixture(),
     target = initial.pokemons[0];
-  target.pokemon.stats[0].value = 0;
+  target.pokemon.stats[0].value = 1;
   target.statuses = STATUS_OPTIONS.map((s) => s.id);
   target.statusTurns = { confused: 2, asleep: 3 };
   target.pokemon.battleStages = {
@@ -145,6 +147,56 @@ test("pure Full Restore heals and clears conditions/stages while preserving the 
   assert.deepEqual(restored.pokemons[1], initial.pokemons[1]);
   assert.deepEqual(restored.bag, initial.bag);
   assert.equal(restored.activityHistory?.[0].captureId, "own");
+});
+
+for (const mode of ["party", "legacy", "native", "automatic"] as const)
+  test(`Full Restore rejects a fainted reserve in ${mode} without changing HP, status, PP, Bag or action state; Max Revive still works`, async () => {
+    const initial = fixture();
+    initial.bag = { ...initial.bag!, items: { "full-restore": 2, "max-revive": 1 } };
+    initial.pokemons[1].pokemon.stats[0].value = 0;
+    initial.pokemons[1].statuses = ["poisoned"];
+    initial.pokemons[1].statusTurns = { confused: 3 };
+    initial.pokemons[1].pokemon.battleStages!.attack = -2;
+    initial.pokemons[1].moves![0].currentPp = 0;
+    if (mode === "party") initial.opponent = null;
+    if (mode === "legacy") initial.opponent!.kind = "trainer";
+    if (mode === "automatic") initial.opponent!.automation = { enabled: true, catalogRevision: 0 };
+    const original = JSON.stringify(initial);
+    assert.equal(needsFullRestore(initial, "bench"), false);
+    assert.deepEqual(applyFullRestoreToParty(initial, "bench"), initial);
+    await assert.rejects(prepareFullRestoreParty(initial, "bench"), /Full Restore|efecto|debilitad/i);
+    assert.equal(JSON.stringify(initial), original, "rejection cannot add a native choice, item intent or consumed turn");
+    const revived = await preparePartyItem(initial, "bench", "max-revive");
+    if (mode === "native") {
+      const resolved = choose(revived, "opponent", 150);
+      assert.equal(getCurrentHp(resolved.pokemons[1].pokemon), getMaxHp(resolved.pokemons[1].pokemon));
+      assert.equal(resolved.battleField!.turn, 2);
+    } else {
+      assert.equal(getCurrentHp(revived.pokemons[1].pokemon), getMaxHp(revived.pokemons[1].pokemon));
+    }
+    assert.deepEqual(revived.bag, initial.bag, "pure plans leave inventory consumption to the existing coordinator");
+    assert.equal(revived.pokemons[1].moves![0].currentPp, 0);
+    assert.deepEqual(revived.pokemons[1].statuses, ["poisoned"]);
+    assert.equal(JSON.stringify(initial), original);
+  });
+
+test("native Full Restore rejects HP0 and fainted flags without consuming PP, a turn, RNG or an already queued opposing choice", () => {
+  const initial = fixture();
+  initial.pokemons[1].pokemon.stats[0].value = 0;
+  const queued = choose(initial, "opponent", 150);
+  const original = JSON.stringify(queued);
+  assert.throws(() => choose(queued, "player", { kind: "item", item: "full-restore", captureId: "bench" }), /Full Restore|efecto|debilitad/i);
+  assert.equal(JSON.stringify(queued), original);
+  const native = Battle.fromJSON(queued.emerald!.engine);
+  const target = native.p1.pokemon.find((entry) => entry.set.name === "bench")!;
+  for (const positiveHp of [false, true]) {
+    if (positiveHp) target.hp = 1;
+    target.fainted = true;
+    const snapshot = JSON.stringify(native.toJSON());
+    assert.equal(emeraldFullRestoreNeeded(target), false);
+    assert.equal(applyEmeraldFullRestore(native, target, "Player", "bench"), false);
+    assert.equal(JSON.stringify(native.toJSON()), snapshot, "even the effect primitive cannot revive or log a failed use");
+  }
 });
 test("legacy thunk cannot restore for free without the inventory coordinator", async () => {
   const initial = fixture();

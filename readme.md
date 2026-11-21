@@ -4,7 +4,7 @@ Frontend del juego con React, TypeScript y Vite. `mysql-restapi` autentica y
 administra usuarios; `nest-mongo-pokedex` comunica jugadores y conserva las
 batallas PvP, las carteras y los recibos del Poké Mart. El motor de combate se
 ejecuta en el panel administrador y, para encuentros individuales, en el frontend
-del jugador. Versión de la aplicación: **2.21.0**.
+del jugador. Versión de la aplicación: **2.21.1**.
 
 ## Recompensas automáticas de combate
 
@@ -63,7 +63,7 @@ y descarta reclamaciones de partidas anteriores. Ver reglas, compatibilidad y
 validación en [BATTLE_REWARDS_PROTOCOL.md](../BATTLE_REWARDS_PROTOCOL.md).
 
 La regla de niveles 2.21 requiere Nest antes de React y recargar ambos
-frontends a 2.21.0. Sin variables nuevas,
+frontends a 2.21.1. Sin variables nuevas,
 cambios MySQL, seed ni borrar partidas. `npm run test:rewards` comprueba niveles,
 dinero y guardado; `npm run test:rewards:browser` valida premios y JcJ en Chrome
 local, y `npm run test:penalties:browser` comprueba derrotas, rendición y reconexión.
@@ -409,8 +409,9 @@ servidos localmente en `public/admin-shop/`.
 
 En la Party, **Acciones → Full Restore** muestra las existencias y consume una
 unidad para recuperar todo el HP, retirar estados/contadores negativos y dejar
-los modificadores de combate a0. Conserva el comportamiento del tablero existente,
-incluida la recuperación de un Pokémon debilitado. No cambia niveles, movimientos
+los modificadores de combate a0. Desde 2.21.1 sólo se permite con HP mayor que 0:
+**Full Restore no revive; para un Pokémon debilitado se usa Max Revive**.
+Un intento inválido no gasta objeto ni turno. No cambia niveles, movimientos
 ni PP. Sin existencias, sin la primera sincronización o con una compra, reinicio,
 operación antigua o batalla administrada pendiente no se puede usar. Un objetivo que no necesita curación
 no gasta el objeto.
@@ -421,7 +422,8 @@ la cola nativa. No permite atacar además ni cancelar el objeto ya confirmado.
 En el encuentro local antiguo, bloquea la acción hasta **Finalizar turno**.
 
 En PvP y Trainer Battle, el administrador sólo puede elegir Full Restore con
-existencias del jugador de ese lado. Puede cancelar la elección antes de que se
+existencias del jugador de ese lado y un objetivo vivo. Nest también rechaza
+nuevos comandos de Full Restore sobre objetivos con HP 0. Puede cancelar la elección antes de que se
 resuelva; el consumo se confirma cuando el motor ejecuta la curación. Rendirse
 antes de ejecutar un objeto pendiente tampoco lo gasta. El NPC no utiliza la
 mochila de ningún jugador.

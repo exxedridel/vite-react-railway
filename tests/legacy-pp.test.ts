@@ -178,7 +178,10 @@ test("legacy Ether can restore a fainted bench member, consumes the turn and lea
   assert.equal(reducer(used, action(used)), used);
   await assert.rejects(preparePartyItem(used, "own", "max-elixir"), /acción/);
   const outside = { ...initial, opponent: null };
-  const healed = await preparePartyItem(outside, "bench", "full-restore");
+  await assert.rejects(preparePartyItem(outside, "bench", "full-restore"), /Full Restore|efecto|debilitad/i);
+  const wounded = structuredClone(outside);
+  wounded.pokemons[1].pokemon.stats.find((s) => s.name === "hp")!.value = 1;
+  const healed = await preparePartyItem(wounded, "bench", "full-restore");
   assert.equal(healed.pokemons[1].moves![0].currentPp, 0);
   const restored = await preparePartyItem(outside, "bench", "max-elixir");
   await assert.rejects(

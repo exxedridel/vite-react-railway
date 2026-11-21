@@ -52,7 +52,8 @@ export function needsFullRestore(
   const target = state.pokemons.find(
     (capture) => capture.captureId === captureId,
   );
-  if (!target || !isLeveled(target.pokemon)) return false;
+  if (!target || !isLeveled(target.pokemon) || getCurrentHp(target.pokemon) <= 0)
+    return false;
   const max = getMaxHp(target.pokemon);
   return (
     max !== undefined &&
@@ -99,6 +100,8 @@ export async function preparePartyItem(
   );
   if (!target || !isLeveled(target.pokemon))
     throw new Error("Elige un Pokémon válido de tu equipo.");
+  if (itemId === "full-restore" && getCurrentHp(target.pokemon) <= 0)
+    throw new Error("Full Restore no revive Pokémon debilitados. Usa Max Revive.");
   if (
     itemId === "max-ether"
       ? !target.moves?.some((move) => move.id === moveId)

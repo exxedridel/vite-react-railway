@@ -608,6 +608,26 @@ test("authorized Full Restore is reserved until native execution; cancelled and 
   assert.ok(validTrainerBattleSession(done));
 });
 
+for (const side of ["a", "b"] as const)
+  test(`authorized ${side} Full Restore cannot consume central inventory or a turn for a fainted reserve`, () => {
+    const started = startTrainerBattle(createPvpTrainerSession(view()), seed);
+    const original = JSON.stringify(started);
+    const command = {
+      commandId: `invalid-restore-${side}`, userId: 99, side,
+      requestKey: pvpRequestKey(started, side), inventoryAuthorized: true as const,
+      choice: { kind: "item" as const, item: "full-restore" as const, captureId: `reserve-${side}` },
+    };
+    assert.throws(() => applyPvpTrainerCommand(started, command), /Full Restore|efecto|debilitad/i);
+    assert.equal(JSON.stringify(started), original, "failed authorized commands preserve runtime, RNG, PP, HP, reservations and used item IDs");
+    assert.equal(started.networkItems, undefined, "failed commands cannot create an inventory reservation");
+    const queued = applyPvpTrainerCommand(started, {
+      ...command, commandId: `valid-revive-${side}`,
+      choice: { ...command.choice, item: "max-revive" },
+    });
+    assert.equal(queued.networkItems!.pending[side]!.commandId, `valid-revive-${side}`);
+    assert.deepEqual(queued.networkItems!.used, []);
+  });
+
 for (const item of ["max-ether", "max-elixir"] as const) {
   test(`${item}: an authorized native effect consumes the selected item and exports exact learned PP`, () => {
     const state = view();

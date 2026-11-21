@@ -374,6 +374,8 @@ function chooseTrainerItem(
   const target = simulated.pokemon.find(
     (pokemon) => pokemon.set.name === entry?.key,
   );
+  if (target && choice.item === "full-restore" && (target.hp <= 0 || target.fainted))
+    throw new Error("Full Restore no revive Pokémon debilitados. Usa Max Revive.");
   if (!target || !emeraldItemNeeded(target, choice.item, choice.moveId))
     throw new Error(
       choice.item === "full-restore"

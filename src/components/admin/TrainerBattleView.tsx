@@ -287,7 +287,7 @@ function TrainerControls({
                       ? "Este jugador no tiene Full Restore en su Bag."
                       : request.locked
                         ? "Completa la acción obligatoria antes de usar un objeto."
-                        : "Recupera todo el HP, cura los estados negativos y restablece los modificadores a 0. Consume tu acción del turno."}
+                        : "Recupera todo el HP, cura los estados negativos y restablece los modificadores a 0. Consume tu acción del turno. Para revivir a un Pokémon debilitado, usa Max Revive."}
                   </p>
                   {choosingRestore && (
                     <div
@@ -307,7 +307,10 @@ function TrainerControls({
                             type="button"
                             variant="outline"
                             className="h-auto min-h-16 min-w-0 flex-col whitespace-normal px-2 py-2"
-                            disabled={!canUseItem}
+                            disabled={
+                              !canUseItem ||
+                              getCurrentHp(capture.pokemon) <= 0
+                            }
                             aria-label={`Usar Full restore en ${capture.pokemon.name}`}
                             onClick={() =>
                               chooseAction({
@@ -324,6 +327,11 @@ function TrainerControls({
                               {getCurrentHp(capture.pokemon)}/
                               {getMaxHp(capture.pokemon) ?? "—"} HP
                             </span>
+                            {getCurrentHp(capture.pokemon) <= 0 && (
+                              <span className="text-[10px] font-normal text-muted-foreground">
+                                Debilitado · usa Max Revive
+                              </span>
+                            )}
                           </Button>
                         ))}
                       </div>

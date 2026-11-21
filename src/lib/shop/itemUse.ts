@@ -3,6 +3,7 @@ import { combatKey } from "@/lib/emerald/types";
 import { transactPvpParty } from "@/store/store";
 import { pvpPartyRevision } from "@/store/accountStorage";
 import { localBattleActive, partyWithWallet, validWallet } from "./wallet";
+import { hasLivingHp } from "@/lib/pokemonCondition";
 import {
   USABLE_ITEM_IDS,
   SHOP_ITEM_IDS,
@@ -103,6 +104,13 @@ export function prepareItemUse(
       throw new Error("Sincroniza tu inventario antes de usar un objeto.");
     if ((party.bag.items?.[itemId] ?? 0) < 1)
       throw new Error("No tienes existencias de este objeto en tu Bag.");
+    if (
+      itemId === "full-restore" &&
+      !hasLivingHp(
+        party.pokemons.find((capture) => capture.captureId === captureId)?.pokemon,
+      )
+    )
+      throw new Error("Full Restore no revive Pokémon debilitados. Usa Max Revive.");
     const context = localBattleActive(party) ? "local-battle" : "party";
     if (["tm", "rare-candy"].includes(itemId) && context !== "party")
       throw new Error("Este objeto sólo puede usarse fuera de combate.");

@@ -50,6 +50,7 @@ import {
   applyItemUse,
   prepareItemUse,
   validItemUse,
+  itemUseHash,
 } from "../src/lib/shop/itemUse";
 import { SHOP_ITEM_IDS } from "../src/lib/shop/types";
 import { captureRequirements } from "../src/lib/captureRates";
@@ -2560,6 +2561,87 @@ export async function runAccountStorageTests() {
   const { reservePvpParty, releasePvpParty } = await import(
     "../src/lib/pvpParty"
   );
+  const faintedItemUser = 646, faintedItemClient = "fainted-item-client";
+  await activateAccountStore(faintedItemUser);
+  await applyShopWallet({
+    ...wallet(faintedItemUser, 0, 500, { "full-restore": 2, "max-revive": 1 }),
+    consumptionAck: { clientId: faintedItemClient, throughSequence: 0 },
+  });
+  await transactPvpParty(faintedItemUser, async (current) => {
+    const actor = clone(legacyTeam[0]);
+    actor.captureId = "fainted-item-target";
+    actor.pokemon.stats.find((stat) => stat.name === "hp")!.value = 0;
+    actor.statuses = ["poisoned"];
+    actor.moves = [{ ...clone(trainerMoves.find((move) => move.id === 33)!), currentPp: 2 }];
+    return { party: { ...current, pokemons: [actor], starterClaimed: true, gameSettings: clone(legacySettings) }, value: undefined };
+  });
+  const faintedItemBefore = clone(store.getState().party);
+  const faintedItemDisk = testStorage.getItem(accountStorageKey(faintedItemUser));
+  let invalidRevivalPlans = 0;
+  const invalidRevivalPlan = async (current: typeof faintedItemBefore) => {
+    invalidRevivalPlans++;
+    const next = clone(current);
+    next.pokemons[0].pokemon.stats.find((stat) => stat.name === "hp")!.value = getMaxHp(next.pokemons[0].pokemon)!;
+    return next;
+  };
+  await assert.rejects(prepareItemUse(faintedItemUser, faintedItemClient, "rejected-legacy-revive", "fainted-item-target", 0,
+    invalidRevivalPlan), /Max Revive/);
+  await assert.rejects(commitLocalItemUse({ userId: faintedItemUser, clientId: faintedItemClient, operationId: "rejected-local-revive",
+    itemId: "full-restore", captureId: "fainted-item-target", plan: invalidRevivalPlan }), /Max Revive/);
+  assert.equal(invalidRevivalPlans, 0, "coordinators reject KO before trusting even a supplied revival plan");
+  assert.deepEqual(store.getState().party, faintedItemBefore);
+  assert.equal(testStorage.getItem(accountStorageKey(faintedItemUser)), faintedItemDisk,
+    "no checked write, item-use lock, inventory debit, outbox, turn or PP change is allowed");
+  await clearAccountStore();
+  await activateAccountStore(faintedItemUser);
+  assert.deepEqual(saved(faintedItemUser), faintedItemBefore);
+  passed.push("Full Restore coordinators reject fainted targets with positive stock before calling a plan; HP/status/PP, money, inventory, pending intents and saved bytes remain unchanged through reload");
+  const legacyRevivalPrepared = clone(faintedItemBefore);
+  legacyRevivalPrepared.pokemons[0].pokemon.stats.find((stat) => stat.name === "hp")!.value = getMaxHp(legacyRevivalPrepared.pokemons[0].pokemon)!;
+  legacyRevivalPrepared.pokemons[0].statuses = [];
+  legacyRevivalPrepared.pokemons[0].statusTurns = {};
+  const legacyRevivalHash = await itemUseHash(legacyRevivalPrepared);
+  const legacyRevivalBytes = JSON.stringify(legacyRevivalPrepared);
+  const legacyRevivalLock = {
+    userId: faintedItemUser, clientId: faintedItemClient, requestId: "old-paid-revival", captureId: "fainted-item-target",
+    itemId: "full-restore" as const, context: "party" as const, planHash: legacyRevivalHash,
+    expectedWalletRevision: 0, expectedCombatHash: await itemUseHash(combatKey(faintedItemBefore)), prepared: legacyRevivalPrepared,
+  };
+  await transactPvpParty(faintedItemUser, async (current) => ({ party: { ...current, itemUseLock: legacyRevivalLock }, value: undefined }));
+  await clearAccountStore();
+  await activateAccountStore(faintedItemUser);
+  assert.equal(store.getState().party.itemUseLock!.planHash, legacyRevivalHash);
+  assert.equal(JSON.stringify(store.getState().party.itemUseLock!.prepared), legacyRevivalBytes);
+  const legacyRevivalReceipt: ItemUse = {
+    requestId: legacyRevivalLock.requestId, userId: faintedItemUser, clientId: faintedItemClient,
+    itemId: "full-restore", captureId: "fainted-item-target", context: "party", planHash: legacyRevivalHash,
+    expectedWalletRevision: 0, walletRevision: 1, status: "pending",
+  };
+  const legacyRevivalWallet = wallet(faintedItemUser, 1, 500, { "full-restore": 1, "max-revive": 1 });
+  const legacyRevivalPending = clone(saved(faintedItemUser));
+  testStorage.failWritesFor.add(accountStorageKey(faintedItemUser));
+  await assert.rejects(applyItemUse(legacyRevivalWallet, legacyRevivalReceipt, faintedItemClient), /guardar/);
+  testStorage.failWritesFor.clear();
+  assert.deepEqual(saved(faintedItemUser), legacyRevivalPending);
+  await applyItemUse(legacyRevivalWallet, legacyRevivalReceipt, faintedItemClient);
+  assert.equal(getCurrentHp(saved(faintedItemUser).pokemons[0].pokemon), getMaxHp(faintedItemBefore.pokemons[0].pokemon));
+  assert.equal(saved(faintedItemUser).pokemons[0].moves[0].currentPp, 2);
+  assert.deepEqual(saved(faintedItemUser).pokemons[0].statuses, []);
+  assert.equal(saved(faintedItemUser).bag.items["full-restore"], 1);
+  assert.equal(saved(faintedItemUser).itemUseLock.planHash, legacyRevivalHash);
+  assert.equal(JSON.stringify(saved(faintedItemUser).itemUseLock.prepared), legacyRevivalBytes);
+  const legacyRevivalApplied = clone(saved(faintedItemUser));
+  await applyItemUse(legacyRevivalWallet, legacyRevivalReceipt, faintedItemClient);
+  assert.deepEqual(saved(faintedItemUser), legacyRevivalApplied);
+  await applyItemUse(legacyRevivalWallet, { ...legacyRevivalReceipt, status: "applied" }, faintedItemClient);
+  await clearAccountStore();
+  await activateAccountStore(faintedItemUser);
+  const legacyRevivalReleased = clone(saved(faintedItemUser));
+  assert.equal(legacyRevivalReleased.itemUseLock, undefined);
+  await applyItemUse(legacyRevivalWallet, legacyRevivalReceipt, faintedItemClient);
+  assert.deepEqual(saved(faintedItemUser), legacyRevivalReleased);
+  assert.equal(invalidRevivalPlans, 0, "already paid legacy plans recover their exact saved snapshot without evaluating a new Full Restore");
+  passed.push("A previously paid legacy Full Restore revival keeps its original prepared bytes and hash across reload, recovers checked-write failure and applies exactly once without replanning or repeating its inventory debit");
   await activateAccountStore(localUser);
   const localWallet = (
     revision = 0,

@@ -225,15 +225,24 @@ for (const side of ["a", "b"] as const) {
     assert(validTrainerBattleSession(result));
   });
 
-  test(`${side} trainer item revives only its own fainted reserve and updates legal replacements`, () => {
+  test(`${side} Full Restore rejects a fainted reserve without state/RNG/item use; Max Revive restores legal replacements`, () => {
     const setup = fixture();
     hurt(setup.teams[side].pokemons[1], 0);
     const started = startTrainerBattle(setup, seed);
+    const original = JSON.stringify(started);
+    const used: unknown[] = [];
+    assert.throws(() => chooseTrainerAction(started, side, item(`${side}1`), {
+      onItemUsed: (...event) => used.push(event),
+    }), /Full Restore|efecto|debilitad/i);
+    assert.equal(JSON.stringify(started), original, "rejected items must preserve pending choices, PP, turn, flags and RNG");
+    assert.deepEqual(used, [], "an invalid target cannot consume a reserved item");
     const beforeActive = clone(started.teams[side].pokemons[0]);
+    const beforeStatuses = clone(started.teams[side].pokemons[1].statuses);
+    const revive: TrainerChoice = { kind: "item", item: "max-revive", captureId: `${side}1` };
     const result =
       side === "a"
-        ? turn(started, item("a1"), 150)
-        : turn(started, 150, item("b1"));
+        ? turn(started, revive, 150)
+        : turn(started, 150, revive);
     const simulated = side === "a" ? battle(result).p1 : battle(result).p2;
     const reserve = simulated.pokemon.find(
       (pokemon) => pokemon.set.name === `${side}1`,
@@ -243,7 +252,7 @@ for (const side of ["a", "b"] as const) {
     assert.equal(reserve.faintQueued, false);
     assert.equal(simulated.pokemonLeft, 2);
     assert.deepEqual(result.teams[side].pokemons[0], beforeActive);
-    assert.deepEqual(result.teams[side].pokemons[1].statuses, []);
+    assert.deepEqual(result.teams[side].pokemons[1].statuses, beforeStatuses);
     assert.doesNotThrow(() =>
       choose(result, side, { kind: "switch", captureId: `${side}1` }),
     );

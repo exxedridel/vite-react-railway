@@ -16,6 +16,7 @@ import { useAppSelector } from "@/store/hooks";
 import { useShopContext } from "@/context/ShopContext";
 import { isLocalPartyMutationBlocked } from "@/store/accountStorage";
 import { localBattleActive } from "@/lib/shop/wallet";
+import { getCurrentHp } from "@/lib/pokemonStats";
 import type { CapturedPokemon } from "@/types/pokemon";
 import PpRestoreControls from "./PpRestoreControls";
 import PokemonConsumableControl from "./PokemonConsumableControl";
@@ -37,6 +38,7 @@ export default function PokemonActionsDialog({
   const shop = useShopContext();
   const partySize = party.pokemons.length;
   const stock = party.bag?.items?.["full-restore"] ?? 0;
+  const fainted = getCurrentHp(capturedPokemon.pokemon) <= 0;
   const nativeTurn =
     party.emerald && !party.emerald.ended ? party.emerald : null;
   const turnUnavailable =
@@ -47,6 +49,7 @@ export default function PokemonActionsDialog({
       nativeTurn.requests.player.locked);
   const restoreUnavailable =
     stock < 1 ||
+    fainted ||
     shop.usingItem ||
     !shop.localItemsReady ||
     isLocalPartyMutationBlocked(party) ||
@@ -176,6 +179,11 @@ export default function PokemonActionsDialog({
                   ? " En combate consume tu acción del turno."
                   : " Consume 1 unidad de tu Bag."}
               </p>
+              {fainted && (
+                <p role="status" className="text-xs text-muted-foreground">
+                  Este Pokémon está debilitado. Usa Max Revive para revivirlo.
+                </p>
+              )}
               {stock < 1 && (
                 <p role="status" className="text-xs text-muted-foreground">
                   No tienes Full Restore en la Bag.

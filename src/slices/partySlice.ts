@@ -276,7 +276,7 @@ function restoreCapture(capture: CapturedPokemon): boolean {
   if (!isLeveled(capture.pokemon)) return false;
   const hp = capture.pokemon.stats.find((stat) => stat.name === "hp");
   const max = getMaxHp(capture.pokemon);
-  if (!hp || max === undefined) return false;
+  if (!hp || hp.value <= 0 || max === undefined) return false;
   hp.value = max;
   capture.statuses = [];
   capture.statusTurns = {};

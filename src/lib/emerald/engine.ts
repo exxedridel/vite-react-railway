@@ -79,13 +79,16 @@ const restoredVolatiles = [
   "foresight",
 ] as const;
 
-/** The existing board Full Restore rules include revival and neutral boosts. */
+/** Full Restore cures a living Pokémon and neutralizes board boosts; revival
+ * belongs to Max Revive. */
 export function emeraldFullRestoreNeeded(target: SimPokemon): boolean {
   return (
-    target.hp < target.maxhp ||
-    !!target.status ||
-    restoredVolatiles.some((effect) => !!target.volatiles[effect]) ||
-    Object.values(target.boosts).some((stage) => stage !== 0)
+    target.hp > 0 &&
+    !target.fainted &&
+    (target.hp < target.maxhp ||
+      !!target.status ||
+      restoredVolatiles.some((effect) => !!target.volatiles[effect]) ||
+      Object.values(target.boosts).some((stage) => stage !== 0))
   );
 }
 
@@ -100,9 +103,6 @@ export function applyEmeraldFullRestore(
   if (!emeraldFullRestoreNeeded(target)) return false;
   battle.add("message", `${trainerName} usó Full restore en ${targetName}.`);
   target.hp = target.maxhp;
-  target.fainted = false;
-  target.faintQueued = false;
-  target.subFainted = false;
   const oldStatus = target.status;
   target.clearStatus();
   if (oldStatus)
@@ -728,6 +728,8 @@ function choose(b: Battle, side: Side, choice: EmeraldChoice) {
       throw new Error(
         "El objeto solo puede usarse en un Pokémon de tu equipo.",
       );
+    if (choice.item === "full-restore" && (target.hp <= 0 || target.fainted))
+      throw new Error("Full Restore no revive Pokémon debilitados. Usa Max Revive.");
     if (!emeraldItemNeeded(target, choice.item, choice.moveId))
       throw new Error(
         choice.item === "full-restore"

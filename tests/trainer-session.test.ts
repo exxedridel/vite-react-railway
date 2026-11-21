@@ -119,7 +119,7 @@ test("setup requires moves, a living lead and a name before either team can batt
 
 test("a pending Full restore persists privately, can be cancelled and heals its reserve on resolution", () => {
   const draft = fixture();
-  draft.teams.a.pokemons[1].pokemon.stats[0].value = 0;
+  draft.teams.a.pokemons[1].pokemon.stats[0].value = 1;
   draft.teams.a.pokemons[1].statuses = ["poisoned"];
   const started = startTrainerBattle(draft, [1, 2, 3, 4]);
   const pending = chooseTrainerAction(started, "a", {

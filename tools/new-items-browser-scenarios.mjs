@@ -177,7 +177,7 @@ export async function runNewItemsBrowserScenario({
   await waitArgs(admin, () => !!document.querySelector('input[aria-label="Precio de Max Revive"]'), "new items appear in Back office pricing");
   assert.equal(await evalArgs(admin, () => document.querySelector('input[aria-label="Precio de Max Revive"]').value), "300");
   assert.equal(await evalArgs(admin, () => document.querySelector('input[aria-label="Precio de Rare Candy"]').value), "300");
-  await gift("max-revive"); await gift("rare-candy");
+  await gift("max-revive"); await gift("rare-candy"); await gift("full-restore");
   row = await shopRepository.get(2);
   assert.equal(row.balance, 1800);
   assert.equal(row.items["max-revive"], 3); assert.equal(row.items["rare-candy"], 3);
@@ -216,7 +216,19 @@ export async function runNewItemsBrowserScenario({
     assert.equal(party.bag.items["rare-candy"], 3);
     assert.equal((await shopRepository.get(2)).items["rare-candy"], 4);
     await noGate();
-    await openActions(1); await useParty("max-revive");
+    await openActions(1);
+    const faintedBeforeRestore = await state();
+    assert.equal(faintedBeforeRestore.bag.items["full-restore"], 1,
+      "Full Restore rejection is tested with actual stock");
+    assert.equal(await evalArgs(playerA, () => document.querySelector(
+      'button[aria-label="Usar Full Restore en clefairy"]',
+    ).disabled), true, "Full Restore cannot revive the fainted Party member");
+    await evalArgs(playerA, () => document.querySelector(
+      'button[aria-label="Usar Full Restore en clefairy"]',
+    ).click());
+    assert.deepEqual(await state(), faintedBeforeRestore,
+      "a disabled Full Restore spends no item or action and leaves saved effects untouched");
+    await useParty("max-revive");
     party = await state();
     const maxHp = await evalArgs(playerA, async () => {
       const [stats, store] = await Promise.all([import("/src/lib/pokemonStats.ts"), import("/src/store/store.ts")]);
@@ -259,6 +271,18 @@ export async function runNewItemsBrowserScenario({
   console.log("PASS: Rare Candy stays unavailable at level100 and during a local battle without consuming stock.");
 
   const beforeWild = await state(), benchId = beforeWild.pokemons[1].captureId;
+  assert.equal(await evalArgs(playerA, async (captureId) => {
+    const [{ store }, engine] = await Promise.all([
+      import("/src/store/store.ts"), import("/src/lib/emerald/engine.ts"),
+    ]);
+    const party = store.getState().party;
+    try {
+      engine.runEmeraldAction(party, party.pokemons[0].captureId, "player",
+        { kind: "item", item: "full-restore", captureId }, [1, 2, 3, 4], "invalid-full-restore");
+      return false;
+    } catch (error) { return error.message.includes("Max Revive"); }
+  }, benchId), true, "a raw native Full Restore command rejects the fainted reserve");
+  assert.deepEqual(await state(), beforeWild, "rejected native use consumes no turn, PP, item or RNG");
   await waitArgs(playerA, () => !!document.querySelector('button[aria-label="Abrir combate de clefairy"]'), "new-item wild battle ready");
   await evalArgs(playerA, () => document.querySelector('button[aria-label="Abrir combate de clefairy"]').click());
   await waitArgs(playerA, () => !!document.querySelector('[data-testid="battle-max-revive"]'), "wild Max Revive UI mounted");
@@ -327,6 +351,22 @@ export async function runNewItemsBrowserScenario({
   await clickButton(admin, "Iniciar Trainer Battle");
   await waitArgs(admin, () => !!document.querySelector('[data-testid="trainer-max-revive-a"]'), "admin Max Revive UI available");
   await evalArgs(admin, () => { document.querySelector('[data-testid="trainer-items-a"]').open = true; });
+  await evalArgs(admin, () => [...document.querySelector('[data-testid="trainer-items-a"]').querySelectorAll("button")]
+    .find((button) => button.textContent.includes("Full Restore")).click());
+  await waitArgs(admin, () => document.querySelectorAll('#full-restore-targets-a button[aria-label^="Usar Full restore en "]').length === 2,
+    "admin Full Restore target picker mounted");
+  const beforeRejectedAdminRestore = (await pvpRepository.get(battleId)).session;
+  assert.equal(await evalArgs(admin, () => document.querySelectorAll(
+    '#full-restore-targets-a button[aria-label^="Usar Full restore en "]',
+  )[1].disabled), true, "admin cannot select a fainted Full Restore target");
+  await evalArgs(admin, () => document.querySelectorAll(
+    '#full-restore-targets-a button[aria-label^="Usar Full restore en "]',
+  )[1].click());
+  assert.deepEqual((await pvpRepository.get(battleId)).session, beforeRejectedAdminRestore,
+    "disabled admin Full Restore does not queue an action or change the battle");
+  assert.equal((await shopRepository.get(2)).items["full-restore"], 1);
+  await evalArgs(admin, () => [...document.querySelector('[data-testid="trainer-items-a"]').querySelectorAll("button")]
+    .find((button) => button.textContent.includes("Full Restore")).click());
   await field(admin, '[data-testid="trainer-max-revive-target-a"]', beforeAdmin.pokemons[1].captureId);
   await waitArgs(admin, () => !document.querySelector('[data-testid="trainer-max-revive-a"]').disabled, "admin may spend the player's reserved Max Revive");
   await evalArgs(admin, () => document.querySelector('[data-testid="trainer-max-revive-a"]').click());

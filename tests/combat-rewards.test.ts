@@ -337,7 +337,7 @@ test("reviving a victim and defeating it again creates a distinct reward event",
   session = turn(session, { kind: "move", moveId: 94 });
   assert.equal(session.rewards!.defeats.length, 1);
   session = chooseTrainerAction(session, "b", { kind: "switch", captureId: "reserve" });
-  session = turn(session, { kind: "move", moveId: 150 }, { kind: "item", item: "full-restore", captureId: "target" });
+  session = turn(session, { kind: "move", moveId: 150 }, { kind: "item", item: "max-revive", captureId: "target" });
   session = turn(session, { kind: "move", moveId: 150 }, { kind: "switch", captureId: "target" });
   session = turn(session, { kind: "move", moveId: 94 });
   assert.equal(session.rewards!.defeats.length, 2);

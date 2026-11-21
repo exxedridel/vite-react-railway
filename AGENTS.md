@@ -1,5 +1,14 @@
 # Contexto de la trilogia Pokemon
 
+Corrección vigente 2026-11-21 React 2.21.1/Nest: FullRestore sólo HP>0, nunca
+revive. UI propio/Party/admin KOdeshabilitado e indica MaxRevive; planners,
+coordinadores, primitiva Party y native/helper/choiceadmin rechazan antes
+stock/efecto/turno sin alterar PP/RNG. MaxRevive/Center intactos. Legacyplan/
+recibos/hash/recovery ya guardados exactos, no replanear. React232core49wallet/
+TS/build/audit177 y ChromeNewItems5 PASS sinJSerrors/cleanup; Nest86PvP/build.
+Ver Punto/LOCAL_ITEM_SYNC/SHOP/PVP. Nest→React/recargar2.21.1 sinvars/MySQL/
+seed/reset/borrados/commit/push/deploy; producción no verificada.
+
 Etapa vigente 2026-11-20 React 2.21/Nest: KO/captura de rival igual o mayor +2,
 menor +1; nuevo evento levelRuleVersion:2, legacy sin marca mantiene >.
 Ledger mixto/reload sin reescribir prefijo/appliedCount/hash/ganancias antiguas.

@@ -5,6 +5,7 @@ import { useShopContext } from "@/context/ShopContext";
 import { useAppSelector } from "@/store/hooks";
 import { isLocalPartyMutationBlocked } from "@/store/accountStorage";
 import { localBattleActive } from "@/lib/shop/wallet";
+import { getCurrentHp } from "@/lib/pokemonStats";
 import PpRestoreControls from "./PpRestoreControls";
 import PokemonConsumableControl from "./PokemonConsumableControl";
 
@@ -17,11 +18,15 @@ export default function FullRestoreBattleControl({
   const party = useAppSelector((state) => state.party);
   const [busy, setBusy] = useState(false);
   const stock = party.bag?.items?.["full-restore"] ?? 0;
+  const target = party.pokemons.find((entry) => entry.captureId === captureId);
+  const fainted = !!target && getCurrentHp(target.pokemon) <= 0;
   const runtime = party.emerald && !party.emerald.ended ? party.emerald : null;
   const request = runtime?.requests.player;
   const unavailable =
     busy ||
     shop.usingItem ||
+    !target ||
+    fainted ||
     stock < 1 ||
     !shop.localItemsReady ||
     isLocalPartyMutationBlocked(party) ||
@@ -70,6 +75,11 @@ export default function FullRestoreBattleControl({
           Consume 1 Full Restore de tu Bag y la acción de tu Pokémon en este
           turno. Se guarda al instante y se sincroniza en segundo plano.
         </p>
+        {fainted && (
+          <p role="status" className="text-xs text-muted-foreground">
+            Este Pokémon está debilitado. Usa Max Revive para revivirlo.
+          </p>
+        )}
       </div>
       <PokemonConsumableControl
         itemId="max-revive"
